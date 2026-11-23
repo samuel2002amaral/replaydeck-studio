@@ -34,6 +34,7 @@ PropertiesView::PropertiesView(obs_source_t *source, obs_data_t *settings, const
 	auto *scroll = new QScrollArea(this);
 	scroll->setWidgetResizable(true);
 	scroll->setFrameShape(QFrame::NoFrame);
+	scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 	lay->addWidget(scroll);
 	content = new QWidget;
 	scroll->setWidget(content);
@@ -60,6 +61,7 @@ void PropertiesView::rebuild()
 	auto *form = new QFormLayout(content);
 	form->setLabelAlignment(Qt::AlignLeft);
 	form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+	form->setRowWrapPolicy(QFormLayout::DontWrapRows);
 	form->setContentsMargins(8, 8, 8, 8);
 	form->setVerticalSpacing(6);
 	if (props) {
@@ -69,6 +71,11 @@ void PropertiesView::rebuild()
 	if (form->rowCount() == 0)
 		form->addRow(new QLabel("Esta entrada não tem opções."));
 	rebuilding = false;
+	if (pendingApply) {
+		obs_property_t *pa = pendingApply;
+		pendingApply = nullptr;
+		apply(pa);
+	}
 }
 
 /* grava a alteração na fonte; se a fonte pedir, refaz o formulário (ex.: escolheu outro dispositivo) */
@@ -101,7 +108,11 @@ void PropertiesView::addProperty(QFormLayout *form, obs_property_t *p)
 
 	switch (obs_property_get_type(p)) {
 	case OBS_PROPERTY_BOOL: {
+		/* texto longo não empurra o formulário para o lado: corta no fim e mostra inteiro no balão */
 		auto *cb = new QCheckBox(label);
+		cb->setToolTip(label);
+		cb->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+		cb->setMinimumWidth(0);
 		cb->setChecked(obs_data_get_bool(data, name));
 		connect(cb, &QCheckBox::toggled, this, [this, p, name](bool v) {
 			obs_data_set_bool(data, name, v);
@@ -236,6 +247,16 @@ void PropertiesView::addProperty(QFormLayout *form, obs_property_t *p)
 				break;
 			}
 		}
+		cb->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+		cb->setMinimumContentsLength(8);
+		if (cur < 0 && cb->count() > 0 && fmt == OBS_COMBO_FORMAT_STRING &&
+		    text(obs_data_get_string(data, name)).isEmpty() && autoPicks < 3) {
+			/* nada escolhido ainda (ex.: dispositivo): já seleciona o primeiro, como o OBS faz */
+			cur = 0;
+			obs_data_set_string(data, name, cb->itemData(0).toString().toUtf8().constData());
+			pendingApply = p;
+			autoPicks++;
+		}
 		cb->setCurrentIndex(cur);
 		connect(cb, &QComboBox::currentIndexChanged, this, [this, cb, p, name, fmt](int i) {
 			if (i < 0)
@@ -313,6 +334,10 @@ void PropertiesView::addProperty(QFormLayout *form, obs_property_t *p)
 		const QString tip = text(obs_property_long_description(p));
 		if (!tip.isEmpty())
 			w->setToolTip(tip);
-		form->addRow(label, w);
+		auto *l = new QLabel(label);
+		l->setWordWrap(true);
+		l->setMinimumWidth(110);
+		l->setMaximumWidth(150);
+		form->addRow(l, w);
 	}
 }

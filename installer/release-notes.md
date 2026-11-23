@@ -1,6 +1,7 @@
 ## ReplayDeck Studio — fase 2 (base do programa)
 
-> 2.0.1: corrige a 2.0.0, que podia não abrir (faltavam arquivos do motor). Use esta.
+> 2.0.2: janela "Adicionar entrada" maior e sem cortar as opções; o dispositivo já vem escolhido.
+> (2.0.1 corrigiu a 2.0.0, que podia não abrir.)
 
 Programa próprio, com a tela aprovada (estilo vMix). Do OBS fica só o motor de vídeo por baixo.
 

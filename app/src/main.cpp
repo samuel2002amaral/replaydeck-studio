@@ -1,11 +1,13 @@
 /* ReplayDeck Studio — programa de transmissão ao vivo com replay, sobre o motor libobs. */
 #include "engine.hpp"
 #include "main-window.hpp"
+#include "dialogs.hpp"
 #include "style.hpp"
 
 #include <functional>
 
 #include <QApplication>
+#include <QListWidget>
 #include <QMessageBox>
 #include <QTimer>
 #include <QProcess>
@@ -28,7 +30,7 @@ static void runSelfTest(MainWindow &w)
 			obs_data_set_int(s, "color", i == 0 ? 0xFF0000FF : i == 1 ? 0xFF00FF00 : 0xFFFF0000);
 			obs_data_set_int(s, "width", 1920);
 			obs_data_set_int(s, "height", 1080);
-			e.addInput(QString::fromUtf8(obs_get_latest_input_type_id("color_source")), QString("COR %1").arg(i + 1), s);
+			e.addInput("color_source_v3", QString("COR %1").arg(i + 1), s);
 		}
 		blog(LOG_INFO, "[teste] %d entradas", (int)e.inputs().size());
 	});
@@ -79,6 +81,17 @@ int main(int argc, char *argv[])
 		w.showMaximized();
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST"))
 			runSelfTest(w);
+		if (qEnvironmentVariableIsSet("RDS_SELFTEST_ADD")) {
+			/* teste visual da janela Adicionar entrada (tipo pelo número da linha) */
+			QTimer::singleShot(500, [&w] {
+				auto *d = new AddInputDialog(&w);
+				d->show();
+				if (auto *list = d->findChild<QListWidget *>("typeList"))
+					list->setCurrentRow(qEnvironmentVariableIntValue("RDS_SELFTEST_ROW"));
+			});
+			QTimer::singleShot(2500, [] { QProcess::execute("import", {"-window", "root", qEnvironmentVariable("RDS_SELFTEST_ADD")}); });
+			QTimer::singleShot(3000, [&w] { w.close(); });
+		}
 		ret = app.exec();
 	}
 	Engine::get().stop();

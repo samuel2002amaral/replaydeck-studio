@@ -32,4 +32,6 @@ private:
 	obs_properties_t *props = nullptr;
 	QWidget *content = nullptr;
 	bool rebuilding = false;
+	obs_property_t *pendingApply = nullptr;
+	int autoPicks = 0;
 };

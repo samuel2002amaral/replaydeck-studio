@@ -106,8 +106,10 @@ QStatusBar::item { border: 0; }
 #statusText { font-family: Consolas, monospace; font-size: 8pt; padding: 0 8px; }
 QToolTip { background: #2a2a2a; color: #e0e0e0; border: 1px solid #3c3c3c; padding: 4px; }
 QListWidget { background: #161616; border: 1px solid #333333; }
-QListWidget::item { padding: 5px 8px; }
-QListWidget::item:selected { background: #2f62c9; color: #ffffff; }
+QListWidget::item { padding: 6px 10px; min-height: 18px; }
+#typeList { font-size: 10pt; }
+QListWidget::item:selected { background: #2f62c9; color: #ffffff; padding: 6px 10px; border: 0; }
+QListWidget { outline: 0; }
 QDialog { background: #252525; }
 )");
 }

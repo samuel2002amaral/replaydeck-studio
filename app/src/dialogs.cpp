@@ -11,8 +11,11 @@
 #include <QListWidget>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QSplitter>
 #include <QVBoxLayout>
+
+#include <cstring>
 
 /* ---------------- Entrada aberta ---------------- */
 
@@ -104,20 +107,35 @@ static const TypeDef typeDefs[] = {
 	{"v4l2_input", "Câmera (Linux)"},
 };
 
+/* versão mais nova do tipo (ex.: color_source -> color_source_v3), ou vazio se não existir aqui */
+static QString latestType(const char *unversioned)
+{
+	QString found;
+	const char *id = nullptr, *unver = nullptr;
+	for (size_t i = 0; obs_enum_input_types2(i, &id, &unver); i++) {
+		if (unver && strcmp(unver, unversioned) == 0 && !(obs_get_source_output_flags(id) & OBS_SOURCE_DEPRECATED))
+			found = QString::fromUtf8(id);
+	}
+	return found;
+}
+
 AddInputDialog::AddInputDialog(QWidget *parent) : QDialog(parent)
 {
 	setWindowTitle("Adicionar entrada");
-	resize(980, 600);
+	resize(1180, 680);
+	setMinimumSize(900, 520);
 
 	auto *root = new QVBoxLayout(this);
 	auto *body = new QHBoxLayout;
 	types = new QListWidget;
-	types->setFixedWidth(220);
+	types->setObjectName("typeList");
+	types->setFixedWidth(240);
+	types->setSpacing(1);
 	for (const TypeDef &t : typeDefs) {
-		const char *latest = obs_get_latest_input_type_id(t.id);
-		if (!latest || !obs_source_get_display_name(latest))
+		const QString latest = latestType(t.id);
+		if (latest.isEmpty())
 			continue;
-		typeIds << QString::fromUtf8(latest);
+		typeIds << latest;
 		types->addItem(QString::fromUtf8(t.label));
 	}
 	body->addWidget(types);
@@ -138,7 +156,7 @@ AddInputDialog::AddInputDialog(QWidget *parent) : QDialog(parent)
 	lbl->setObjectName("muted");
 	right->addWidget(lbl);
 	video = new VideoDisplay;
-	video->setFixedSize(320, 180);
+	video->setFixedSize(352, 198);
 	right->addWidget(video);
 	right->addStretch(1);
 	body->addLayout(right);
@@ -188,8 +206,9 @@ void AddInputDialog::selectType(int row)
 	video->showSource(temp);
 	props = new PropertiesView(temp, nullptr, id.constData());
 	propsHolder->layout()->addWidget(props);
-	nameEdit->setText(types->item(row)->text().section(' ', 0, 0).toUpper() + " " +
-			  QString::number(Engine::get().inputs().size() + 1));
+	QString base = types->item(row)->text().section(' ', 0, 0);
+	base.remove(QRegularExpression("[^\\p{L}\\p{N}]"));
+	nameEdit->setText(base.toUpper() + " " + QString::number(Engine::get().inputs().size() + 1));
 }
 
 void AddInputDialog::accept()
