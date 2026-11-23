@@ -375,6 +375,21 @@ NewInputDialog::NewInputDialog(const QString &typeId, const QString &label, QWid
 	video->setMinimumHeight(300);
 	video->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 	root->addWidget(video, 3);
+	status = new QLabel("Ligando…");
+	status->setObjectName("muted");
+	root->addWidget(status);
+	/* a câmera leva um instante para mandar a primeira imagem: avisa até ela chegar */
+	waitTimer = new QTimer(this);
+	waitTimer->setInterval(200);
+	connect(waitTimer, &QTimer::timeout, this, [this] {
+		if (source && obs_source_get_width(source) > 0) {
+			status->setText("Imagem ao vivo. As opções valem para o projeto quando você clicar em OK.");
+			waitTimer->stop();
+		} else if (source && !(obs_source_get_output_flags(source) & OBS_SOURCE_VIDEO)) {
+			status->setText("Entrada só de áudio.");
+			waitTimer->stop();
+		}
+	});
 
 	auto *form = new QFormLayout;
 	nameEdit = new QLineEdit;
@@ -384,13 +399,12 @@ NewInputDialog::NewInputDialog(const QString &typeId, const QString &label, QWid
 	form->addRow("Nome", nameEdit);
 	root->addLayout(form);
 
-	/* as opções são buscadas uma vez só (na câmera essa busca é a parte lenta) */
+	/* opções já preparadas em segundo plano desde que o programa abriu: aparecem na hora */
 	const QByteArray id = type.toUtf8();
-	props = new PropertiesView(nullptr, id.constData());
+	props = PropertiesView::create(id.constData());
 	root->addWidget(props, 4);
 
-	/* assim que as opções chegam (dispositivo já escolhido), a entrada abre sozinha e a imagem aparece */
-	connect(props, &PropertiesView::loaded, this, [this] {
+	auto openSource = [this] {
 		if (source)
 			return;
 		const QByteArray tid = type.toUtf8();
@@ -399,8 +413,13 @@ NewInputDialog::NewInputDialog(const QString &typeId, const QString &label, QWid
 			props->applyToSource(nullptr); /* já abriu com estas opções */
 			obs_source_inc_showing(source);
 			video->showSource(source);
+			waitTimer->start();
 		}
-	});
+	};
+	if (props->isLoading())
+		connect(props, &PropertiesView::loaded, this, openSource);
+	else
+		openSource();
 
 	/* a prévia acompanha as opções (com um pequeno atraso para não reabrir a cada tecla).
 	 * Nada entra no projeto antes do OK; Cancelar descarta tudo. */

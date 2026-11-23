@@ -1,4 +1,5 @@
 #include "properties-view.hpp"
+#include "props-cache.hpp"
 
 #include <QCheckBox>
 #include <QColorDialog>
@@ -43,6 +44,32 @@ PropertiesView::PropertiesView(obs_source_t *source, const char *sourceType, QWi
 		if (!data)
 			data = obs_data_create();
 	}
+	setupUi();
+	reload();
+}
+
+/* opções já preparadas antes (cache): aparece tudo na hora */
+PropertiesView::PropertiesView(const char *sourceType, obs_properties_t *ready, obs_data_t *settings, QWidget *parent)
+	: QWidget(parent),
+	  type(sourceType)
+{
+	data = settings;
+	props = ready;
+	setupUi();
+	refresh();
+}
+
+PropertiesView *PropertiesView::create(const char *sourceType, QWidget *parent)
+{
+	obs_properties_t *p = nullptr;
+	obs_data_t *d = nullptr;
+	if (PropsCache::get().take(sourceType, &p, &d))
+		return new PropertiesView(sourceType, p, d, parent);
+	return new PropertiesView(nullptr, sourceType, parent);
+}
+
+void PropertiesView::setupUi()
+{
 	auto *lay = new QVBoxLayout(this);
 	lay->setContentsMargins(0, 0, 0, 0);
 	auto *scroll = new QScrollArea(this);
@@ -52,7 +79,6 @@ PropertiesView::PropertiesView(obs_source_t *source, const char *sourceType, QWi
 	lay->addWidget(scroll);
 	content = new QWidget;
 	scroll->setWidget(content);
-	reload();
 }
 
 PropertiesView::~PropertiesView()

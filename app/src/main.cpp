@@ -94,11 +94,11 @@ int main(int argc, char *argv[])
 			runSelfTest(w);
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST_NEW")) {
 			/* teste visual da janela Nova entrada (RDS_SELFTEST_NEW=tipo, RDS_SELFTEST_SHOT=arquivo) */
-			QTimer::singleShot(500, [&w] {
+			QTimer::singleShot(2000, [&w] {
 				auto *d = new NewInputDialog(qEnvironmentVariable("RDS_SELFTEST_NEW"), "Teste", &w);
 				d->show();
 			});
-			QTimer::singleShot(3000, [] { QProcess::execute("import", {"-window", "root", qEnvironmentVariable("RDS_SELFTEST_SHOT")}); });
+			QTimer::singleShot(2100, [] { QProcess::execute("import", {"-window", "root", qEnvironmentVariable("RDS_SELFTEST_SHOT")}); });
 			QTimer::singleShot(3500, [&w] { QApplication::closeAllWindows(); w.close(); });
 		}
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST_ADD")) {

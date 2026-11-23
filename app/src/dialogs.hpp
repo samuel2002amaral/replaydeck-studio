@@ -66,6 +66,8 @@ private:
 	QLineEdit *nameEdit = nullptr;
 	PropertiesView *props = nullptr;
 	VideoDisplay *video = nullptr;
+	QLabel *status = nullptr;
+	class QTimer *waitTimer = nullptr;
 	OBSSourceAutoRelease source;
 };
 

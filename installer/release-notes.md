@@ -1,6 +1,6 @@
 ## ReplayDeck Studio — fase 2 (base do programa)
 
-> 2.0.5: a janela da câmera abre na hora (a procura de dispositivos roda em segundo plano, com "Procurando dispositivos…") e as imagens das entradas não saem mais para fora do painel.
+> 2.0.6: adicionar câmera fica instantâneo — o programa prepara a lista de câmeras e opções em segundo plano assim que abre (e refaz sozinho a cada 2 minutos), e a câmera liga sem refazer a procura de dispositivos. As entradas não saem mais para fora do painel.
 
 Programa próprio, com a tela aprovada (estilo vMix). Do OBS fica só o motor de vídeo por baixo.
 

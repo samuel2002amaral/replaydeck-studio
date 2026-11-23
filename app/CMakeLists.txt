@@ -20,6 +20,7 @@ add_executable(replaydeck-studio WIN32
   src/engine.cpp src/engine.hpp
   src/video-display.cpp src/video-display.hpp
   src/properties-view.cpp src/properties-view.hpp
+  src/props-cache.cpp src/props-cache.hpp
   src/input-tile.cpp src/input-tile.hpp
   src/dialogs.cpp src/dialogs.hpp
   src/main-window.cpp src/main-window.hpp
@@ -53,7 +54,10 @@ endif()
 
 option(RDS_BUILD_TESTS "Testes locais (Linux)" OFF)
 if(RDS_BUILD_TESTS)
-  add_executable(props-reload-test tests/props-reload-test.cpp src/properties-view.cpp src/properties-view.hpp)
+  add_executable(props-reload-test tests/props-reload-test.cpp src/properties-view.cpp src/properties-view.hpp src/props-cache.cpp)
   target_link_libraries(props-reload-test PRIVATE OBS::libobs Qt6::Core Qt6::Gui Qt6::Widgets)
   set_target_properties(props-reload-test PROPERTIES CXX_STANDARD 17 AUTOMOC ON)
+  add_executable(props-cache-test tests/props-cache-test.cpp src/props-cache.cpp src/props-cache.hpp src/properties-view.cpp src/properties-view.hpp)
+  target_link_libraries(props-cache-test PRIVATE OBS::libobs Qt6::Core Qt6::Gui Qt6::Widgets)
+  set_target_properties(props-cache-test PROPERTIES CXX_STANDARD 17 AUTOMOC ON)
 endif()

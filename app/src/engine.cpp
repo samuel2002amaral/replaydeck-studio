@@ -1,4 +1,5 @@
 #include "engine.hpp"
+#include "props-cache.hpp"
 
 #include <obs-module.h>
 #include <util/base.h>
@@ -11,6 +12,7 @@
 #include <QFileInfo>
 
 #include <algorithm>
+#include <cstring>
 #include <cstdarg>
 #include <cstdio>
 #include <mutex>
@@ -143,6 +145,20 @@ bool Engine::start(QString &error)
 	obs_set_output_source(0, fadeTr);
 	started = true;
 
+	/* prepara em segundo plano as opções dos tipos lentos (câmera, placas, áudio, capturas):
+	 * ao clicar em adicionar, já está tudo pronto */
+	QList<QByteArray> slow;
+	const char *id = nullptr, *unver = nullptr;
+	/* só tipos conferidos que aceitam montar as opções sem nada aberto (AJA e v4l2 do Linux não) */
+	static const char *wanted[] = {"dshow_input", "decklink-input", "wasapi_input_capture", "wasapi_output_capture",
+				       "monitor_capture", "window_capture", "game_capture"};
+	for (size_t i = 0; obs_enum_input_types2(i, &id, &unver); i++) {
+		for (const char *w : wanted)
+			if (unver && strcmp(unver, w) == 0 && !(obs_get_source_output_flags(id) & OBS_SOURCE_DEPRECATED))
+				slow << QByteArray(id);
+	}
+	PropsCache::get().start(slow);
+
 	QString p = defaultProjectPath();
 	if (QFile::exists(p))
 		loadProject(p);
@@ -155,6 +171,7 @@ void Engine::stop()
 	if (!started)
 		return;
 	saveProject(projPath.isEmpty() ? defaultProjectPath() : projPath);
+	PropsCache::get().stop();
 	for (int ch = 0; ch < 64; ch++)
 		obs_set_output_source(ch, nullptr);
 	clearAll();
