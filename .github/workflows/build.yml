@@ -1,7 +1,11 @@
 name: Build
 
-# Compila o ReplayDeck Studio para Windows: a interface própria (pasta app/)
-# sobre o motor libobs do OBS Studio, compilados juntos.
+# Compila o ReplayDeck Studio para Windows.
+#
+# O MOTOR (OBS Studio + nossos ajustes em tools/patch-obs.py) é compilado uma vez e fica guardado
+# no cache do GitHub. Cada mudança no programa compila só a pasta app/ contra esse motor guardado.
+# Se o motor mudar (versão do OBS, patch-obs.py ou ENGINE_REV em versions.env), ele é refeito uma vez.
+#
 # Commit com [release] na mensagem (ou rodar manualmente com oficial=true) publica na página de Releases.
 on:
   push:
@@ -38,38 +42,76 @@ jobs:
           $v = (Get-Content studio/VERSION -Raw).Trim()
           "STUDIO_VERSION=$v" | Out-File -Append $env:GITHUB_ENV
 
-      - name: Baixar o motor (código do OBS)
+      - name: Motor guardado
+        id: engine
+        uses: actions/cache/restore@v4
+        with:
+          path: engine
+          key: engine-${{ env.OBS_VERSION }}-${{ env.ENGINE_REV }}-${{ hashFiles('studio/tools/patch-obs.py') }}
+
+      # ---------- só quando o motor mudou: compila o OBS uma vez ----------
+      - name: "Motor: baixar código do OBS"
+        if: steps.engine.outputs.cache-hit != 'true'
         run: git clone --depth 1 --branch $env:OBS_VERSION --recursive --shallow-submodules https://github.com/obsproject/obs-studio.git obs
 
-      - name: Incluir o ReplayDeck Studio no build
+      - name: "Motor: aplicar ajustes"
+        if: steps.engine.outputs.cache-hit != 'true'
         run: python studio/tools/patch-obs.py obs studio
 
-      - name: Cache das dependências (Qt, FFmpeg, CEF)
-        uses: actions/cache@v4
-        with:
-          path: obs/.deps
-          key: obs-deps-${{ env.OBS_VERSION }}-${{ hashFiles('obs/CMakePresets.json') }}
-
-      - name: Configurar
+      - name: "Motor: configurar"
+        if: steps.engine.outputs.cache-hit != 'true'
         working-directory: obs
-        run: cmake --preset windows-x64 -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF "-DOBS_VERSION_OVERRIDE=$env:OBS_VERSION" "-DRDS_VERSION=$env:STUDIO_VERSION"
+        run: cmake --preset windows-x64 -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF "-DOBS_VERSION_OVERRIDE=$env:OBS_VERSION"
 
-      - name: Compilar
+      - name: "Motor: compilar"
+        if: steps.engine.outputs.cache-hit != 'true'
         working-directory: obs
         run: cmake --build build_x64 --config RelWithDebInfo --parallel -- /consoleLoggerParameters:Summary /noLogo
+
+      - name: "Motor: guardar arquivos"
+        if: steps.engine.outputs.cache-hit != 'true'
+        run: |
+          New-Item -ItemType Directory -Force engine/runtime, engine/sdk, engine/deps | Out-Null
+          cmake --install obs/build_x64 --prefix engine/runtime --config RelWithDebInfo
+          if ($LASTEXITCODE -ne 0) { throw "install do motor falhou" }
+          cmake --install obs/build_x64 --prefix engine/sdk --config RelWithDebInfo --component Development
+          if ($LASTEXITCODE -ne 0) { throw "install do SDK falhou" }
+          Copy-Item obs/COPYING engine/runtime/LICENCA.txt
+          # bibliotecas usadas para compilar o programa (Qt, FFmpeg...); o navegador (CEF) não é necessário para isso
+          Get-ChildItem obs/.deps -Directory | Where-Object { $_.Name -notmatch 'cef' } | ForEach-Object { Copy-Item -Recurse $_.FullName engine/deps/ }
+          Get-ChildItem engine/runtime -Recurse -Filter *.pdb | Remove-Item -Force
+          Get-ChildItem engine -Directory | ForEach-Object { Write-Host ("{0}: {1:N0} MB" -f $_.Name, ((Get-ChildItem $_.FullName -Recurse | Measure-Object Length -Sum).Sum / 1MB)) }
+
+      - name: "Motor: salvar no cache"
+        if: steps.engine.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: engine
+          key: ${{ steps.engine.outputs.cache-primary-key }}
+
+      # ---------- sempre: compila só o programa ----------
+      - name: Compilar o programa
+        run: |
+          $prefix = @((Resolve-Path engine/sdk).Path) + (Get-ChildItem engine/deps -Directory | ForEach-Object { $_.FullName })
+          Write-Host "procurando bibliotecas em:"; $prefix | ForEach-Object { Write-Host "  $_" }
+          cmake -S studio/app -B appbuild -G "Visual Studio 18 2026" -A "x64,version=10.0.26100.0" `
+            "-DCMAKE_PREFIX_PATH=$($prefix -join ';')" "-DRDS_VERSION=$env:STUDIO_VERSION" -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF
+          if ($LASTEXITCODE -ne 0) { throw "configurar o programa falhou" }
+          cmake --build appbuild --config RelWithDebInfo --parallel -- /consoleLoggerParameters:Summary /noLogo
+          if ($LASTEXITCODE -ne 0) { throw "compilar o programa falhou" }
 
       - name: Montar o programa
         run: |
           $pkg = "$PWD/pkg"
-          cmake --install obs/build_x64 --prefix $pkg --config RelWithDebInfo
-          if ($LASTEXITCODE -ne 0) { throw "install falhou" }
+          Copy-Item -Recurse engine/runtime $pkg
+          $exe = Get-ChildItem appbuild -Recurse -Filter ReplayDeckStudio.exe | Select-Object -First 1
+          if (-not $exe) { throw "ReplayDeckStudio.exe não foi gerado" }
+          Copy-Item $exe.FullName "$pkg/bin/64bit/"
 
           # a interface do OBS não faz parte do programa: fica só o motor
-          Remove-Item -Force -ErrorAction SilentlyContinue "$pkg/bin/64bit/obs64.exe", "$pkg/bin/64bit/obs64.pdb"
-          # (os módulos core ficam todos: o motor carrega a lista inteira e para no primeiro que faltar;
-          #  os que dependem da interface do OBS são pulados pelo programa, não apagados)
+          # (os módulos core ficam todos: o motor carrega a lista inteira e para no primeiro que faltar)
+          Remove-Item -Force -ErrorAction SilentlyContinue "$pkg/bin/64bit/obs64.exe"
           Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "$pkg/data/obs-studio"
-          Get-ChildItem $pkg -Recurse -Filter *.pdb | Remove-Item -Force
 
           # runtime do Visual C++ junto do programa, da mesma versão do compilador
           $vs = & "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe" -latest -property installationPath
@@ -80,29 +122,26 @@ jobs:
           else { Write-Host "::warning::runtime do Visual C++ não encontrado" }
 
           Copy-Item studio/installer/LEIA-ME.txt "$pkg/LEIA-ME.txt"
-          Copy-Item obs/COPYING "$pkg/LICENCA.txt"
-          "ReplayDeck Studio $env:STUDIO_VERSION`nMotor: libobs (OBS Studio $env:OBS_VERSION)`nBuild ${{ github.run_number }} - ${{ github.sha }}" | Out-File "$pkg/VERSAO.txt" -Encoding utf8
+          "ReplayDeck Studio $env:STUDIO_VERSION`nMotor: libobs (OBS Studio $env:OBS_VERSION, ajustes rev $env:ENGINE_REV)`nBuild ${{ github.run_number }} - ${{ github.sha }}" | Out-File "$pkg/VERSAO.txt" -Encoding utf8
 
       - name: Conferir o pacote
         run: |
           $pkg = "$PWD/pkg"
           foreach ($f in @('bin/64bit/ReplayDeckStudio.exe', 'bin/64bit/obs.dll', 'bin/64bit/Qt6Widgets.dll', 'bin/64bit/platforms/qwindows.dll',
-                           'core/win-dshow', 'core/obs-ffmpeg', 'core/obs-transitions', 'core/image-source', 'data/libobs')) {
+                           'core/win-dshow', 'core/obs-ffmpeg', 'core/obs-transitions', 'core/image-source', 'data/libobs', 'LICENCA.txt')) {
             if (-not (Test-Path "$pkg/$f")) { throw "faltando no pacote: $f" }
           }
           if (Test-Path "$pkg/bin/64bit/obs64.exe") { throw "a interface do OBS não devia estar no pacote" }
-          # todos os módulos da lista do motor precisam existir em core/
           foreach ($m in @('aja-output-ui', 'frontend-tools', 'decklink-output-ui', 'obs-websocket')) {
             if (-not (Test-Path "$pkg/core/$m")) { throw "módulo core $m sumiu do pacote (o motor pararia de carregar os outros)" }
           }
-          Get-ChildItem "$pkg/core" -Directory | ForEach-Object { Write-Host "  motor: $($_.Name)" }
           $size = (Get-ChildItem $pkg -Recurse | Measure-Object Length -Sum).Sum / 1MB
           Write-Host ("tamanho: {0:N0} MB" -f $size)
 
       - name: Zip portátil e instalador
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          Compress-Archive -Path pkg/* -DestinationPath "dist/ReplayDeck-Studio-$env:STUDIO_VERSION-Portatil.zip" -CompressionLevel Optimal
+          Compress-Archive -Path pkg/* -DestinationPath "dist/ReplayDeck-Studio-$env:STUDIO_VERSION-Portatil.zip" -CompressionLevel Fastest
           choco install innosetup -y --no-progress | Out-Null
           $iscc = Get-ChildItem "C:\Program Files (x86)\Inno Setup 6\ISCC.exe", "C:\Program Files\Inno Setup 6\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $iscc) { throw "ISCC não encontrado" }

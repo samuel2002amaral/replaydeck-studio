@@ -18,8 +18,8 @@ Desenho aprovado das telas: https://claude.ai/artifact/FEu9oqLV7BL5HjBqKL7Deo
 ## Código
 
 - `app/` — o programa (C++/Qt 6): `engine` fala com o libobs; `main-window`, `input-tile`, `dialogs`, `properties-view`, `video-display` são a interface.
-- `tools/patch-obs.py` — coloca `app/` dentro do código do OBS para compilar junto (mesmo libobs, Qt e dependências).
-- `.github/workflows/build.yml` — compila no Windows e gera o zip portátil e o instalador (`installer/studio.iss`).
+- `tools/patch-obs.py` — ajustes no motor (código do OBS). O motor é compilado uma vez e guardado no cache do GitHub.
+- `.github/workflows/build.yml` — usa o motor guardado e compila só `app/` (rápido); recompila o motor só quando `patch-obs.py`, a versão do OBS ou `ENGINE_REV` mudam. Gera o zip portátil e o instalador (`installer/studio.iss`).
 
 Teste local (Linux, contra o libobs instalado): `cmake -S app -B build && cmake --build build`;
 `RDS_SELFTEST=/tmp/tela.png ./build/ReplayDeckStudio` roda um teste automático (cria entradas, transições, salva/abre projeto).
