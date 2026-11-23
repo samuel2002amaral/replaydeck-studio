@@ -4,8 +4,8 @@ Sistema de transmissão completo para esportes, baseado no **OBS Studio 33.0.1**
 
 | Embutido | O que faz |
 |---|---|
-| **ReplayDeck** | Replay multicâmera, câmera lenta, zoom, canais A/B (VAR), eventos, títulos GT, API compatível com vMix |
-| **Placar de Futsal** (`plugins/futsal-placar`) | Placar, cronômetro regressivo, faltas acumuladas, pedidos de tempo (1 min), prorrogação, pênaltis, atalhos e controle via obs-websocket |
+| **ReplayDeck** (módulo do sistema) | Replay multicâmera, câmera lenta, zoom, canais A/B (VAR), eventos, títulos GT, API compatível com vMix |
+| **Placar de Futsal** (módulo do sistema, `plugins/futsal-placar`) | Placar, cronômetro regressivo, faltas acumuladas, pedidos de tempo (1 min), prorrogação, pênaltis, atalhos e controle via obs-websocket |
 | Move Transition | Transições avançadas |
 | Source Record | Gravar cada câmera/fonte separada |
 | Advanced Scene Switcher | Automação de cenas |

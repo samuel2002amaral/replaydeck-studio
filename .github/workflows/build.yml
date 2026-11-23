@@ -77,14 +77,10 @@ jobs:
           cmake --install obs/build_x64 --prefix $pkg --config RelWithDebInfo
           if ($LASTEXITCODE -ne 0) { throw "install falhou" }
 
-          # módulos embutidos: formato que o OBS carrega sempre (obs-plugins/64bit + data/obs-plugins/<nome>)
-          New-Item -ItemType Directory -Force "$pkg/obs-plugins/64bit", "$pkg/data/obs-plugins" | Out-Null
-          foreach ($mod in @(@{n='replaydeck'; d='replaydeck'}, @{n='futsal-placar'; d='futsal-placar'})) {
-            $dll = Get-ChildItem -Recurse obs/build_x64/plugins/$($mod.d) -Filter "$($mod.n).dll" | Where-Object { $_.FullName -match 'RelWithDebInfo' } | Select-Object -First 1
-            if (-not $dll) { throw "$($mod.n).dll não foi compilada" }
-            Copy-Item $dll.FullName "$pkg/obs-plugins/64bit/"
-            Copy-Item -Recurse -Force "obs/plugins/$($mod.d)/data" "$pkg/data/obs-plugins/$($mod.n)"
-            Write-Host "embutido: $($dll.Name)"
+          # módulos do sistema (ReplayDeck e Placar) já vêm instalados pelo OBS em core/<nome>
+          foreach ($mod in @('replaydeck', 'futsal-placar')) {
+            if (-not (Test-Path "$pkg/core/$mod/$mod.dll")) { throw "módulo do sistema $mod não foi instalado em core/" }
+            Write-Host "módulo do sistema: core/$mod"
           }
 
           # modo portátil: configurações ficam na pasta do programa, separadas do OBS normal
@@ -107,8 +103,8 @@ jobs:
       - name: Conferir o pacote
         run: |
           $pkg = "$PWD/pkg"
-          foreach ($f in @('bin/64bit/obs64.exe', 'bin/64bit/obs.dll', 'obs-plugins/64bit/replaydeck.dll', 'obs-plugins/64bit/futsal-placar.dll',
-                           'data/obs-plugins/futsal-placar/locale/pt-BR.ini', 'portable_mode.txt')) {
+          foreach ($f in @('bin/64bit/obs64.exe', 'bin/64bit/obs.dll', 'core/replaydeck/replaydeck.dll', 'core/futsal-placar/futsal-placar.dll',
+                           'core/futsal-placar/data/locale/pt-BR.ini', 'core/replaydeck/data', 'portable_mode.txt')) {
             if (-not (Test-Path "$pkg/$f")) { throw "faltando no pacote: $f" }
           }
           Get-ChildItem "$pkg/obs-plugins/64bit" | ForEach-Object { Write-Host "  plugin: $($_.Name)" }

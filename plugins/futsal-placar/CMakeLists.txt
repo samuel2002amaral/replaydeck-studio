@@ -37,9 +37,8 @@ else()
 endif()
 
 if(PLACAR_IN_TREE)
-  # Dentro do ReplayDeck Studio a DLL é copiada para obs-plugins/64bit pelo empacotamento
-  # (não entra na lista de módulos "core" do OBS: se falhar, não derruba o programa).
-  set_target_properties(futsal-placar PROPERTIES FOLDER plugins)
+  # Dentro do ReplayDeck Studio: módulo do sistema (core/futsal-placar), instalado pelo próprio OBS
+  set_target_properties_obs(futsal-placar PROPERTIES FOLDER plugins PREFIX "")
   return()
 endif()
 
