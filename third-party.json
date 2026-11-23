@@ -1,0 +1,29 @@
+{
+  "_comment": "Plugins de terceiros que já vêm dentro do ReplayDeck Studio (versões oficiais para Windows, licença GPL). Para atualizar, troque a tag.",
+  "plugins": [
+    {
+      "name": "move-transition",
+      "title": "Move Transition (transições avançadas)",
+      "repo": "exeldro/obs-move-transition",
+      "tag": "3.2.2"
+    },
+    {
+      "name": "source-record",
+      "title": "Source Record (gravar cada câmera separada)",
+      "repo": "exeldro/obs-source-record",
+      "tag": "0.5.0"
+    },
+    {
+      "name": "advanced-scene-switcher",
+      "title": "Advanced Scene Switcher (automação)",
+      "repo": "WarmUpTill/SceneSwitcher",
+      "tag": "1.37.2"
+    },
+    {
+      "name": "obs-multi-rtmp",
+      "title": "Multiple RTMP outputs (multistream)",
+      "repo": "sorayuki/obs-multi-rtmp",
+      "tag": "0.7.4.5"
+    }
+  ]
+}

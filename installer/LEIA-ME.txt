@@ -1,0 +1,33 @@
+REPLAYDECK STUDIO
+=================
+
+Sistema de transmissão completo, baseado no OBS Studio, com ReplayDeck (replay/VAR),
+Placar de Futsal e os principais plugins já embutidos.
+
+COMO ABRIR
+  Instalador: menu Iniciar > ReplayDeck Studio.
+  Zip portátil: extraia numa pasta (ex.: C:\ReplayDeck Studio) e abra bin\64bit\obs64.exe.
+  Não coloque a versão portátil em "Arquivos de Programas" (o Windows não deixa gravar lá).
+
+ONDE FICAM AS CONFIGURAÇÕES
+  Na pasta "config" dentro da pasta do programa (modo portátil).
+  O seu OBS Studio normal continua separado, com as cenas dele.
+
+TRAZER AS CENAS DO OBS NORMAL
+  No OBS normal: Coleção de cenas > Exportar.  No ReplayDeck Studio: Coleção de cenas > Importar.
+  Perfis: Perfil > Exportar / Importar.
+
+PLACAR DE FUTSAL
+  1. Menu Docks > "Placar de Futsal" abre o painel de controle.
+  2. Na cena, adicione a fonte "Placar de Futsal" (modelos: completo, compacto, só relógio).
+  3. Atalhos: Configurações > Teclas de atalho > procure "Placar".
+  4. Controle remoto (Stream Deck, Companion, celular): obs-websocket, Vendor "futsal-placar",
+     requisições "Acao" {"acao": "gol_casa"}, "Definir" e "Estado".
+
+REPLAY / VAR
+  Menu Docks > ReplayDeck. Para o VAR, mande uma das saídas de replay (A ou B)
+  para o monitor do árbitro com "Projetor em tela cheia" (botão direito na fonte).
+
+LICENÇA
+  Software livre, GPL versão 2 ou posterior (veja LICENCA.txt), como o OBS Studio.
+  Código-fonte: https://github.com/samuel2002amaral/replaydeck-studio
