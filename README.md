@@ -9,7 +9,7 @@ Desenho aprovado das telas: https://claude.ai/artifact/FEu9oqLV7BL5HjBqKL7Deo
 
 | Fase | Conteúdo | Situação |
 |---|---|---|
-| 2 | Base: entradas, prévia/programa, transições, overlays, janela da entrada, projeto | **v2.0.0** |
+| 2 | Base: entradas, prévia/programa, transições, overlays, janela da entrada, projeto | **v2.0.1** |
 | 3 | Mixer de áudio, transmissão, gravação, configurações, saída externa | próxima |
 | 4 | Replay instantâneo (código do ReplayDeck) dentro do programa | |
 | 5 | Títulos GT e overlays | |

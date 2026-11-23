@@ -66,9 +66,8 @@ jobs:
 
           # a interface do OBS não faz parte do programa: fica só o motor
           Remove-Item -Force -ErrorAction SilentlyContinue "$pkg/bin/64bit/obs64.exe", "$pkg/bin/64bit/obs64.pdb"
-          foreach ($m in @('frontend-tools', 'aja-output-ui', 'decklink-output-ui', 'decklink-captions', 'obs-websocket')) {
-            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "$pkg/core/$m"
-          }
+          # (os módulos core ficam todos: o motor carrega a lista inteira e para no primeiro que faltar;
+          #  os que dependem da interface do OBS são pulados pelo programa, não apagados)
           Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "$pkg/data/obs-studio"
           Get-ChildItem $pkg -Recurse -Filter *.pdb | Remove-Item -Force
 
@@ -92,6 +91,10 @@ jobs:
             if (-not (Test-Path "$pkg/$f")) { throw "faltando no pacote: $f" }
           }
           if (Test-Path "$pkg/bin/64bit/obs64.exe") { throw "a interface do OBS não devia estar no pacote" }
+          # todos os módulos da lista do motor precisam existir em core/
+          foreach ($m in @('aja-output-ui', 'frontend-tools', 'decklink-output-ui', 'obs-websocket')) {
+            if (-not (Test-Path "$pkg/core/$m")) { throw "módulo core $m sumiu do pacote (o motor pararia de carregar os outros)" }
+          }
           Get-ChildItem "$pkg/core" -Directory | ForEach-Object { Write-Host "  motor: $($_.Name)" }
           $size = (Get-ChildItem $pkg -Recurse | Measure-Object Length -Sum).Sum / 1MB
           Write-Host ("tamanho: {0:N0} MB" -f $size)
