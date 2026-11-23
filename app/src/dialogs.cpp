@@ -66,6 +66,23 @@ InputWindow::InputWindow(int inputId, QWidget *parent) : QDialog(parent), id(inp
 	btns->addWidget(toPgm);
 	btns->addWidget(ov1);
 	btns->addStretch(1);
+	auto *onOff = new QPushButton;
+	onOff->setToolTip("Só esta entrada fica preta. A câmera continua ligada nas outras entradas que a usam;\n"
+			  "ela só desliga de verdade quando todas estiverem desativadas.");
+	auto paintOnOff = [this, onOff] {
+		Input *cur = Engine::get().input(id);
+		onOff->setText(cur && !cur->enabled ? "Ativar entrada" : "Desativar entrada");
+	};
+	paintOnOff();
+	connect(onOff, &QPushButton::clicked, this, [this] {
+		if (Input *cur = Engine::get().input(id))
+			Engine::get().setInputEnabled(id, !cur->enabled);
+	});
+	connect(&Engine::get(), &Engine::inputChanged, onOff, [this, paintOnOff](int changed) {
+		if (changed == id)
+			paintOnOff();
+	});
+	btns->addWidget(onOff);
 	lv->addLayout(btns);
 	body->addWidget(live, 1);
 
@@ -79,14 +96,15 @@ InputWindow::InputWindow(int inputId, QWidget *parent) : QDialog(parent), id(inp
 		form->addRow("Tipo", new QLabel(Engine::typeDisplayName(obs_source_get_id(in->source))));
 	ov->addLayout(form);
 	if (in) {
-		/* mesma câmera em outras entradas: o que mudar aqui (inclusive Desativar) vale para todas */
+		/* mesma câmera em outras entradas: as opções valem para todas (Desativar entrada não) */
 		QStringList others;
 		for (Input *o : Engine::get().inputs())
 			if (o->id != id && o->source.Get() == in->source.Get())
 				others << QString("%1 (%2)").arg(Engine::get().indexOf(o->id) + 1).arg(o->name);
 		if (!others.isEmpty()) {
 			auto *warn = new QLabel("Este aparelho também está em: " + others.join(", ") +
-						".\nÉ a mesma câmera ligada uma vez só: desativar ou mudar opções aqui vale para todas.");
+						".\nÉ a mesma câmera ligada uma vez só: as opções daqui valem para todas.\n"
+						"\"Desativar entrada\" vale só para esta.");
 			warn->setObjectName("muted");
 			warn->setWordWrap(true);
 			ov->addWidget(warn);

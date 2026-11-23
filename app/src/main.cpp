@@ -47,6 +47,10 @@ static void runSelfTest(MainWindow &w)
 			emit e.inputsChanged();
 		}
 	});
+	step(5600, [&e] {
+		if (qEnvironmentVariableIsSet("RDS_SELFTEST_OFF") && e.inputs().size() > 2)
+			e.setInputEnabled(e.inputs()[2]->id, false); /* tela com uma entrada desativada */
+	});
 	step(1500, [&e] { e.setPreview(e.inputs()[1]->id); e.transition(TransitionKind::Cut); blog(LOG_INFO, "[teste] corte: pgm=%d pvw=%d", e.programId(), e.previewId()); });
 	step(2500, [&e] { e.setPreview(e.inputs()[2]->id); e.transition(TransitionKind::Fade); });
 	step(3500, [&e] { e.toggleOverlay(1, e.inputs()[0]->id); e.tbarMove(0.3f); e.tbarRelease(0.3f); blog(LOG_INFO, "[teste] fade/tbar: pgm=%d pvw=%d ov1=%d", e.programId(), e.previewId(), e.overlay(1)); });

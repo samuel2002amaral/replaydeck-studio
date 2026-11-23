@@ -3,6 +3,7 @@
 
 #include <util/base.h>
 #include <util/platform.h>
+#include <cstring>
 
 #include <QCheckBox>
 #include <QColorDialog>
@@ -412,6 +413,10 @@ void PropertiesView::addProperty(QFormLayout *form, obs_property_t *p)
 		break;
 	}
 	case OBS_PROPERTY_BUTTON: {
+		/* o Ativar/Desativar do driver desligaria a câmera em TODAS as entradas: o programa usa o seu,
+		 * que vale só para a entrada (Desativar entrada) */
+		if (type == "dshow_input" && strcmp(name, "activate") == 0)
+			return;
 		auto *bt = new QPushButton(label);
 		connect(bt, &QPushButton::clicked, this, [this, p] {
 			OBSSourceAutoRelease src = obs_weak_source_get_source(weak);

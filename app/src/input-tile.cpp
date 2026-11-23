@@ -117,8 +117,8 @@ void InputTile::refresh()
 	if (!in)
 		return;
 	num->setText(QString::number(e.indexOf(id) + 1));
-	name->setText(in->name);
-	name->setToolTip(in->name);
+	name->setText(in->enabled ? in->name : in->name + "  · desativada");
+	name->setToolTip(in->enabled ? in->name : in->name + " (desativada: botão direito → Ativar entrada)");
 	/* só refaz o visual quando o estado muda de verdade (refazer estilo é caro) */
 	const QString state = id == e.programId() ? "program" : id == e.previewId() ? "preview" : "";
 	if (state != lastBus) {
@@ -151,6 +151,9 @@ void InputTile::contextMenuEvent(QContextMenuEvent *e)
 	QMenu menu(this);
 	menu.addAction("Abrir…", this, [this] { emit openRequested(id); });
 	menu.addAction("Mandar para a Prévia", this, [this] { Engine::get().setPreview(id); });
+	if (Input *cur = Engine::get().input(id))
+		menu.addAction(cur->enabled ? "Desativar entrada" : "Ativar entrada", this,
+			       [this, on = !cur->enabled] { Engine::get().setInputEnabled(id, on); });
 	menu.addSeparator();
 	menu.addAction("Renomear…", this, [this] {
 		Input *in = Engine::get().input(id);

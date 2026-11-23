@@ -23,6 +23,8 @@ struct Input {
 	OBSSourceAutoRelease source; /* a fonte principal dentro da cena */
 	bool loop = false;
 	bool audioOn = true;
+	/* desativada: só ESTA entrada fica preta; a câmera só desliga quando todas que a usam estão desativadas */
+	bool enabled = true;
 };
 
 enum class TransitionKind { Cut, Fade, Stinger, FadeToBlack };
@@ -62,6 +64,10 @@ public:
 	void moveInput(int id, int newIndex);
 	void setInputAudio(int id, bool on);
 	void setInputLoop(int id, bool on);
+	void setInputEnabled(int id, bool on);
+	/* liga/desliga o aparelho conforme as entradas que o usam (ligado se alguma estiver ativa) */
+	void syncDevice(obs_source_t *source);
+	static bool deviceActive(obs_source_t *source); /* câmera ligada? (true para o que não é câmera) */
 
 	/* prévia e programa */
 	int previewId() const { return pvw; }

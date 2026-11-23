@@ -1,6 +1,6 @@
 ## ReplayDeck Studio — fase 2 (base do programa)
 
-> 2.0.10: lista de entradas — as imagens agora andam junto com as entradas quando a lista muda de colunas (antes, ao aumentar a janela, ficava uma imagem "fantasma" no lugar antigo, embaixo das entradas). Inclui tudo da 2.0.9: mesma câmera em várias entradas é uma câmera só, aviso na engrenagem de quais entradas usam a mesma câmera, e a procura de câmeras não roda mais sozinha com as câmeras ligadas.
+> 2.0.11: "Desativar entrada" agora vale só para a entrada (botão na janela da entrada e no botão direito do quadro). Com a mesma câmera em duas entradas, desativar uma deixa a outra ao vivo; a câmera só desliga de verdade quando todas as entradas que a usam estão desativadas. Inclui a 2.0.10: as imagens andam junto com as entradas quando a lista muda de colunas.
 
 Programa próprio, com a tela aprovada (estilo vMix). Do OBS fica só o motor de vídeo por baixo.
 

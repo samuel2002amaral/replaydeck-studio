@@ -221,6 +221,20 @@ static void fitToCanvas(obs_sceneitem_t *item, uint32_t w, uint32_t h)
 	obs_sceneitem_set_bounds(item, &bounds);
 }
 
+/* a cena de cada entrada tem um item só: a fonte principal */
+static obs_sceneitem_t *mainItem(Input *in)
+{
+	obs_sceneitem_t *found = nullptr;
+	obs_scene_enum_items(
+		obs_scene_from_source(in->scene),
+		[](obs_scene_t *, obs_sceneitem_t *item, void *param) {
+			*static_cast<obs_sceneitem_t **>(param) = item;
+			return false;
+		},
+		&found);
+	return found;
+}
+
 static Input *wrapSource(int id, const QString &name, obs_source_t *src, uint32_t w, uint32_t h)
 {
 	auto *in = new Input();
@@ -349,6 +363,7 @@ void Engine::mergeSameDevice()
 				obs_sceneitem_remove(old);
 			obs_sceneitem_t *item = obs_scene_add(scene, first->source);
 			fitToCanvas(item, baseW, baseH);
+			obs_sceneitem_set_visible(item, dup->enabled);
 			obs_source_remove(dup->source);
 			dup->source = obs_source_get_ref(first->source);
 			blog(LOG_INFO, "entrada %d abria o mesmo aparelho da entrada %d: agora usa a mesma fonte", dup->id,
@@ -386,9 +401,54 @@ void Engine::removeInput(int id)
 		stillUsed = stillUsed || other->source.Get() == in->source.Get();
 	if (!stillUsed)
 		obs_source_remove(in->source); /* fonte compartilhada continua viva na outra entrada */
+	else
+		syncDevice(in->source); /* talvez só sobraram entradas desativadas */
 	delete in;
 	emit inputsChanged();
 	emit busChanged();
+}
+
+bool Engine::deviceActive(obs_source_t *source)
+{
+	if (!source || strcmp(obs_source_get_unversioned_id(source), "dshow_input") != 0)
+		return true;
+	OBSDataAutoRelease st = obs_source_get_settings(source);
+	return obs_data_get_bool(st, "active"); /* padrão do win-dshow: true */
+}
+
+void Engine::syncDevice(obs_source_t *source)
+{
+	if (!source || strcmp(obs_source_get_unversioned_id(source), "dshow_input") != 0)
+		return; /* só câmera/placa abre aparelho; o resto só some da entrada */
+	bool used = false, wanted = false;
+	for (Input *o : list) {
+		if (o->source.Get() != source)
+			continue;
+		used = true;
+		wanted = wanted || o->enabled;
+	}
+	if (!used || deviceActive(source) == wanted)
+		return;
+	uint8_t stack[128];
+	calldata_t cd;
+	calldata_init_fixed(&cd, stack, sizeof(stack));
+	calldata_set_bool(&cd, "active", wanted);
+	proc_handler_call(obs_source_get_proc_handler(source), "activate", &cd);
+	blog(LOG_INFO, "aparelho de '%s' %s", obs_source_get_name(source),
+	     wanted ? "ligado" : "desligado (todas as entradas que o usam estão desativadas)");
+}
+
+void Engine::setInputEnabled(int id, bool on)
+{
+	Input *in = input(id);
+	if (!in || in->enabled == on)
+		return;
+	in->enabled = on;
+	if (obs_sceneitem_t *item = mainItem(in))
+		obs_sceneitem_set_visible(item, on);
+	blog(LOG_INFO, "entrada %d %s", id, on ? "ativada" : "desativada");
+	syncDevice(in->source);
+	emit inputChanged(id);
 }
 
 void Engine::renameInput(int id, const QString &name)
@@ -604,6 +664,7 @@ bool Engine::saveProject(const QString &path)
 		obs_data_set_string(o, "nome", in->name.toUtf8().constData());
 		obs_data_set_bool(o, "loop", in->loop);
 		obs_data_set_bool(o, "audio", in->audioOn);
+		obs_data_set_bool(o, "desativada", !in->enabled);
 		if (const int from = sharedFrom(in->id)) {
 			obs_data_set_int(o, "mesma_fonte_de", from);
 		} else {
@@ -655,6 +716,12 @@ bool Engine::loadProject(const QString &path)
 		Input *in = wrapSource(id, QString::fromUtf8(obs_data_get_string(o, "nome")), src, baseW, baseH);
 		in->loop = obs_data_get_bool(o, "loop");
 		in->audioOn = !obs_data_has_user_value(o, "audio") || obs_data_get_bool(o, "audio");
+		if (obs_data_has_user_value(o, "desativada"))
+			in->enabled = !obs_data_get_bool(o, "desativada");
+		else
+			in->enabled = deviceActive(src); /* projeto antigo: câmera desativada pelo botão do driver */
+		if (obs_sceneitem_t *item = mainItem(in))
+			obs_sceneitem_set_visible(item, in->enabled);
 		list.append(in);
 		nextId = std::max(nextId, id + 1);
 	}
@@ -662,6 +729,8 @@ bool Engine::loadProject(const QString &path)
 		setTransitionMs((int)obs_data_get_int(root, "transicao_ms"));
 	projPath = path;
 	mergeSameDevice();
+	for (Input *in : list)
+		syncDevice(in->source);
 	emit inputsChanged();
 
 	const int savedPgm = (int)obs_data_get_int(root, "programa");
