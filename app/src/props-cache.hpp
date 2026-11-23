@@ -2,8 +2,8 @@
  *
  * Na câmera, montar a lista de opções faz o Windows varrer todos os dispositivos e resoluções
  * (leva segundos). O cache faz isso em segundo plano quando o programa abre; ao clicar em
- * "Adicionar nova entrada" as opções já estão prontas. Cada vez que uma é usada, outra é preparada,
- * e a cada poucos minutos tudo é refeito (para pegar câmeras ligadas depois). */
+ * "Adicionar nova entrada" as opções já estão prontas. Cada vez que uma é usada, outra é preparada
+ * (assim uma câmera ligada depois aparece na vez seguinte). Não procura sozinho de tempos em tempos. */
 #pragma once
 
 #include <obs.h>

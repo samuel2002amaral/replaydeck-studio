@@ -1,6 +1,6 @@
 ## ReplayDeck Studio — fase 2 (base do programa)
 
-> 2.0.8: opções da câmera na hora também na engrenagem de uma entrada que já existe — a lista de dispositivos fica guardada e é atualizada em segundo plano, então ninguém espera a procura do Windows. O log mostra o tempo de cada busca ([rds], [cache], [opções]).
+> 2.0.9: câmeras — mesma câmera em várias entradas é sempre uma câmera só (inclusive em projetos antigos: são juntadas ao abrir); a engrenagem avisa quais entradas usam a mesma câmera (desativar vale para todas); a procura de câmeras não roda mais sozinha com as câmeras ligadas (igual ao OBS), mas as opções continuam aparecendo na hora.
 
 Programa próprio, com a tela aprovada (estilo vMix). Do OBS fica só o motor de vídeo por baixo.
 

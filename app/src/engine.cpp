@@ -295,10 +295,14 @@ int Engine::sharedFrom(int id) const
 	return 0;
 }
 
+std::function<QString(const char *, obs_data_t *)> Engine::deviceKeyOverride;
+
 QString Engine::deviceKey(const char *unversionedType, obs_data_t *settings)
 {
 	if (!unversionedType || !settings)
 		return QString();
+	if (deviceKeyOverride)
+		return deviceKeyOverride(unversionedType, settings);
 	if (strcmp(unversionedType, "dshow_input") == 0)
 		return QString::fromUtf8(obs_data_get_string(settings, "video_device_id"));
 	if (strcmp(unversionedType, "decklink-input") == 0)
@@ -318,6 +322,44 @@ int Engine::inputUsingDevice(const char *unversionedType, const QString &key) co
 			return in->id;
 	}
 	return 0;
+}
+
+void Engine::mergeSameDevice()
+{
+	bool changed = false;
+	for (int i = 0; i < list.size(); i++) {
+		Input *first = list[i];
+		const char *unver = obs_source_get_unversioned_id(first->source);
+		OBSDataAutoRelease st = obs_source_get_settings(first->source);
+		const QString key = deviceKey(unver, st);
+		if (key.isEmpty())
+			continue;
+		for (int j = i + 1; j < list.size(); j++) {
+			Input *dup = list[j];
+			if (dup->source.Get() == first->source.Get() ||
+			    strcmp(obs_source_get_unversioned_id(dup->source), unver) != 0)
+				continue;
+			OBSDataAutoRelease st2 = obs_source_get_settings(dup->source);
+			if (deviceKey(unver, st2) != key)
+				continue;
+			/* troca a fonte da entrada repetida pela fonte da primeira */
+			obs_scene_t *scene = obs_scene_from_source(dup->scene);
+			obs_sceneitem_t *old = obs_scene_find_source(scene, obs_source_get_name(dup->source));
+			if (old)
+				obs_sceneitem_remove(old);
+			obs_sceneitem_t *item = obs_scene_add(scene, first->source);
+			fitToCanvas(item, baseW, baseH);
+			obs_source_remove(dup->source);
+			dup->source = obs_source_get_ref(first->source);
+			blog(LOG_INFO, "entrada %d abria o mesmo aparelho da entrada %d: agora usa a mesma fonte", dup->id,
+			     first->id);
+			changed = true;
+		}
+	}
+	if (changed) {
+		emit inputsChanged();
+		emit busChanged();
+	}
 }
 
 void Engine::removeInput(int id)
@@ -619,6 +661,7 @@ bool Engine::loadProject(const QString &path)
 	if (obs_data_has_user_value(root, "transicao_ms"))
 		setTransitionMs((int)obs_data_get_int(root, "transicao_ms"));
 	projPath = path;
+	mergeSameDevice();
 	emit inputsChanged();
 
 	const int savedPgm = (int)obs_data_get_int(root, "programa");

@@ -46,6 +46,21 @@ int main(int argc, char **argv)
 	check(e.inputs().size() == 2 && e.inputs()[0]->source.Get() == e.inputs()[1]->source.Get(),
 	      "depois de salvar e abrir, continuam juntas");
 
+	/* projeto antigo: duas entradas abrindo o MESMO aparelho separadamente -> ao abrir, viram uma fonte só */
+	Engine::deviceKeyOverride = [](const char *, obs_data_t *st) { return QString::number(obs_data_get_int(st, "color")); };
+	while (!e.inputs().isEmpty())
+		e.removeInput(e.inputs().first()->id);
+	OBSDataAutoRelease s2 = obs_data_create();
+	obs_data_set_int(s2, "color", 0xFF00FF00);
+	e.addInput("color_source_v3", "VELHA 1", s2);
+	e.addInput("color_source_v3", "VELHA 2", s2);
+	check(e.inputs()[0]->source.Get() != e.inputs()[1]->source.Get(), "(preparação) duas fontes separadas");
+	e.saveProject(path);
+	e.loadProject(path);
+	check(e.inputs().size() == 2 && e.inputs()[0]->source.Get() == e.inputs()[1]->source.Get(),
+	      "ao abrir projeto antigo, mesmo aparelho vira uma fonte só");
+	Engine::deviceKeyOverride = nullptr;
+
 	obs_source_t *shared = e.inputs()[1]->source.Get();
 	e.removeInput(e.inputs()[0]->id);
 	check(e.inputs().size() == 1 && !obs_source_removed(shared), "tirar uma entrada não desliga a outra");

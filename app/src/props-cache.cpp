@@ -11,8 +11,6 @@
 #include <objbase.h>
 #endif
 
-static constexpr auto REFRESH_EVERY = std::chrono::minutes(2);
-
 PropsCache &PropsCache::get()
 {
 	static PropsCache c;
@@ -89,13 +87,13 @@ void PropsCache::run()
 #ifdef _WIN32
 	const HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED); /* a câmera (DirectShow) usa COM */
 #endif
-	auto lastFull = std::chrono::steady_clock::now();
+	/* Como o OBS: a procura de aparelhos só acontece por ação do usuário (ao abrir o programa e
+	 * depois de usar a janela de adicionar). Nada de procurar sozinho de tempos em tempos com as
+	 * câmeras ligadas, que em algumas webcams faz a imagem engasgar. */
 	std::unique_lock<std::mutex> l(m);
 	while (running) {
-		/* refaz tudo de tempos em tempos, ou quando pedido */
-		if (refreshRequested || std::chrono::steady_clock::now() - lastFull >= REFRESH_EVERY) {
+		if (refreshRequested) {
 			refreshRequested = false;
-			lastFull = std::chrono::steady_clock::now();
 			for (auto &kv : entries)
 				kv.second.wanted = true;
 		}
@@ -108,7 +106,7 @@ void PropsCache::run()
 			}
 		}
 		if (next.empty()) {
-			cv.wait_for(l, std::chrono::seconds(10));
+			cv.wait(l);
 			continue;
 		}
 		entries[next].wanted = false;

@@ -79,6 +79,18 @@ InputWindow::InputWindow(int inputId, QWidget *parent) : QDialog(parent), id(inp
 		form->addRow("Tipo", new QLabel(Engine::typeDisplayName(obs_source_get_id(in->source))));
 	ov->addLayout(form);
 	if (in) {
+		/* mesma câmera em outras entradas: o que mudar aqui (inclusive Desativar) vale para todas */
+		QStringList others;
+		for (Input *o : Engine::get().inputs())
+			if (o->id != id && o->source.Get() == in->source.Get())
+				others << QString("%1 (%2)").arg(Engine::get().indexOf(o->id) + 1).arg(o->name);
+		if (!others.isEmpty()) {
+			auto *warn = new QLabel("Este aparelho também está em: " + others.join(", ") +
+						".\nÉ a mesma câmera ligada uma vez só: desativar ou mudar opções aqui vale para todas.");
+			warn->setObjectName("muted");
+			warn->setWordWrap(true);
+			ov->addWidget(warn);
+		}
 		props = new PropertiesView(in->source, obs_source_get_id(in->source));
 		ov->addWidget(props, 1);
 	}
@@ -111,8 +123,10 @@ void InputWindow::applyChanges()
 		return;
 	if (!nameEdit->text().trimmed().isEmpty() && nameEdit->text().trimmed() != in->name)
 		Engine::get().renameInput(id, nameEdit->text().trimmed());
-	if (props && props->hasChanges())
+	if (props && props->hasChanges()) {
 		props->applyToSource(in->source);
+		Engine::get().mergeSameDevice(); /* trocou para um aparelho que já está em outra entrada? */
+	}
 }
 
 /* ---------------- Adicionar entrada ---------------- */

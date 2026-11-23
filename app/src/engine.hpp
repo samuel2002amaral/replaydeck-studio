@@ -14,6 +14,8 @@
 #include <QString>
 #include <QVector>
 
+#include <functional>
+
 struct Input {
 	int id = 0; /* único e estável (usado no projeto salvo) */
 	QString name;
@@ -51,6 +53,10 @@ public:
 	/* identifica o aparelho de uma fonte (câmera/placa); vazio se não for de aparelho */
 	static QString deviceKey(const char *unversionedType, obs_data_t *settings);
 	int inputUsingDevice(const char *unversionedType, const QString &key) const;
+	/* junta entradas que abrem o mesmo aparelho separadamente numa fonte só (projetos antigos,
+	 * ou quando o dispositivo de uma entrada é trocado para um que já está em uso) */
+	void mergeSameDevice();
+	static std::function<QString(const char *, obs_data_t *)> deviceKeyOverride; /* só para testes */
 	void removeInput(int id);
 	void renameInput(int id, const QString &name);
 	void moveInput(int id, int newIndex);
