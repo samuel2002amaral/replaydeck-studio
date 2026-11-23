@@ -43,6 +43,13 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 Source: "{#SrcDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+[InstallDelete]
+; versão 1.0.0 tinha o replay e o placar como plugins: apaga para não carregar duas vezes
+Type: files; Name: "{app}\obs-plugins\64bit\replaydeck.dll"
+Type: files; Name: "{app}\obs-plugins\64bit\futsal-placar.dll"
+Type: filesandordirs; Name: "{app}\data\obs-plugins\replaydeck"
+Type: filesandordirs; Name: "{app}\data\obs-plugins\futsal-placar"
+
 [Dirs]
 Name: "{app}\config"
 
