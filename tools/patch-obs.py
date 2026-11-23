@@ -14,28 +14,69 @@ repo = pathlib.Path(sys.argv[2]).resolve()
 
 # Câmera (win-dshow): a procura de dispositivos do DirectShow leva segundos quando há muitas câmeras
 # (virtuais, placas de captura). O plugin original procura tudo de novo ao montar as opções E de novo
-# ao ligar a câmera. Aqui as duas reaproveitam a última procura feita nos últimos 30 segundos, então
-# a câmera liga logo depois que o programa preparou as opções.
+# ao ligar a câmera. Aqui todo mundo recebe a última lista na hora e ela é atualizada em segundo plano.
 dshow = obs / "plugins" / "win-dshow" / "win-dshow.cpp"
 if dshow.exists():
     t = dshow.read_text(encoding="utf-8")
-    helper = (
-        "#include <mutex>\n"
-        "static std::mutex rdsEnumMutex;\n"
-        "static std::vector<VideoDevice> rdsEnumCache;\n"
-        "static uint64_t rdsEnumTime = 0;\n"
-        "static void RdsEnumVideoDevicesCached(std::vector<VideoDevice> &out)\n"
-        "{\n"
-        "\tstd::lock_guard<std::mutex> lock(rdsEnumMutex);\n"
-        "\tconst uint64_t now = os_gettime_ns();\n"
-        "\tif (!rdsEnumTime || now - rdsEnumTime > 30000000000ULL) {\n"
-        "\t\trdsEnumCache.clear();\n"
-        "\t\tDevice::EnumVideoDevices(rdsEnumCache);\n"
-        "\t\trdsEnumTime = now;\n"
-        "\t}\n"
-        "\tout = rdsEnumCache;\n"
-        "}\n\n"
-    )
+    helper = """#include <atomic>
+#include <chrono>
+#include <mutex>
+#include <thread>
+/* ReplayDeck Studio: lista de dispositivos guardada. Quem pede recebe a última lista NA HORA;
+ * se ela tem mais de 30 s, uma nova procura roda em segundo plano para a próxima vez.
+ * Só a primeiríssima procura (feita em segundo plano pelo programa ao abrir) espera. */
+struct RdsEnumState {
+	std::mutex m;
+	std::vector<VideoDevice> devices;
+	uint64_t time = 0;
+	std::atomic<bool> busy{false};
+	~RdsEnumState()
+	{
+		/* ao fechar, espera uma procura em andamento terminar (no máximo 15 s) */
+		for (int i = 0; busy && i < 150; i++)
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+	}
+};
+static RdsEnumState rdsEnum;
+
+static void RdsEnumNow(std::vector<VideoDevice> &out)
+{
+	const uint64_t t0 = os_gettime_ns();
+	Device::EnumVideoDevices(out);
+	blog(LOG_INFO, "[rds] procura de câmeras: %zu dispositivos em %llu ms", out.size(),
+	     (unsigned long long)((os_gettime_ns() - t0) / 1000000));
+}
+
+static void RdsEnumVideoDevicesCached(std::vector<VideoDevice> &out)
+{
+	std::unique_lock<std::mutex> lock(rdsEnum.m);
+	if (!rdsEnum.time) {
+		std::vector<VideoDevice> fresh;
+		lock.unlock();
+		RdsEnumNow(fresh);
+		lock.lock();
+		rdsEnum.devices = fresh;
+		rdsEnum.time = os_gettime_ns();
+	} else if (os_gettime_ns() - rdsEnum.time > 30000000000ULL && !rdsEnum.busy) {
+		rdsEnum.busy = true;
+		std::thread([] {
+			const HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+			std::vector<VideoDevice> fresh;
+			RdsEnumNow(fresh);
+			if (SUCCEEDED(com))
+				CoUninitialize();
+			{
+				std::lock_guard<std::mutex> l(rdsEnum.m);
+				rdsEnum.devices = fresh;
+				rdsEnum.time = os_gettime_ns();
+			}
+			rdsEnum.busy = false;
+		}).detach();
+	}
+	out = rdsEnum.devices;
+}
+
+"""
     anchor = "bool DShowInput::UpdateVideoConfig(obs_data_t *settings)"
     if t.count(anchor) != 1:
         sys.exit("patch-obs: win-dshow mudou (UpdateVideoConfig)")

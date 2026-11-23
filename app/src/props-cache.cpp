@@ -2,6 +2,9 @@
 
 #include <chrono>
 
+#include <util/base.h>
+#include <util/platform.h>
+
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
@@ -112,12 +115,15 @@ void PropsCache::run()
 
 		/* a parte lenta, sem segurar a trava */
 		l.unlock();
+		const uint64_t t0 = os_gettime_ns();
 		obs_data_t *settings = obs_get_source_defaults(next.c_str());
 		if (!settings)
 			settings = obs_data_create();
 		obs_properties_t *props = obs_get_source_properties(next.c_str());
 		if (props)
 			obs_properties_apply_settings(props, settings);
+		blog(LOG_INFO, "[cache] opções de %s preparadas em %llu ms", next.c_str(),
+		     (unsigned long long)((os_gettime_ns() - t0) / 1000000));
 		l.lock();
 
 		Entry &e = entries[next];

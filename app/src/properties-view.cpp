@@ -1,6 +1,9 @@
 #include "properties-view.hpp"
 #include "props-cache.hpp"
 
+#include <util/base.h>
+#include <util/platform.h>
+
 #include <QCheckBox>
 #include <QColorDialog>
 #include <QComboBox>
@@ -63,8 +66,11 @@ PropertiesView *PropertiesView::create(const char *sourceType, QWidget *parent)
 {
 	obs_properties_t *p = nullptr;
 	obs_data_t *d = nullptr;
-	if (PropsCache::get().take(sourceType, &p, &d))
+	if (PropsCache::get().take(sourceType, &p, &d)) {
+		blog(LOG_INFO, "[opções] %s: prontas do cache (na hora)", sourceType);
 		return new PropertiesView(sourceType, p, d, parent);
+	}
+	blog(LOG_INFO, "[opções] %s: cache ainda não pronto, buscando", sourceType);
 	return new PropertiesView(nullptr, sourceType, parent);
 }
 
@@ -112,9 +118,12 @@ void PropertiesView::reload()
 #ifdef _WIN32
 		const HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED); /* a câmera usa COM */
 #endif
+		const uint64_t t0 = os_gettime_ns();
 		obs_properties_t *p = src ? obs_source_properties(src) : obs_get_source_properties(typeId.constData());
 		if (p && !src)
 			obs_properties_apply_settings(p, settings); /* listas que dependem de outras opções já vêm certas */
+		blog(LOG_INFO, "[opções] %s (%s): %llu ms", typeId.constData(), src ? "entrada existente" : "nova",
+		     (unsigned long long)((os_gettime_ns() - t0) / 1000000));
 #ifdef _WIN32
 		if (SUCCEEDED(com))
 			CoUninitialize();
