@@ -28,6 +28,8 @@ static void runSelfTest(MainWindow &w)
 	Engine &e = Engine::get();
 	if (qEnvironmentVariableIsSet("RDS_SELFTEST_SMALL"))
 		w.resize(1100, 640);
+	if (qEnvironmentVariableIsSet("RDS_SELFTEST_WIDEN"))
+		w.resize(900, 1000);
 	step(500, [&e] {
 		for (int i = 0; i < 3; i++) {
 			OBSDataAutoRelease s = obs_data_create();
@@ -37,6 +39,13 @@ static void runSelfTest(MainWindow &w)
 			e.addInput("color_source_v3", QString("COR %1").arg(i + 1), s);
 		}
 		blog(LOG_INFO, "[teste] %d entradas", (int)e.inputs().size());
+	});
+	step(1200, [&e] {
+		/* reproduz: lista de entradas remontada duas vezes seguidas (abrir projeto + juntar câmeras) */
+		if (qEnvironmentVariableIsSet("RDS_SELFTEST_DOUBLE")) {
+			emit e.inputsChanged();
+			emit e.inputsChanged();
+		}
 	});
 	step(1500, [&e] { e.setPreview(e.inputs()[1]->id); e.transition(TransitionKind::Cut); blog(LOG_INFO, "[teste] corte: pgm=%d pvw=%d", e.programId(), e.previewId()); });
 	step(2500, [&e] { e.setPreview(e.inputs()[2]->id); e.transition(TransitionKind::Fade); });
@@ -48,6 +57,11 @@ static void runSelfTest(MainWindow &w)
 		blog(LOG_INFO, "[teste] abrir=%d entradas=%d pgm=%d", e.loadProject(p), (int)e.inputs().size(), e.programId());
 		e.setPreview(e.inputs()[0]->id);
 		e.toggleOverlay(2, e.inputs()[1]->id);
+	});
+	step(5800, [&w] {
+		/* reproduz: janela estreita (2 colunas) que depois é alargada (4 colunas) */
+		if (qEnvironmentVariableIsSet("RDS_SELFTEST_WIDEN"))
+			w.resize(1900, 1000);
 	});
 	step(6000, [&w] {
 		/* reproduz o problema das entradas saindo do painel: rola a lista um pouco */

@@ -1,6 +1,6 @@
 ## ReplayDeck Studio — fase 2 (base do programa)
 
-> 2.0.9: câmeras — mesma câmera em várias entradas é sempre uma câmera só (inclusive em projetos antigos: são juntadas ao abrir); a engrenagem avisa quais entradas usam a mesma câmera (desativar vale para todas); a procura de câmeras não roda mais sozinha com as câmeras ligadas (igual ao OBS), mas as opções continuam aparecendo na hora.
+> 2.0.10: lista de entradas — as imagens agora andam junto com as entradas quando a lista muda de colunas (antes, ao aumentar a janela, ficava uma imagem "fantasma" no lugar antigo, embaixo das entradas). Inclui tudo da 2.0.9: mesma câmera em várias entradas é uma câmera só, aviso na engrenagem de quais entradas usam a mesma câmera, e a procura de câmeras não roda mais sozinha com as câmeras ligadas.
 
 Programa próprio, com a tela aprovada (estilo vMix). Do OBS fica só o motor de vídeo por baixo.
 

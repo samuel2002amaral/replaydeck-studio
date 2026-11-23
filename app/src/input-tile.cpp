@@ -29,6 +29,9 @@ InputTile::InputTile(int inputId, QWidget *parent) : QFrame(parent), id(inputId)
 {
 	setObjectName("inputTile");
 	setFixedWidth(216);
+	/* o quadro inteiro é uma janela nativa: assim a imagem (nativa) anda junto quando a lista
+	 * muda de colunas; sem isso ela ficava parada no lugar antigo */
+	setAttribute(Qt::WA_NativeWindow);
 	auto *v = new QVBoxLayout(this);
 	v->setContentsMargins(1, 1, 1, 1);
 	v->setSpacing(0);
