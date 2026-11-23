@@ -9,6 +9,7 @@ $ErrorActionPreference = 'Stop'
 
 $m = Get-Content $Manifest -Raw | ConvertFrom-Json
 $bin = Join-Path $Dest 'obs-plugins/64bit'
+$newPlugins = Join-Path $Dest 'plugins'   # formato do OBS 33 em modo portátil: plugins/<nome>/<nome>.dll + data
 $data = Join-Path $Dest 'data/obs-plugins'
 New-Item -ItemType Directory -Force $bin, $data | Out-Null
 $work = Join-Path ([IO.Path]::GetTempPath()) "rds-third-party"
@@ -21,9 +22,11 @@ $failed = @()
 function Pick-Asset($assets) {
     $cands = $assets | Where-Object {
         $_.name -match '\.zip$' -and $_.name -match '(?i)win' -and
-        $_.name -notmatch '(?i)(pdb|debug|symbol|mac|linux|ubuntu|source|arm64)'
+        $_.name -notmatch '(?i)(pdb|debug|symbol|mac|linux|ubuntu|-source\.|arm64|programdata)'
     }
-    $best = $cands | Where-Object { $_.name -match '(?i)x64|64' } | Select-Object -First 1
+    # preferência: zip feito para o OBS 33 (formato novo), depois x64, depois qualquer um
+    $best = $cands | Where-Object { $_.name -match '(?i)obs ?33' } | Select-Object -First 1
+    if (-not $best) { $best = $cands | Where-Object { $_.name -match '(?i)x64|64' } | Select-Object -First 1 }
     if (-not $best) { $best = $cands | Select-Object -First 1 }
     return $best
 }
@@ -43,6 +46,14 @@ foreach ($p in $m.plugins) {
         Expand-Archive (Join-Path $dir $asset.name) $x -Force
 
         $copied = 0
+        # formato OBS 33: plugins/<nome>/<nome>.dll + plugins/<nome>/data/
+        foreach ($pd in Get-ChildItem $x -Recurse -Directory | Where-Object { $_.Parent.Name -eq 'plugins' -and (Test-Path (Join-Path $_.FullName "$($_.Name).dll")) }) {
+            $target = Join-Path $newPlugins $pd.Name
+            New-Item -ItemType Directory -Force $target | Out-Null
+            Copy-Item (Join-Path $pd.FullName '*') $target -Recurse -Force -Exclude *.pdb
+            $copied++
+        }
+        if ($copied -eq 0) {
         # formato antigo: .../obs-plugins/64bit/*.dll  +  .../data/obs-plugins/<nome>/
         foreach ($b in Get-ChildItem $x -Recurse -Directory | Where-Object { $_.Name -eq '64bit' -and $_.Parent.Name -eq 'obs-plugins' }) {
             Copy-Item (Join-Path $b.FullName '*') $bin -Recurse -Force -Exclude *.pdb
@@ -51,7 +62,8 @@ foreach ($p in $m.plugins) {
         foreach ($d in Get-ChildItem $x -Recurse -Directory | Where-Object { $_.Name -eq 'obs-plugins' -and $_.Parent.Name -eq 'data' }) {
             Copy-Item (Join-Path $d.FullName '*') $data -Recurse -Force
         }
-        # formato novo: <nome>/bin/64bit/*.dll  +  <nome>/data/
+        }
+        # formato ProgramData: <nome>/bin/64bit/*.dll  +  <nome>/data/
         if ($copied -eq 0) {
             foreach ($b in Get-ChildItem $x -Recurse -Directory | Where-Object { $_.Name -eq '64bit' -and $_.Parent.Name -eq 'bin' }) {
                 $root = $b.Parent.Parent

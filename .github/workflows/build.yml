@@ -90,18 +90,18 @@ jobs:
           # modo portátil: configurações ficam na pasta do programa, separadas do OBS normal
           "ReplayDeck Studio" | Out-File "$pkg/portable_mode.txt" -Encoding ascii
 
-          # runtime do Visual C++ junto do programa (não depende de instalar o vc_redist)
-          $crt = Get-ChildItem "$env:VCToolsRedistDir/x64" -Directory -Filter 'Microsoft.VC*.CRT' -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $crt) {
-            $vs = & "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe" -latest -property installationPath
-            $crt = Get-ChildItem "$vs/VC/Redist/MSVC" -Recurse -Directory -Filter 'Microsoft.VC*.CRT' | Where-Object { $_.FullName -match '\\x64\\' -and $_.FullName -notmatch 'onecore|debug' } | Select-Object -First 1
-          }
+          # runtime do Visual C++ junto do programa, da MESMA versão do compilador usado (a mais nova instalada)
+          $vs = & "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe" -latest -property installationPath
+          $redist = Get-ChildItem "$vs/VC/Redist/MSVC" -Directory | Where-Object { $_.Name -match '^\d+\.\d+\.\d+$' } |
+            Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
+          $crt = if ($redist) { Get-ChildItem "$($redist.FullName)/x64" -Directory -Filter 'Microsoft.VC*.CRT' | Select-Object -First 1 }
           if ($crt) { Copy-Item "$($crt.FullName)/*.dll" "$pkg/bin/64bit/" -Force; Write-Host "runtime VC++: $($crt.FullName)" }
           else { Write-Host "::warning::runtime do Visual C++ não encontrado (o PC precisa do vc_redist)" }
 
       - name: Plugins de terceiros
         env:
           GH_TOKEN: ${{ github.token }}
+          RDS_STRICT: "1"
         run: pwsh studio/tools/add-third-party.ps1 -Manifest studio/third-party.json -Dest pkg
 
       - name: Conferir o pacote
@@ -112,6 +112,7 @@ jobs:
             if (-not (Test-Path "$pkg/$f")) { throw "faltando no pacote: $f" }
           }
           Get-ChildItem "$pkg/obs-plugins/64bit" | ForEach-Object { Write-Host "  plugin: $($_.Name)" }
+          Get-ChildItem "$pkg/plugins" -Directory -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  plugin (OBS 33): $($_.Name)" }
           Get-ChildItem "$pkg/core" -Directory -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  core: $($_.Name)" }
           $size = (Get-ChildItem $pkg -Recurse | Measure-Object Length -Sum).Sum / 1MB
           Write-Host ("tamanho: {0:N0} MB" -f $size)
