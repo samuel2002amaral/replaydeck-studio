@@ -1,0 +1,547 @@
+#include "engine.hpp"
+
+#include <obs-module.h>
+#include <util/base.h>
+#include <util/platform.h>
+
+#include <QCoreApplication>
+#include <QDateTime>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+
+#include <algorithm>
+#include <cstdarg>
+#include <cstdio>
+#include <mutex>
+
+/* ---------- log em arquivo: config/ReplayDeckStudio/logs/AAAA-MM-DD hh-mm-ss.txt ---------- */
+
+static FILE *logFile = nullptr;
+static std::mutex logMutex;
+
+static void logHandler(int level, const char *format, va_list args, void *)
+{
+	char msg[8192];
+	vsnprintf(msg, sizeof(msg), format, args);
+	const char *tag = level <= LOG_ERROR ? "erro" : level <= LOG_WARNING ? "aviso" : level <= LOG_INFO ? "info" : "debug";
+	std::lock_guard<std::mutex> l(logMutex);
+	const QByteArray ts = QTime::currentTime().toString("hh:mm:ss.zzz").toUtf8();
+	if (logFile) {
+		fprintf(logFile, "%s [%s] %s\n", ts.constData(), tag, msg);
+		fflush(logFile);
+	}
+#ifndef NDEBUG
+	fprintf(stderr, "%s [%s] %s\n", ts.constData(), tag, msg);
+#endif
+}
+
+Engine &Engine::get()
+{
+	static Engine e;
+	return e;
+}
+
+QString Engine::typeDisplayName(const char *id)
+{
+	const char *n = obs_source_get_display_name(id);
+	return n ? QString::fromUtf8(n) : QString::fromUtf8(id);
+}
+
+QString Engine::defaultProjectPath() const
+{
+	return cfgDir + "/projeto.rdsproj";
+}
+
+bool Engine::start(QString &error)
+{
+	/* o motor procura módulos e dados a partir da pasta do programa (bin/64bit) */
+	const QString exeDir = QCoreApplication::applicationDirPath();
+	QDir::setCurrent(exeDir);
+
+	/* configurações ficam junto do programa (portátil): <pasta>/config/ReplayDeckStudio */
+	cfgDir = QDir::cleanPath(exeDir + "/../../config/ReplayDeckStudio");
+	if (!QDir().mkpath(cfgDir + "/logs")) {
+		/* pasta do programa sem permissão de escrita: usa a pasta do usuário */
+		cfgDir = QDir::homePath() + "/AppData/Roaming/ReplayDeckStudio";
+		QDir().mkpath(cfgDir + "/logs");
+	}
+	const QString logPath = cfgDir + "/logs/" + QDateTime::currentDateTime().toString("yyyy-MM-dd hh-mm-ss") + ".txt";
+	logFile = fopen(QFile::encodeName(logPath).constData(), "w");
+	base_set_log_handler(logHandler, nullptr);
+	blog(LOG_INFO, "ReplayDeck Studio %s iniciando (motor libobs %s)", RDS_VERSION, obs_get_version_string());
+
+	QDir().mkpath(cfgDir + "/plugin_config");
+	const QByteArray pluginCfg = QFile::encodeName(cfgDir + "/plugin_config");
+	if (!obs_startup("pt-BR", pluginCfg.constData(), nullptr)) {
+		error = "O motor de vídeo não iniciou (obs_startup).";
+		return false;
+	}
+
+	obs_audio_info ai = {};
+	ai.samples_per_sec = 48000;
+	ai.speakers = SPEAKERS_STEREO;
+	if (!obs_reset_audio(&ai)) {
+		error = "Não foi possível iniciar o áudio.";
+		return false;
+	}
+
+	obs_video_info ovi = {};
+#ifdef _WIN32
+	ovi.graphics_module = "libobs-d3d11";
+#else
+	ovi.graphics_module = "libobs-opengl";
+#endif
+	ovi.fps_num = 30;
+	ovi.fps_den = 1;
+	ovi.base_width = baseW;
+	ovi.base_height = baseH;
+	ovi.output_width = baseW;
+	ovi.output_height = baseH;
+	ovi.output_format = VIDEO_FORMAT_NV12;
+	ovi.colorspace = VIDEO_CS_709;
+	ovi.range = VIDEO_RANGE_PARTIAL;
+	ovi.adapter = 0;
+	ovi.gpu_conversion = true;
+	ovi.scale_type = OBS_SCALE_BICUBIC;
+	const int rv = obs_reset_video(&ovi);
+	if (rv != OBS_VIDEO_SUCCESS) {
+		error = rv == OBS_VIDEO_NOT_SUPPORTED
+				? "A placa de vídeo não é compatível (precisa de DirectX 11)."
+				: QString("Não foi possível iniciar o vídeo (código %1). Atualize o driver da placa de vídeo.").arg(rv);
+		return false;
+	}
+
+	/* só os módulos do motor; os que dependem da interface do OBS ficam de fora */
+	static const char *modules[] = {"win-capture", "win-dshow", "win-wasapi", "obs-ffmpeg", "obs-outputs", "obs-x264",
+					"obs-nvenc", "obs-qsv11", "image-source", "obs-filters", "obs-transitions",
+					"obs-text", "text-freetype2", "rtmp-services", "obs-browser", "vlc-video",
+					"decklink", "aja", "nv-filters", "obs-vst", "obs-webrtc", "coreaudio-encoder",
+					"linux-capture", "linux-v4l2", "linux-pulseaudio", "linux-alsa", "linux-pipewire"};
+	for (const char *m : modules)
+		obs_add_safe_module(m);
+#if LIBOBS_API_MAJOR_VER >= 32
+	obs_load_core_modules();
+#else
+	obs_load_all_modules();
+#endif
+	obs_post_load_modules();
+	obs_log_loaded_modules();
+
+	cutTr = obs_source_create_private("cut_transition", "Corte", nullptr);
+	fadeTr = obs_source_create_private("fade_transition", "Fade", nullptr);
+	if (!cutTr || !fadeTr) {
+		error = "As transições do motor não carregaram (módulo obs-transitions).";
+		return false;
+	}
+	obs_scene_t *black = obs_scene_create_private("Preto (FTB)");
+	blackScene = obs_scene_get_source(black); /* a cena é dona da fonte: guardamos a referência */
+	obs_source_get_ref(blackScene);
+	obs_scene_release(black);
+
+	activeTr = fadeTr;
+	obs_set_output_source(0, fadeTr);
+	started = true;
+
+	QString p = defaultProjectPath();
+	if (QFile::exists(p))
+		loadProject(p);
+	projPath = p;
+	return true;
+}
+
+void Engine::stop()
+{
+	if (!started)
+		return;
+	saveProject(projPath.isEmpty() ? defaultProjectPath() : projPath);
+	for (int ch = 0; ch < 64; ch++)
+		obs_set_output_source(ch, nullptr);
+	clearAll();
+	cutTr = nullptr;
+	fadeTr = nullptr;
+	stingerTr = nullptr;
+	blackScene = nullptr;
+	activeTr = nullptr;
+	started = false;
+	obs_shutdown();
+	blog(LOG_INFO, "ReplayDeck Studio encerrado");
+	base_set_log_handler(nullptr, nullptr);
+	if (logFile) {
+		fclose(logFile);
+		logFile = nullptr;
+	}
+}
+
+/* ---------- entradas ---------- */
+
+Input *Engine::input(int id) const
+{
+	for (Input *in : list)
+		if (in->id == id)
+			return in;
+	return nullptr;
+}
+
+int Engine::indexOf(int id) const
+{
+	for (int i = 0; i < list.size(); i++)
+		if (list[i]->id == id)
+			return i;
+	return -1;
+}
+
+static void fitToCanvas(obs_sceneitem_t *item, uint32_t w, uint32_t h)
+{
+	vec2 bounds;
+	vec2_set(&bounds, (float)w, (float)h);
+	vec2 pos;
+	vec2_zero(&pos);
+	obs_sceneitem_set_pos(item, &pos);
+	obs_sceneitem_set_alignment(item, OBS_ALIGN_LEFT | OBS_ALIGN_TOP);
+	obs_sceneitem_set_bounds_type(item, OBS_BOUNDS_SCALE_INNER);
+	obs_sceneitem_set_bounds_alignment(item, OBS_ALIGN_CENTER);
+	obs_sceneitem_set_bounds(item, &bounds);
+}
+
+static Input *wrapSource(int id, const QString &name, obs_source_t *src, uint32_t w, uint32_t h)
+{
+	auto *in = new Input();
+	in->id = id;
+	in->name = name;
+	in->source = src; /* fica com a referência */
+	const QByteArray sceneName = ("entrada-" + QString::number(id)).toUtf8();
+	obs_scene_t *scene = obs_scene_create_private(sceneName.constData());
+	obs_sceneitem_t *item = obs_scene_add(scene, src);
+	fitToCanvas(item, w, h);
+	in->scene = obs_scene_get_source(scene);
+	obs_source_get_ref(in->scene);
+	obs_scene_release(scene);
+	/* como no vMix: toda entrada fica ativa (imagem ao vivo na miniatura) */
+	obs_source_inc_showing(in->scene);
+	return in;
+}
+
+Input *Engine::addInput(const QString &sourceType, const QString &name, obs_data_t *settings)
+{
+	const int id = nextId++;
+	const QByteArray type = sourceType.toUtf8();
+	const QByteArray srcName = (name + " #" + QString::number(id)).toUtf8();
+	obs_source_t *src = obs_source_create_private(type.constData(), srcName.constData(), settings);
+	if (!src) {
+		blog(LOG_ERROR, "não foi possível criar a entrada do tipo %s", type.constData());
+		return nullptr;
+	}
+	nextId--;
+	return adoptSource(src, name);
+}
+
+Input *Engine::adoptSource(obs_source_t *src, const QString &name)
+{
+	if (!src)
+		return nullptr;
+	const int id = nextId++;
+	Input *in = wrapSource(id, name, src, baseW, baseH);
+	list.append(in);
+	blog(LOG_INFO, "entrada %d criada: %s (%s)", id, name.toUtf8().constData(), obs_source_get_id(src));
+	emit inputsChanged();
+	if (!pvw)
+		setPreview(id);
+	return in;
+}
+
+void Engine::removeInput(int id)
+{
+	const int idx = indexOf(id);
+	if (idx < 0)
+		return;
+	for (int ch = 1; ch <= 4; ch++) {
+		if (ov[ch] == id) {
+			obs_set_output_source(ch, nullptr);
+			ov[ch] = 0;
+		}
+	}
+	if (pgm == id) {
+		pgm = 0;
+		obs_transition_set(activeTr, nullptr);
+	}
+	if (pvw == id)
+		pvw = 0;
+	Input *in = list.takeAt(idx);
+	obs_source_dec_showing(in->scene);
+	obs_source_remove(in->source);
+	delete in;
+	emit inputsChanged();
+	emit busChanged();
+}
+
+void Engine::renameInput(int id, const QString &name)
+{
+	if (Input *in = input(id)) {
+		in->name = name;
+		emit inputChanged(id);
+		emit busChanged();
+	}
+}
+
+void Engine::moveInput(int id, int newIndex)
+{
+	const int idx = indexOf(id);
+	if (idx < 0 || newIndex < 0 || newIndex >= list.size() || idx == newIndex)
+		return;
+	list.move(idx, newIndex);
+	emit inputsChanged();
+}
+
+void Engine::setInputAudio(int id, bool on)
+{
+	if (Input *in = input(id)) {
+		in->audioOn = on;
+		obs_source_set_muted(in->source, !on);
+		emit inputChanged(id);
+	}
+}
+
+void Engine::setInputLoop(int id, bool on)
+{
+	Input *in = input(id);
+	if (!in)
+		return;
+	in->loop = on;
+	if (strcmp(obs_source_get_unversioned_id(in->source), "ffmpeg_source") == 0) {
+		OBSDataAutoRelease s = obs_data_create();
+		obs_data_set_bool(s, "looping", on);
+		obs_source_update(in->source, s);
+	}
+	emit inputChanged(id);
+}
+
+/* ---------- prévia, programa e transições ---------- */
+
+void Engine::setPreview(int id)
+{
+	if (id && !input(id))
+		return;
+	pvw = id;
+	emit busChanged();
+}
+
+obs_source_t *Engine::transitionFor(TransitionKind kind)
+{
+	switch (kind) {
+	case TransitionKind::Cut:
+		return cutTr;
+	case TransitionKind::Stinger:
+		return stingerTr ? stingerTr.Get() : fadeTr.Get();
+	default:
+		return fadeTr;
+	}
+}
+
+void Engine::setProgramScene(obs_source_t *scene, TransitionKind kind)
+{
+	obs_source_t *tr = transitionFor(kind);
+	if (tr != activeTr) {
+		obs_transition_swap_begin(tr, activeTr);
+		obs_set_output_source(0, tr);
+		obs_transition_swap_end(tr, activeTr);
+		activeTr = tr;
+	}
+	if (kind == TransitionKind::Cut)
+		obs_transition_set(tr, scene);
+	else
+		obs_transition_start(tr, OBS_TRANSITION_MODE_AUTO, (uint32_t)durationMs, scene);
+}
+
+void Engine::transition(TransitionKind kind)
+{
+	if (kind == TransitionKind::FadeToBlack) {
+		ftb = !ftb;
+		Input *p = input(pgm);
+		setProgramScene(ftb ? blackScene.Get() : (p ? p->scene.Get() : blackScene.Get()), TransitionKind::Fade);
+		emit busChanged();
+		return;
+	}
+	Input *next = input(pvw);
+	if (!next)
+		return;
+	ftb = false;
+	const int old = pgm;
+	pgm = pvw;
+	pvw = old ? old : pvw; /* como no vMix: o que saiu do ar volta para a prévia */
+	setProgramScene(next->scene, kind);
+	emit busChanged();
+}
+
+void Engine::quickPlay(int id)
+{
+	Input *in = input(id);
+	if (!in)
+		return;
+	ftb = false;
+	pgm = id;
+	setProgramScene(in->scene, TransitionKind::Fade);
+	emit busChanged();
+}
+
+void Engine::cutTo(int id)
+{
+	Input *in = input(id);
+	if (!in)
+		return;
+	ftb = false;
+	pgm = id;
+	setProgramScene(in->scene, TransitionKind::Cut);
+	emit busChanged();
+}
+
+void Engine::tbarMove(float t)
+{
+	Input *next = input(pvw);
+	if (!next)
+		return;
+	if (!manual) {
+		if (activeTr != fadeTr.Get()) {
+			obs_transition_swap_begin(fadeTr, activeTr);
+			obs_set_output_source(0, fadeTr);
+			obs_transition_swap_end(fadeTr, activeTr);
+			activeTr = fadeTr;
+		}
+		obs_transition_start(fadeTr, OBS_TRANSITION_MODE_MANUAL, 0, next->scene);
+		manual = true;
+	}
+	obs_transition_set_manual_time(fadeTr, std::clamp(t, 0.0f, 1.0f));
+}
+
+void Engine::tbarRelease(float t)
+{
+	if (!manual)
+		return;
+	manual = false;
+	Input *next = input(pvw);
+	Input *cur = input(pgm);
+	if (t >= 0.5f && next) {
+		obs_transition_set(fadeTr, next->scene);
+		ftb = false;
+		const int old = pgm;
+		pgm = pvw;
+		pvw = old ? old : pvw;
+	} else {
+		obs_transition_set(fadeTr, cur ? cur->scene.Get() : nullptr);
+	}
+	emit busChanged();
+}
+
+void Engine::setTransitionMs(int ms)
+{
+	durationMs = qBound(50, ms, 10000);
+}
+
+int Engine::overlay(int channel) const
+{
+	return channel >= 1 && channel <= 4 ? ov[channel] : 0;
+}
+
+void Engine::toggleOverlay(int channel, int id)
+{
+	if (channel < 1 || channel > 4)
+		return;
+	if (ov[channel] == id || !input(id)) {
+		obs_set_output_source(channel, nullptr);
+		ov[channel] = 0;
+	} else {
+		obs_set_output_source(channel, input(id)->scene);
+		ov[channel] = id;
+	}
+	emit busChanged();
+}
+
+/* ---------- projeto ---------- */
+
+void Engine::clearAll()
+{
+	for (int ch = 1; ch <= 4; ch++) {
+		obs_set_output_source(ch, nullptr);
+		ov[ch] = 0;
+	}
+	if (activeTr)
+		obs_transition_set(activeTr, nullptr);
+	pvw = pgm = 0;
+	for (Input *in : list) {
+		obs_source_dec_showing(in->scene);
+		obs_source_remove(in->source);
+		delete in;
+	}
+	list.clear();
+}
+
+bool Engine::saveProject(const QString &path)
+{
+	if (!started)
+		return false;
+	OBSDataAutoRelease root = obs_data_create();
+	obs_data_set_int(root, "versao", 1);
+	OBSDataArrayAutoRelease arr = obs_data_array_create();
+	for (Input *in : list) {
+		OBSDataAutoRelease o = obs_data_create();
+		obs_data_set_int(o, "id", in->id);
+		obs_data_set_string(o, "nome", in->name.toUtf8().constData());
+		obs_data_set_bool(o, "loop", in->loop);
+		obs_data_set_bool(o, "audio", in->audioOn);
+		OBSDataAutoRelease src = obs_save_source(in->source);
+		obs_data_set_obj(o, "fonte", src);
+		obs_data_array_push_back(arr, o);
+	}
+	obs_data_set_array(root, "entradas", arr);
+	obs_data_set_int(root, "previa", pvw);
+	obs_data_set_int(root, "programa", pgm);
+	obs_data_set_int(root, "transicao_ms", durationMs);
+	const QByteArray p = QFile::encodeName(path);
+	const bool ok = obs_data_save_json_safe(root, p.constData(), "tmp", "bak");
+	if (ok)
+		projPath = path;
+	blog(ok ? LOG_INFO : LOG_ERROR, "projeto %s: %s", ok ? "salvo" : "NÃO salvo", p.constData());
+	return ok;
+}
+
+bool Engine::loadProject(const QString &path)
+{
+	const QByteArray p = QFile::encodeName(path);
+	OBSDataAutoRelease root = obs_data_create_from_json_file_safe(p.constData(), "bak");
+	if (!root) {
+		blog(LOG_ERROR, "projeto não abriu: %s", p.constData());
+		return false;
+	}
+	clearAll();
+	nextId = 1;
+	OBSDataArrayAutoRelease arr = obs_data_get_array(root, "entradas");
+	const size_t n = obs_data_array_count(arr);
+	for (size_t i = 0; i < n; i++) {
+		OBSDataAutoRelease o = obs_data_array_item(arr, i);
+		OBSDataAutoRelease srcData = obs_data_get_obj(o, "fonte");
+		obs_data_erase(srcData, "uuid"); /* a fonte antiga pode ainda estar saindo da memória */
+		obs_source_t *src = obs_load_private_source(srcData);
+		if (!src) {
+			blog(LOG_WARNING, "entrada %zu do projeto não pôde ser recriada (tipo indisponível?)", i);
+			continue;
+		}
+		const int id = (int)obs_data_get_int(o, "id");
+		Input *in = wrapSource(id, QString::fromUtf8(obs_data_get_string(o, "nome")), src, baseW, baseH);
+		in->loop = obs_data_get_bool(o, "loop");
+		in->audioOn = !obs_data_has_user_value(o, "audio") || obs_data_get_bool(o, "audio");
+		list.append(in);
+		nextId = std::max(nextId, id + 1);
+	}
+	if (obs_data_has_user_value(root, "transicao_ms"))
+		setTransitionMs((int)obs_data_get_int(root, "transicao_ms"));
+	projPath = path;
+	emit inputsChanged();
+
+	const int savedPgm = (int)obs_data_get_int(root, "programa");
+	if (input(savedPgm))
+		cutTo(savedPgm);
+	setPreview(input((int)obs_data_get_int(root, "previa")) ? (int)obs_data_get_int(root, "previa")
+								 : (list.isEmpty() ? 0 : list.first()->id));
+	blog(LOG_INFO, "projeto aberto: %s (%d entradas)", p.constData(), (int)list.size());
+	return true;
+}

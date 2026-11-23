@@ -1,12 +1,18 @@
-## ReplayDeck Studio
+## ReplayDeck Studio — fase 2 (base do programa)
 
-Sistema de transmissão completo, baseado no OBS Studio, com tudo já dentro — não precisa instalar plugin nenhum.
+Programa próprio, com a tela aprovada (estilo vMix). Do OBS fica só o motor de vídeo por baixo.
 
-**Embutido:**
-- **ReplayDeck**: replay instantâneo multicâmera, câmera lenta, zoom, canais A/B (saída para o VAR), eventos, títulos GT e API compatível com vMix
-- **Placar de Futsal**: placar, cronômetro regressivo, faltas acumuladas, pedidos de tempo, prorrogação e pênaltis, com atalhos e controle remoto
-- **Transições avançadas**, **gravação por fonte**, **automação de cenas** e **multistream**
+**Já funciona nesta versão**
+- Tela única: Prévia, Programa, transições (Quick Play, Cortar, Fade, FTB e T-bar) e overlays 1 a 4
+- Entradas com imagem ao vivo: clique = prévia; botões 1–4 (overlay), GO, Cut, Áudio e Loop
+- Engrenagem (ou duplo clique) abre a entrada ao vivo numa janela, com todas as opções, sem mexer na prévia nem no programa
+- Adicionar entrada: câmera/placa de captura, DeckLink, vídeo/link/celular (SRT/RTMP), imagem, página web, texto, cor, captura de tela/janela/jogo, microfone
+- Projeto salvo sozinho ao fechar; Arquivo › Abrir / Salvar como
 
-**Como instalar:** baixe o `Instalador`, rode e abra o *ReplayDeck Studio* pelo menu Iniciar. Ou use o `Portatil.zip`: extraia numa pasta e abra `bin\64bit\obs64.exe`.
+**Ainda não (aparece no lugar, avisando a fase)**
+- Fase 3: mixer de áudio, transmissão, gravação, configurações, saída externa (monitor do VAR)
+- Fase 4: replay instantâneo dentro do painel da direita
+- Fase 5: títulos GT · Fase 6: MultiCorder, PTZ, lista, fone com o árbitro
 
-As configurações ficam na pasta do programa (modo portátil): o seu OBS normal não é alterado.
+**Instalar:** baixe o `Instalador`, abra (Mais informações › Executar assim mesmo) e use o atalho *ReplayDeck Studio*.
+Se algo der errado: Ajuda › Abrir pasta de logs e mande o arquivo mais recente.

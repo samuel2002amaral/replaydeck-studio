@@ -1,8 +1,8 @@
 ; Instalador do ReplayDeck Studio (Inno Setup 6)
 ; iscc /DMyVersion=1.0.0 /DSrcDir=<pasta do programa montado> studio.iss
 ;
-; Instala na pasta do usuário (sem pedir administrador) e em modo portátil:
-; configurações, cenas e perfis ficam em <pasta do programa>\config, separados do OBS normal.
+; Instala na pasta do usuário (sem pedir administrador).
+; Projeto e configurações ficam em <pasta do programa>\config\ReplayDeckStudio.
 
 #ifndef MyVersion
   #define MyVersion "1.0.0"
@@ -28,7 +28,7 @@ OutputBaseFilename=ReplayDeck-Studio-{#MyVersion}-Instalador
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
-UninstallDisplayIcon={app}\bin\64bit\obs64.exe
+UninstallDisplayIcon={app}\bin\64bit\ReplayDeckStudio.exe
 CloseApplications=yes
 LicenseFile={#SrcDir}\LICENCA.txt
 
@@ -44,20 +44,26 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "{#SrcDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [InstallDelete]
-; versão 1.0.0 tinha o replay e o placar como plugins: apaga para não carregar duas vezes
-Type: files; Name: "{app}\obs-plugins\64bit\replaydeck.dll"
-Type: files; Name: "{app}\obs-plugins\64bit\futsal-placar.dll"
-Type: filesandordirs; Name: "{app}\data\obs-plugins\replaydeck"
-Type: filesandordirs; Name: "{app}\data\obs-plugins\futsal-placar"
+; versões 1.x eram o OBS com plugins: tira o que não faz mais parte do programa
+Type: files; Name: "{app}\bin\64bit\obs64.exe"
+Type: files; Name: "{app}\portable_mode.txt"
+Type: files; Name: "{app}\PLUGINS-INCLUIDOS.txt"
+Type: filesandordirs; Name: "{app}\obs-plugins"
+Type: filesandordirs; Name: "{app}\plugins"
+Type: filesandordirs; Name: "{app}\data\obs-plugins"
+Type: filesandordirs; Name: "{app}\data\obs-studio"
+Type: filesandordirs; Name: "{app}\core\replaydeck"
+Type: filesandordirs; Name: "{app}\core\futsal-placar"
+Type: filesandordirs; Name: "{app}\core\frontend-tools"
 
 [Dirs]
 Name: "{app}\config"
 
 [Icons]
-Name: "{group}\{#MyName}"; Filename: "{app}\bin\64bit\obs64.exe"; WorkingDir: "{app}\bin\64bit"
+Name: "{group}\{#MyName}"; Filename: "{app}\bin\64bit\ReplayDeckStudio.exe"; WorkingDir: "{app}\bin\64bit"
 Name: "{group}\Pasta de configurações"; Filename: "{app}\config"
 Name: "{group}\{cm:UninstallProgram,{#MyName}}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#MyName}"; Filename: "{app}\bin\64bit\obs64.exe"; WorkingDir: "{app}\bin\64bit"; Tasks: desktopicon
+Name: "{autodesktop}\{#MyName}"; Filename: "{app}\bin\64bit\ReplayDeckStudio.exe"; WorkingDir: "{app}\bin\64bit"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\bin\64bit\obs64.exe"; WorkingDir: "{app}\bin\64bit"; Description: "{cm:LaunchProgram,{#MyName}}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\bin\64bit\ReplayDeckStudio.exe"; WorkingDir: "{app}\bin\64bit"; Description: "{cm:LaunchProgram,{#MyName}}"; Flags: nowait postinstall skipifsilent

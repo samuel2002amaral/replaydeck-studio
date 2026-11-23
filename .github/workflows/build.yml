@@ -1,8 +1,8 @@
 name: Build
 
-# Compila o ReplayDeck Studio completo para Windows:
-# OBS Studio (código oficial) + ReplayDeck + Placar de Futsal embutidos + plugins de terceiros.
-# Um commit com [release] na mensagem (ou rodar manualmente com oficial=true) publica na página de Releases.
+# Compila o ReplayDeck Studio para Windows: a interface própria (pasta app/)
+# sobre o motor libobs do OBS Studio, compilados juntos.
+# Commit com [release] na mensagem (ou rodar manualmente com oficial=true) publica na página de Releases.
 on:
   push:
     branches: [main]
@@ -12,10 +12,6 @@ on:
         description: "Publicar como versão oficial"
         type: boolean
         default: false
-      replaydeck_ref:
-        description: "Versão do ReplayDeck (branch, tag ou commit)"
-        type: string
-        default: ""
 
 permissions:
   contents: write
@@ -41,23 +37,14 @@ jobs:
           Get-Content studio/versions.env | Where-Object { $_ -match '^\s*[A-Z_]+=' } | ForEach-Object { $_.Trim() | Out-File -Append $env:GITHUB_ENV }
           $v = (Get-Content studio/VERSION -Raw).Trim()
           "STUDIO_VERSION=$v" | Out-File -Append $env:GITHUB_ENV
-          if ("${{ github.event.inputs.replaydeck_ref }}" -ne "") { "REPLAYDECK_REF=${{ github.event.inputs.replaydeck_ref }}" | Out-File -Append $env:GITHUB_ENV }
 
-      - name: Baixar código do OBS e do ReplayDeck
-        run: |
-          git clone --depth 1 --branch $env:OBS_VERSION --recursive --shallow-submodules https://github.com/obsproject/obs-studio.git obs
-          git clone https://github.com/$env:REPLAYDECK_REPO.git replaydeck
-          git -C replaydeck checkout $env:REPLAYDECK_REF
-          $rd = git -C replaydeck rev-parse --short HEAD
-          $rdv = (Select-String -Path replaydeck/CMakeLists.txt -Pattern 'project\(ReplayDeck VERSION ([0-9.]+)').Matches[0].Groups[1].Value
-          "REPLAYDECK_COMMIT=$rd" | Out-File -Append $env:GITHUB_ENV
-          "REPLAYDECK_VERSION=$rdv" | Out-File -Append $env:GITHUB_ENV
-          Write-Host "OBS $env:OBS_VERSION  |  ReplayDeck $rdv ($rd)"
+      - name: Baixar o motor (código do OBS)
+        run: git clone --depth 1 --branch $env:OBS_VERSION --recursive --shallow-submodules https://github.com/obsproject/obs-studio.git obs
 
-      - name: Embutir módulos e marca
-        run: python studio/tools/patch-obs.py obs studio replaydeck
+      - name: Incluir o ReplayDeck Studio no build
+        run: python studio/tools/patch-obs.py obs studio
 
-      - name: Cache das dependências do OBS (Qt, FFmpeg, CEF)
+      - name: Cache das dependências (Qt, FFmpeg, CEF)
         uses: actions/cache@v4
         with:
           path: obs/.deps
@@ -65,9 +52,9 @@ jobs:
 
       - name: Configurar
         working-directory: obs
-        run: cmake --preset windows-x64 -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF "-DOBS_VERSION_OVERRIDE=$env:OBS_VERSION" "-DPLUGIN_BUILD=studio-${{ github.run_number }}"
+        run: cmake --preset windows-x64 -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF "-DOBS_VERSION_OVERRIDE=$env:OBS_VERSION" "-DRDS_VERSION=$env:STUDIO_VERSION"
 
-      - name: Compilar (OBS inteiro + módulos embutidos)
+      - name: Compilar
         working-directory: obs
         run: cmake --build build_x64 --config RelWithDebInfo --parallel -- /consoleLoggerParameters:Summary /noLogo
 
@@ -77,53 +64,37 @@ jobs:
           cmake --install obs/build_x64 --prefix $pkg --config RelWithDebInfo
           if ($LASTEXITCODE -ne 0) { throw "install falhou" }
 
-          # módulos do sistema (ReplayDeck e Placar) já vêm instalados pelo OBS em core/<nome>
-          foreach ($mod in @('replaydeck', 'futsal-placar')) {
-            if (-not (Test-Path "$pkg/core/$mod/$mod.dll")) { throw "módulo do sistema $mod não foi instalado em core/" }
-            Write-Host "módulo do sistema: core/$mod"
+          # a interface do OBS não faz parte do programa: fica só o motor
+          Remove-Item -Force -ErrorAction SilentlyContinue "$pkg/bin/64bit/obs64.exe", "$pkg/bin/64bit/obs64.pdb"
+          foreach ($m in @('frontend-tools', 'aja-output-ui', 'decklink-output-ui', 'decklink-captions', 'obs-websocket')) {
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "$pkg/core/$m"
           }
+          Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "$pkg/data/obs-studio"
+          Get-ChildItem $pkg -Recurse -Filter *.pdb | Remove-Item -Force
 
-          # modo portátil: configurações ficam na pasta do programa, separadas do OBS normal
-          "ReplayDeck Studio" | Out-File "$pkg/portable_mode.txt" -Encoding ascii
-
-          # runtime do Visual C++ junto do programa, da MESMA versão do compilador usado (a mais nova instalada)
+          # runtime do Visual C++ junto do programa, da mesma versão do compilador
           $vs = & "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe" -latest -property installationPath
           $redist = Get-ChildItem "$vs/VC/Redist/MSVC" -Directory | Where-Object { $_.Name -match '^\d+\.\d+\.\d+$' } |
             Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
           $crt = if ($redist) { Get-ChildItem "$($redist.FullName)/x64" -Directory -Filter 'Microsoft.VC*.CRT' | Select-Object -First 1 }
           if ($crt) { Copy-Item "$($crt.FullName)/*.dll" "$pkg/bin/64bit/" -Force; Write-Host "runtime VC++: $($crt.FullName)" }
-          else { Write-Host "::warning::runtime do Visual C++ não encontrado (o PC precisa do vc_redist)" }
+          else { Write-Host "::warning::runtime do Visual C++ não encontrado" }
 
-      - name: Plugins de terceiros
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RDS_STRICT: "1"
-        run: pwsh studio/tools/add-third-party.ps1 -Manifest studio/third-party.json -Dest pkg
+          Copy-Item studio/installer/LEIA-ME.txt "$pkg/LEIA-ME.txt"
+          Copy-Item obs/COPYING "$pkg/LICENCA.txt"
+          "ReplayDeck Studio $env:STUDIO_VERSION`nMotor: libobs (OBS Studio $env:OBS_VERSION)`nBuild ${{ github.run_number }} - ${{ github.sha }}" | Out-File "$pkg/VERSAO.txt" -Encoding utf8
 
       - name: Conferir o pacote
         run: |
           $pkg = "$PWD/pkg"
-          foreach ($f in @('bin/64bit/obs64.exe', 'bin/64bit/obs.dll', 'core/replaydeck/replaydeck.dll', 'core/futsal-placar/futsal-placar.dll',
-                           'core/futsal-placar/data/locale/pt-BR.ini', 'core/replaydeck/data', 'portable_mode.txt')) {
+          foreach ($f in @('bin/64bit/ReplayDeckStudio.exe', 'bin/64bit/obs.dll', 'bin/64bit/Qt6Widgets.dll', 'bin/64bit/platforms/qwindows.dll',
+                           'core/win-dshow', 'core/obs-ffmpeg', 'core/obs-transitions', 'core/image-source', 'data/libobs')) {
             if (-not (Test-Path "$pkg/$f")) { throw "faltando no pacote: $f" }
           }
-          Get-ChildItem "$pkg/obs-plugins/64bit" | ForEach-Object { Write-Host "  plugin: $($_.Name)" }
-          Get-ChildItem "$pkg/plugins" -Directory -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  plugin (OBS 33): $($_.Name)" }
-          Get-ChildItem "$pkg/core" -Directory -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  core: $($_.Name)" }
+          if (Test-Path "$pkg/bin/64bit/obs64.exe") { throw "a interface do OBS não devia estar no pacote" }
+          Get-ChildItem "$pkg/core" -Directory | ForEach-Object { Write-Host "  motor: $($_.Name)" }
           $size = (Get-ChildItem $pkg -Recurse | Measure-Object Length -Sum).Sum / 1MB
           Write-Host ("tamanho: {0:N0} MB" -f $size)
-
-      - name: Textos e licença
-        run: |
-          Copy-Item studio/installer/LEIA-ME.txt pkg/LEIA-ME.txt
-          Copy-Item obs/COPYING pkg/LICENCA.txt
-          @"
-          ReplayDeck Studio $env:STUDIO_VERSION
-          OBS Studio $env:OBS_VERSION
-          ReplayDeck $env:REPLAYDECK_VERSION ($env:REPLAYDECK_COMMIT)
-          Placar de Futsal (embutido)
-          Build ${{ github.run_number }} - ${{ github.sha }}
-          "@ | Out-File pkg/VERSAO.txt -Encoding utf8
 
       - name: Zip portátil e instalador
         run: |
@@ -147,6 +118,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $notes = (Get-Content studio/installer/release-notes.md -Raw) + "`n`n---`n" + (Get-Content pkg/VERSAO.txt -Raw) + "`n`nPlugins de terceiros incluídos:`n" + ((Get-Content pkg/PLUGINS-INCLUIDOS.txt | ForEach-Object { "- $_" }) -join "`n")
+          $notes = (Get-Content studio/installer/release-notes.md -Raw) + "`n`n---`n" + (Get-Content pkg/VERSAO.txt -Raw)
           $notes | Out-File notes.md -Encoding utf8
           gh release create "v$env:STUDIO_VERSION" (Get-ChildItem dist/*).FullName --target $env:GITHUB_SHA --repo $env:GITHUB_REPOSITORY --title "ReplayDeck Studio $env:STUDIO_VERSION" --notes-file notes.md --latest

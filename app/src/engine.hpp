@@ -1,0 +1,106 @@
+/* Motor do ReplayDeck Studio: tudo que fala com o libobs (o motor de vídeo do OBS).
+ * A interface só conversa com esta classe.
+ *
+ * Modelo (igual ao vMix):
+ *  - cada ENTRADA é uma cena do libobs com uma fonte principal (câmera, vídeo, imagem...);
+ *  - PRÉVIA e PROGRAMA apontam para entradas;
+ *  - o canal de saída 0 é a transição (Cortar, Fade, Stinger...) que mostra o Programa;
+ *  - os canais 1 a 4 são os OVERLAYS, desenhados por cima do Programa. */
+#pragma once
+
+#include <obs.hpp>
+
+#include <QObject>
+#include <QString>
+#include <QVector>
+
+struct Input {
+	int id = 0; /* único e estável (usado no projeto salvo) */
+	QString name;
+	OBSSourceAutoRelease scene; /* a cena da entrada */
+	OBSSourceAutoRelease source; /* a fonte principal dentro da cena */
+	bool loop = false;
+	bool audioOn = true;
+};
+
+enum class TransitionKind { Cut, Fade, Stinger, FadeToBlack };
+
+class Engine : public QObject {
+	Q_OBJECT
+
+public:
+	static Engine &get();
+
+	/* inicialização: devolve false com a mensagem em error */
+	bool start(QString &error);
+	void stop();
+
+	uint32_t baseWidth() const { return baseW; }
+	uint32_t baseHeight() const { return baseH; }
+	QString configDir() const { return cfgDir; }
+
+	/* entradas */
+	const QVector<Input *> &inputs() const { return list; }
+	Input *input(int id) const;
+	int indexOf(int id) const;
+	Input *addInput(const QString &sourceType, const QString &name, obs_data_t *settings = nullptr);
+	Input *adoptSource(obs_source_t *source, const QString &name); /* fica com a referência */
+	void removeInput(int id);
+	void renameInput(int id, const QString &name);
+	void moveInput(int id, int newIndex);
+	void setInputAudio(int id, bool on);
+	void setInputLoop(int id, bool on);
+
+	/* prévia e programa */
+	int previewId() const { return pvw; }
+	int programId() const { return pgm; }
+	void setPreview(int id);
+	void transition(TransitionKind kind); /* prévia vai para o programa e o programa vira prévia */
+	void quickPlay(int id);               /* entrada direto para o programa, com fade */
+	void cutTo(int id);                   /* entrada direto para o programa, corte seco */
+	int transitionMs() const { return durationMs; }
+	void setTransitionMs(int ms);
+	bool fadedToBlack() const { return ftb; }
+	/* T-bar: 0..1 enquanto arrasta; ao soltar, passa da metade = troca, senão volta */
+	void tbarMove(float t);
+	void tbarRelease(float t);
+
+	/* overlays 1..4 (por cima do programa) */
+	int overlay(int channel) const;
+	void toggleOverlay(int channel, int id);
+
+	/* projeto */
+	bool saveProject(const QString &path);
+	bool loadProject(const QString &path);
+	QString projectPath() const { return projPath; }
+	QString defaultProjectPath() const;
+
+	static QString typeDisplayName(const char *id);
+
+signals:
+	void inputsChanged();
+	void inputChanged(int id);
+	void busChanged(); /* prévia, programa ou overlays mudaram */
+
+private:
+	Engine() = default;
+	void setProgramScene(obs_source_t *scene, TransitionKind kind);
+	void clearAll();
+	obs_source_t *transitionFor(TransitionKind kind);
+
+	uint32_t baseW = 1920, baseH = 1080;
+	QString cfgDir;
+	QString projPath;
+	QVector<Input *> list;
+	int nextId = 1;
+	int pvw = 0, pgm = 0;
+	int ov[5] = {0, 0, 0, 0, 0};
+	int durationMs = 500;
+	bool ftb = false;
+	bool started = false;
+	bool manual = false;
+
+	OBSSourceAutoRelease cutTr, fadeTr, stingerTr;
+	OBSSourceAutoRelease blackScene;
+	obs_source_t *activeTr = nullptr;
+};
