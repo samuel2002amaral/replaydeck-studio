@@ -1,5 +1,6 @@
 /* ReplayDeck Studio — programa de transmissão ao vivo com replay, sobre o motor libobs. */
 #include "engine.hpp"
+#include "replay-host.hpp"
 #include "main-window.hpp"
 #include "dialogs.hpp"
 #include "style.hpp"
@@ -97,6 +98,7 @@ int main(int argc, char *argv[])
 #endif
 
 	QString error;
+	Engine::beforeProjectLoad = replayhost::registerTypes; /* entradas Replay A/B do projeto */
 	if (!Engine::get().start(error)) {
 		QMessageBox::critical(nullptr, "ReplayDeck Studio", "Não foi possível iniciar.\n\n" + error +
 								     "\n\nO arquivo de log está em config\\ReplayDeckStudio\\logs.");
@@ -110,6 +112,8 @@ int main(int argc, char *argv[])
 		w.showMaximized();
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST"))
 			runSelfTest(w);
+		if (qEnvironmentVariableIsSet("RDS_SELFTEST_REPLAY"))
+			replayhost::selfTest(&w);
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST_NEW")) {
 			/* teste visual da janela Nova entrada (RDS_SELFTEST_NEW=tipo, RDS_SELFTEST_SHOT=arquivo) */
 			QTimer::singleShot(2000, [&w] {
@@ -131,7 +135,9 @@ int main(int argc, char *argv[])
 			QTimer::singleShot(3000, [&w] { w.close(); });
 		}
 		ret = app.exec();
+		replayhost::shutdown(); /* para a gravação do replay antes de fechar a janela */
 	}
+	replayhost::finish();
 	Engine::get().stop();
 	return ret;
 }

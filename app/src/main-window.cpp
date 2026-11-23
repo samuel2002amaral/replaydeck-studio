@@ -1,4 +1,5 @@
 #include "main-window.hpp"
+#include "replay-host.hpp"
 #include "dialogs.hpp"
 #include "engine.hpp"
 #include "input-tile.hpp"
@@ -330,9 +331,7 @@ QWidget *MainWindow::buildRightPanel()
 	rightTabs = new QTabWidget;
 	rightTabs->setObjectName("rightTabs");
 	rightTabs->setMinimumWidth(560);
-	rightTabs->addTab(comingSoon("Replay instantâneo",
-				     "O replay entra aqui, neste lugar, com o mesmo painel do ReplayDeck.\nChega na fase 4."),
-			  "Replay instantâneo");
+	rightTabs->addTab(replayhost::start(this), "Replay instantâneo");
 	rightTabs->addTab(comingSoon("Mixer de áudio", "Chega na fase 3, junto com transmissão e gravação."), "Mixer de áudio");
 	rightTabs->addTab(comingSoon("Títulos GT", "Chega na fase 5."), "Títulos GT");
 	rightTabs->addTab(comingSoon("PTZ", "Chega na fase 6."), "PTZ");
@@ -421,7 +420,10 @@ void MainWindow::buildMenus()
 	});
 
 	QMenu *replay = menuBar()->addMenu("Replay");
-	replay->addAction("Configurações do replay…", this, [this] { notYet("Replay", "fase 4"); });
+	replay->addAction("Gravar / parar gravação do replay", this, [] { replayhost::toggleRecording(); });
+	replay->addSeparator();
+	replay->addAction("Configuração rápida…", this, [] { replayhost::runWizard(); });
+	replay->addAction("Configurações do replay…", this, [] { replayhost::openSettings(); });
 	QMenu *titles = menuBar()->addMenu("Títulos");
 	titles->addAction("Títulos GT…", this, [this] { notYet("Títulos GT", "fase 5"); });
 	QMenu *cfg = menuBar()->addMenu("Configurações");

@@ -155,6 +155,7 @@ struct TypeDef {
 };
 
 static const TypeDef typeDefs[] = {
+	{"instant_replay_output", "Replay (saída A ou B)"},
 	{"dshow_input", "Câmera / placa de captura"},
 	{"decklink-input", "Blackmagic DeckLink"},
 	{"aja_source", "AJA"},

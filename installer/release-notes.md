@@ -1,6 +1,6 @@
-## ReplayDeck Studio — fase 2 (base do programa)
+## ReplayDeck Studio — fase 4 (replay dentro do programa)
 
-> 2.0.11: "Desativar entrada" agora vale só para a entrada (botão na janela da entrada e no botão direito do quadro). Com a mesma câmera em duas entradas, desativar uma deixa a outra ao vivo; a câmera só desliga de verdade quando todas as entradas que a usam estão desativadas. Inclui a 2.0.10: as imagens andam junto com as entradas quando a lista muda de colunas.
+> 2.1.0: **replay dentro do programa** — o painel do ReplayDeck fica na aba "Replay instantâneo" (canto inferior direito), sem plugin e sem OBS. As câmeras do replay são as suas entradas; "Replay A" e "Replay B" viram entradas (vão para Prévia, Programa, GO, overlays). Tocar um evento põe o Replay A no ar e volta sozinho para a entrada de antes. Na primeira vez abre a configuração rápida (câmeras, pasta, qualidade). Menu Replay: gravar/parar, configuração rápida, configurações. Inclui a 2.0.11 (Desativar vale só para a entrada).
 
 Programa próprio, com a tela aprovada (estilo vMix). Do OBS fica só o motor de vídeo por baixo.
 

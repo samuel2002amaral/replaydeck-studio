@@ -76,6 +76,12 @@ public:
 	void transition(TransitionKind kind); /* prévia vai para o programa e o programa vira prévia */
 	void quickPlay(int id);               /* entrada direto para o programa, com fade */
 	void cutTo(int id);                   /* entrada direto para o programa, corte seco */
+	/* entrada para o programa com uma transição qualquer (usado pelo replay); ms <= 0 = corte */
+	void takeToProgram(int id, obs_source_t *transition, int ms);
+	Input *inputByScene(obs_source_t *scene) const;
+	Input *inputByName(const QString &name) const;
+	obs_source_t *cutTransition() const { return cutTr; }
+	obs_source_t *fadeTransition() const { return fadeTr; }
 	int transitionMs() const { return durationMs; }
 	void setTransitionMs(int ms);
 	bool fadedToBlack() const { return ftb; }
@@ -95,14 +101,20 @@ public:
 
 	static QString typeDisplayName(const char *id);
 
+	/* ganchos (o replay se registra aqui; os testes do motor não usam) */
+	static std::function<void()> beforeProjectLoad; /* tipos extras prontos antes de abrir o projeto */
+
 signals:
 	void inputsChanged();
 	void inputChanged(int id);
 	void busChanged(); /* prévia, programa ou overlays mudaram */
+	void inputRenamed(int id, const QString &oldName, const QString &newName);
+	void transitionMsChanged();
 
 private:
 	Engine() = default;
 	void setProgramScene(obs_source_t *scene, TransitionKind kind);
+	void setProgramSceneWith(obs_source_t *scene, obs_source_t *transition, int ms);
 	void clearAll();
 	obs_source_t *transitionFor(TransitionKind kind);
 

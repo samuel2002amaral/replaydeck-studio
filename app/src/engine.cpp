@@ -159,6 +159,8 @@ bool Engine::start(QString &error)
 	}
 	PropsCache::get().start(slow);
 
+	if (beforeProjectLoad)
+		beforeProjectLoad();
 	QString p = defaultProjectPath();
 	if (QFile::exists(p))
 		loadProject(p);
@@ -241,7 +243,7 @@ static Input *wrapSource(int id, const QString &name, obs_source_t *src, uint32_
 	in->id = id;
 	in->name = name;
 	in->source = src; /* fica com a referência */
-	const QByteArray sceneName = ("entrada-" + QString::number(id)).toUtf8();
+	const QByteArray sceneName = name.toUtf8(); /* a cena tem o nome da entrada (o replay lista por nome) */
 	obs_scene_t *scene = obs_scene_create_private(sceneName.constData());
 	obs_sceneitem_t *item = obs_scene_add(scene, src);
 	fitToCanvas(item, w, h);
@@ -310,6 +312,7 @@ int Engine::sharedFrom(int id) const
 }
 
 std::function<QString(const char *, obs_data_t *)> Engine::deviceKeyOverride;
+std::function<void()> Engine::beforeProjectLoad;
 
 QString Engine::deviceKey(const char *unversionedType, obs_data_t *settings)
 {
@@ -454,7 +457,10 @@ void Engine::setInputEnabled(int id, bool on)
 void Engine::renameInput(int id, const QString &name)
 {
 	if (Input *in = input(id)) {
+		const QString old = in->name;
 		in->name = name;
+		obs_source_set_name(in->scene, name.toUtf8().constData());
+		emit inputRenamed(id, old, name);
 		emit inputChanged(id);
 		emit busChanged();
 	}
@@ -516,17 +522,50 @@ obs_source_t *Engine::transitionFor(TransitionKind kind)
 
 void Engine::setProgramScene(obs_source_t *scene, TransitionKind kind)
 {
-	obs_source_t *tr = transitionFor(kind);
+	setProgramSceneWith(scene, transitionFor(kind), kind == TransitionKind::Cut ? 0 : durationMs);
+}
+
+void Engine::setProgramSceneWith(obs_source_t *scene, obs_source_t *tr, int ms)
+{
+	if (!tr)
+		tr = fadeTr;
 	if (tr != activeTr) {
 		obs_transition_swap_begin(tr, activeTr);
 		obs_set_output_source(0, tr);
 		obs_transition_swap_end(tr, activeTr);
 		activeTr = tr;
 	}
-	if (kind == TransitionKind::Cut)
+	if (tr == cutTr.Get() || ms <= 0)
 		obs_transition_set(tr, scene);
 	else
-		obs_transition_start(tr, OBS_TRANSITION_MODE_AUTO, (uint32_t)durationMs, scene);
+		obs_transition_start(tr, OBS_TRANSITION_MODE_AUTO, (uint32_t)ms, scene);
+}
+
+void Engine::takeToProgram(int id, obs_source_t *tr, int ms)
+{
+	Input *in = input(id);
+	if (!in)
+		return;
+	ftb = false;
+	pgm = id;
+	setProgramSceneWith(in->scene, tr, ms);
+	emit busChanged();
+}
+
+Input *Engine::inputByScene(obs_source_t *scene) const
+{
+	for (Input *in : list)
+		if (in->scene.Get() == scene)
+			return in;
+	return nullptr;
+}
+
+Input *Engine::inputByName(const QString &name) const
+{
+	for (Input *in : list)
+		if (in->name == name)
+			return in;
+	return nullptr;
 }
 
 void Engine::transition(TransitionKind kind)
@@ -610,7 +649,11 @@ void Engine::tbarRelease(float t)
 
 void Engine::setTransitionMs(int ms)
 {
-	durationMs = qBound(50, ms, 10000);
+	const int v = qBound(50, ms, 10000);
+	if (v == durationMs)
+		return;
+	durationMs = v;
+	emit transitionMsChanged();
 }
 
 int Engine::overlay(int channel) const

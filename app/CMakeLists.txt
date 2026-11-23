@@ -24,7 +24,24 @@ add_executable(replaydeck-studio WIN32
   src/input-tile.cpp src/input-tile.hpp
   src/dialogs.cpp src/dialogs.hpp
   src/main-window.cpp src/main-window.hpp
-  src/style.hpp)
+  src/replay-host.cpp src/replay-host.hpp
+  src/style.hpp
+  # replay (veio do plugin ReplayDeck; roda dentro do programa)
+  replay/engine.cpp replay/engine.hpp
+  replay/recording.cpp replay/recording.hpp
+  replay/camera-recorder.cpp replay/camera-recorder.hpp
+  replay/audio-recorder.cpp replay/audio-recorder.hpp
+  replay/playback-channel.cpp replay/playback-channel.hpp
+  replay/replay-source.cpp
+  replay/exporter.cpp
+  replay/replay-dock.cpp replay/replay-dock.hpp
+  replay/setup-wizard.cpp replay/setup-wizard.hpp
+  replay/air-control.cpp replay/air-control.hpp
+  replay/overlay-transition.cpp replay/overlay-transition.hpp
+  replay/ui-theme.cpp replay/ui-theme.hpp
+  replay/i18n.cpp replay/i18n.hpp
+  replay/studio-host.hpp replay/session.hpp replay/common.hpp
+  replay/shim/obs-frontend-api.h)
 
 set_target_properties(replaydeck-studio PROPERTIES
   OUTPUT_NAME "ReplayDeckStudio"
@@ -34,6 +51,20 @@ set_target_properties(replaydeck-studio PROPERTIES
   COMPILE_WARNING_AS_ERROR OFF)
 target_compile_definitions(replaydeck-studio PRIVATE RDS_VERSION="${RDS_VERSION}")
 target_link_libraries(replaydeck-studio PRIVATE OBS::libobs Qt6::Core Qt6::Gui Qt6::Widgets)
+
+# o replay fala com a "interface do OBS" que o próprio Studio responde (replay/shim vem antes de tudo)
+target_include_directories(replaydeck-studio BEFORE PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/replay/shim" "${CMAKE_CURRENT_SOURCE_DIR}/replay")
+
+# FFmpeg do replay (o mesmo que acompanha o motor: obs-deps no Windows, pacotes do sistema no Linux)
+find_path(RDS_FFMPEG_INCLUDE libavcodec/avcodec.h REQUIRED)
+find_library(RDS_AVCODEC NAMES avcodec REQUIRED)
+find_library(RDS_AVFORMAT NAMES avformat REQUIRED)
+find_library(RDS_AVUTIL NAMES avutil REQUIRED)
+target_include_directories(replaydeck-studio PRIVATE "${RDS_FFMPEG_INCLUDE}")
+target_link_libraries(replaydeck-studio PRIVATE "${RDS_AVCODEC}" "${RDS_AVFORMAT}" "${RDS_AVUTIL}")
+target_compile_definitions(replaydeck-studio PRIVATE PLUGIN_VERSION="${RDS_VERSION}" PLUGIN_BUILD="studio")
+install(DIRECTORY replay/data/ DESTINATION "${CMAKE_INSTALL_DATAROOTDIR}/replaydeck-studio/replay" OPTIONAL)
 
 if(MSVC)
   target_compile_options(replaydeck-studio PRIVATE /utf-8 /W3)

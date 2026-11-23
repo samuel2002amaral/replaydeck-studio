@@ -121,6 +121,10 @@ jobs:
           if ($crt) { Copy-Item "$($crt.FullName)/*.dll" "$pkg/bin/64bit/" -Force; Write-Host "runtime VC++: $($crt.FullName)" }
           else { Write-Host "::warning::runtime do Visual C++ não encontrado" }
 
+          # idiomas do painel do replay
+          New-Item -ItemType Directory -Force "$pkg/data/replaydeck-studio/replay" | Out-Null
+          Copy-Item -Recurse studio/app/replay/data/* "$pkg/data/replaydeck-studio/replay/"
+
           Copy-Item studio/installer/LEIA-ME.txt "$pkg/LEIA-ME.txt"
           "ReplayDeck Studio $env:STUDIO_VERSION`nMotor: libobs (OBS Studio $env:OBS_VERSION, ajustes rev $env:ENGINE_REV)`nBuild ${{ github.run_number }} - ${{ github.sha }}" | Out-File "$pkg/VERSAO.txt" -Encoding utf8
 
@@ -132,6 +136,10 @@ jobs:
             if (-not (Test-Path "$pkg/$f")) { throw "faltando no pacote: $f" }
           }
           if (Test-Path "$pkg/bin/64bit/obs64.exe") { throw "a interface do OBS não devia estar no pacote" }
+          foreach ($lib in @('avcodec-*.dll', 'avformat-*.dll', 'avutil-*.dll')) {
+            if (-not (Get-ChildItem "$pkg/bin/64bit" -Filter $lib)) { throw "faltando no pacote: $lib (o replay usa o FFmpeg do motor)" }
+          }
+          if (-not (Test-Path "$pkg/data/replaydeck-studio/replay/lang/en.json")) { throw "faltando no pacote: idiomas do replay" }
           foreach ($m in @('aja-output-ui', 'frontend-tools', 'decklink-output-ui', 'obs-websocket')) {
             if (-not (Test-Path "$pkg/core/$m")) { throw "módulo core $m sumiu do pacote (o motor pararia de carregar os outros)" }
           }
