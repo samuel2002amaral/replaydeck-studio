@@ -4,6 +4,7 @@
 #include <obs.hpp>
 
 #include <QDialog>
+#include <QIcon>
 
 class QListWidget;
 class QLabel;
@@ -27,29 +28,45 @@ private:
 	PropertiesView *props = nullptr;
 };
 
-/* Adicionar entrada: escolhe o tipo, preenche as opções e vê a imagem antes de criar. */
+/* Passo 1 — Adicionar entrada: escolhe o tipo; mostra as entradas desse tipo que já existem. */
 class AddInputDialog : public QDialog {
 	Q_OBJECT
 
 public:
 	explicit AddInputDialog(QWidget *parent = nullptr);
-	~AddInputDialog() override;
 
 private:
 	void selectType(int row);
-	void accept() override;
-	void reject() override;
-	void dropTemp();
-	void testImage();
+	void addNew();
 
 	QListWidget *types = nullptr;
-	QPushButton *testBtn = nullptr;
-	QLabel *videoHint = nullptr;
-	QString currentType;
+	QLabel *title = nullptr;
+	QPushButton *newBtn = nullptr;
+	QWidget *grid = nullptr;
+	QPushButton *openBtn = nullptr;
+	int selectedExisting = 0;
+	QStringList typeIds;
+	QStringList typeLabels;
+};
+
+/* Passo 2 — Nova entrada: a imagem aparece sozinha; as opções valem ao clicar em OK. */
+class NewInputDialog : public QDialog {
+	Q_OBJECT
+
+public:
+	NewInputDialog(const QString &typeId, const QString &label, QWidget *parent = nullptr);
+	~NewInputDialog() override;
+
+private:
+	void accept() override;
+	void reject() override;
+	void drop();
+
+	QString type;
 	QLineEdit *nameEdit = nullptr;
-	QWidget *propsHolder = nullptr;
 	PropertiesView *props = nullptr;
 	VideoDisplay *video = nullptr;
-	OBSSourceAutoRelease temp; /* fonte de teste enquanto a janela está aberta */
-	QStringList typeIds;
+	OBSSourceAutoRelease source;
 };
+
+QIcon inputTypeIcon(const QString &typeId);

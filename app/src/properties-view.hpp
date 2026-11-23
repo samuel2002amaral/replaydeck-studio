@@ -18,15 +18,18 @@ public:
 	PropertiesView(obs_source_t *source, const char *sourceType, QWidget *parent = nullptr);
 	void applyToSource(obs_source_t *source);
 	bool hasChanges() const { return dirty; }
+	void resetToDefaults(); /* botão Redefinir */
 	~PropertiesView() override;
 
 	obs_data_t *settings() const { return data; }
+	static int reloadCount(); /* quantas vezes as opções foram buscadas na fonte (teste/diagnóstico) */
 
 signals:
 	void changed();
 
 private:
-	void rebuild();
+	void reload();  /* busca as opções na fonte (lento na câmera): só ao abrir e em botões */
+	void refresh(); /* só redesenha os campos com as opções que já temos */
 	void addProperty(QFormLayout *form, obs_property_t *p);
 	void apply(obs_property_t *p);
 

@@ -126,5 +126,12 @@ QListWidget::item:hover { background: #1b2130; }
 QListWidget::item:selected { background: #2563eb; color: #ffffff; }
 #typeList { font-size: 9.5pt; }
 QDialogButtonBox QPushButton { min-width: 90px; min-height: 22px; }
+#dialogTitle { font-size: 12pt; font-weight: 700; color: #ffffff; }
+#addNewButton { min-height: 48px; background: transparent; border: 1px dashed #3a4458; border-radius: 6px; font-size: 10pt; color: #e6eaf0; }
+#addNewButton:hover { background: #161c28; border-color: #2563eb; }
+#existingCard { background: #161b26; border: 1px solid #2a3140; border-radius: 6px; padding: 0; text-align: left; }
+#existingCard:hover { border-color: #3a4458; }
+#existingCard:checked { background: #172544; border-color: #2563eb; }
+#audioPlaceholder { background: #0b0e13; border: 0; border-radius: 0; color: #8b95a7; font-weight: 600; }
 )");
 }

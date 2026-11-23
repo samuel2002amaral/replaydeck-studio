@@ -1,6 +1,6 @@
 ## ReplayDeck Studio — fase 2 (base do programa)
 
-> 2.0.3: menos travamento (as opções só são aplicadas quando você confirma), prévia da câmera ocupando a tela inteira, visual no estilo do painel do ReplayDeck.
+> 2.0.4: corrige o travamento da câmera na janela de adicionar (a lista de dispositivos era buscada de novo a cada clique; agora é buscada uma vez só). Novo jeito de adicionar: escolhe o tipo → "Adicionar nova entrada" → a imagem aparece sozinha → OK.
 
 Programa próprio, com a tela aprovada (estilo vMix). Do OBS fica só o motor de vídeo por baixo.
 
@@ -8,7 +8,7 @@ Programa próprio, com a tela aprovada (estilo vMix). Do OBS fica só o motor de
 - Tela única: Prévia, Programa, transições (Quick Play, Cortar, Fade, FTB e T-bar) e overlays 1 a 4
 - Entradas com imagem ao vivo: clique = prévia; botões 1–4 (overlay), GO, Cut, Áudio e Loop
 - Engrenagem (ou duplo clique) abre a entrada ao vivo numa janela, com todas as opções, sem mexer na prévia nem no programa
-- Adicionar entrada: câmera/placa de captura, DeckLink, vídeo/link/celular (SRT/RTMP), imagem, página web, texto, cor, captura de tela/janela/jogo, microfone
+- Adicionar entrada (escolhe o tipo, a imagem aparece sozinha, OK para colocar no projeto): câmera/placa de captura, DeckLink, vídeo/link/celular (SRT/RTMP), imagem, página web, texto, cor, captura de tela/janela/jogo, microfone
 - Projeto salvo sozinho ao fechar; Arquivo › Abrir / Salvar como
 
 **Ainda não (aparece no lugar, avisando a fase)**

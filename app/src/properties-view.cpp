@@ -42,7 +42,7 @@ PropertiesView::PropertiesView(obs_source_t *source, const char *sourceType, QWi
 	lay->addWidget(scroll);
 	content = new QWidget;
 	scroll->setWidget(content);
-	rebuild();
+	reload();
 }
 
 PropertiesView::~PropertiesView()
@@ -51,14 +51,26 @@ PropertiesView::~PropertiesView()
 	obs_data_release(data);
 }
 
-void PropertiesView::rebuild()
+static int reloads = 0;
+int PropertiesView::reloadCount()
 {
-	rebuilding = true;
+	return reloads;
+}
+
+void PropertiesView::reload()
+{
 	obs_properties_destroy(props);
 	OBSSourceAutoRelease src = obs_weak_source_get_source(weak);
 	props = src ? obs_source_properties(src) : obs_get_source_properties(type.constData());
-	if (props)
+	reloads++;
+	if (props && !src)
 		obs_properties_apply_settings(props, data); /* listas que dependem de outras opções já vêm certas */
+	refresh();
+}
+
+void PropertiesView::refresh()
+{
+	rebuilding = true;
 
 	delete content->layout();
 	for (QObject *c : content->children())
@@ -90,10 +102,19 @@ void PropertiesView::apply(obs_property_t *p)
 	if (rebuilding)
 		return;
 	dirty = true;
-	const bool refresh = obs_property_modified(p, data);
+	const bool redraw = obs_property_modified(p, data);
 	emit changed();
-	if (refresh)
-		QTimer::singleShot(0, this, &PropertiesView::rebuild);
+	if (redraw)
+		QTimer::singleShot(0, this, &PropertiesView::refresh);
+}
+
+void PropertiesView::resetToDefaults()
+{
+	obs_data_clear(data); /* ficam só os valores padrão */
+	dirty = true;
+	if (props)
+		obs_properties_apply_settings(props, data);
+	refresh();
 }
 
 void PropertiesView::applyToSource(obs_source_t *source)
@@ -313,7 +334,7 @@ void PropertiesView::addProperty(QFormLayout *form, obs_property_t *p)
 		connect(bt, &QPushButton::clicked, this, [this, p] {
 			OBSSourceAutoRelease src = obs_weak_source_get_source(weak);
 			if (src && obs_property_button_clicked(p, src))
-				QTimer::singleShot(0, this, &PropertiesView::rebuild);
+				QTimer::singleShot(0, this, &PropertiesView::reload);
 		});
 		bt->setEnabled(enabled && weak);
 		form->addRow(QString(), bt);

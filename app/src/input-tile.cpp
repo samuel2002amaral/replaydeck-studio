@@ -54,12 +54,24 @@ InputTile::InputTile(int inputId, QWidget *parent) : QFrame(parent), id(inputId)
 	h->addWidget(gear);
 	v->addWidget(header);
 
-	video = new VideoDisplay;
-	video->setFixedSize(214, 120);
-	video->setToolTip("Clique: mandar para a Prévia · duplo clique: abrir");
-	connect(video, &VideoDisplay::clicked, this, [this] { Engine::get().setPreview(id); });
-	connect(video, &VideoDisplay::doubleClicked, this, [this] { emit openRequested(id); });
-	v->addWidget(video);
+	Input *in0 = Engine::get().input(id);
+	const bool hasVideo = in0 && (obs_source_get_output_flags(in0->source) & OBS_SOURCE_VIDEO);
+	if (hasVideo) {
+		video = new VideoDisplay;
+		video->setFixedSize(214, 120);
+		video->setToolTip("Clique: mandar para a Prévia · duplo clique: abrir");
+		connect(video, &VideoDisplay::clicked, this, [this] { Engine::get().setPreview(id); });
+		connect(video, &VideoDisplay::doubleClicked, this, [this] { emit openRequested(id); });
+		v->addWidget(video);
+	} else {
+		/* entrada só de áudio (microfone): não tem imagem para mostrar */
+		auto *ph = new QPushButton("Entrada de áudio\n(sem imagem)");
+		ph->setObjectName("audioPlaceholder");
+		ph->setFixedSize(214, 120);
+		ph->setToolTip("Duplo clique ou engrenagem: abrir");
+		connect(ph, &QPushButton::clicked, this, [this] { emit openRequested(id); });
+		v->addWidget(ph);
+	}
 
 	auto *grid = new QGridLayout;
 	grid->setContentsMargins(0, 1, 0, 0);
@@ -90,8 +102,8 @@ InputTile::InputTile(int inputId, QWidget *parent) : QFrame(parent), id(inputId)
 		if (changed == id)
 			refresh();
 	});
-	if (Input *in = Engine::get().input(id))
-		video->showSource(in->scene);
+	if (video && in0)
+		video->showSource(in0->scene);
 	refresh();
 }
 
