@@ -284,7 +284,7 @@ void MainWindow::layoutTiles()
 		emptyHint->show();
 		return;
 	}
-	const int cols = qMax(1, (tilesHost->width() - 12) / 238);
+	const int cols = qMax(1, (tilesHost->width() - 12) / 222);
 	if (cols == lastCols)
 		return;
 	lastCols = cols;

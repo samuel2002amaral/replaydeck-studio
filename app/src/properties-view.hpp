@@ -12,8 +12,12 @@ class PropertiesView : public QWidget {
 	Q_OBJECT
 
 public:
-	/* source: altera a fonte ao vivo. Sem source (nova entrada): só preenche settings. */
-	PropertiesView(obs_source_t *source, obs_data_t *settings, const char *sourceType, QWidget *parent = nullptr);
+	/* As mudanças ficam guardadas aqui e só vão para a fonte em applyToSource()
+	 * (quando o usuário confirma) — assim um clique não trava o programa reabrindo câmera.
+	 * source: entrada existente (começa com as opções dela). Sem source: tipo novo, com os padrões. */
+	PropertiesView(obs_source_t *source, const char *sourceType, QWidget *parent = nullptr);
+	void applyToSource(obs_source_t *source);
+	bool hasChanges() const { return dirty; }
 	~PropertiesView() override;
 
 	obs_data_t *settings() const { return data; }
@@ -32,6 +36,7 @@ private:
 	obs_properties_t *props = nullptr;
 	QWidget *content = nullptr;
 	bool rebuilding = false;
+	bool dirty = false;
 	obs_property_t *pendingApply = nullptr;
 	int autoPicks = 0;
 };

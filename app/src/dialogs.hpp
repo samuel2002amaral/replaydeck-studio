@@ -6,6 +6,8 @@
 #include <QDialog>
 
 class QListWidget;
+class QLabel;
+class QPushButton;
 class QLineEdit;
 class QStackedWidget;
 class PropertiesView;
@@ -19,8 +21,10 @@ public:
 	InputWindow(int inputId, QWidget *parent = nullptr);
 
 private:
+	void applyChanges();
 	int id;
 	QLineEdit *nameEdit = nullptr;
+	PropertiesView *props = nullptr;
 };
 
 /* Adicionar entrada: escolhe o tipo, preenche as opções e vê a imagem antes de criar. */
@@ -36,8 +40,12 @@ private:
 	void accept() override;
 	void reject() override;
 	void dropTemp();
+	void testImage();
 
 	QListWidget *types = nullptr;
+	QPushButton *testBtn = nullptr;
+	QLabel *videoHint = nullptr;
+	QString currentType;
 	QLineEdit *nameEdit = nullptr;
 	QWidget *propsHolder = nullptr;
 	PropertiesView *props = nullptr;

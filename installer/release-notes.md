@@ -1,7 +1,6 @@
 ## ReplayDeck Studio — fase 2 (base do programa)
 
-> 2.0.2: janela "Adicionar entrada" maior e sem cortar as opções; o dispositivo já vem escolhido.
-> (2.0.1 corrigiu a 2.0.0, que podia não abrir.)
+> 2.0.3: menos travamento (as opções só são aplicadas quando você confirma), prévia da câmera ocupando a tela inteira, visual no estilo do painel do ReplayDeck.
 
 Programa próprio, com a tela aprovada (estilo vMix). Do OBS fica só o motor de vídeo por baixo.
 

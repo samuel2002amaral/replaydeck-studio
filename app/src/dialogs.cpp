@@ -5,6 +5,7 @@
 
 #include <QDialogButtonBox>
 #include <QFormLayout>
+#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -19,30 +20,39 @@
 
 /* ---------------- Entrada aberta ---------------- */
 
+static QGroupBox *section(const QString &title)
+{
+	auto *g = new QGroupBox(title.toUpper());
+	g->setObjectName("section");
+	return g;
+}
+
 InputWindow::InputWindow(int inputId, QWidget *parent) : QDialog(parent), id(inputId)
 {
 	Input *in = Engine::get().input(id);
 	setWindowTitle(QString("%1 · %2").arg(Engine::get().indexOf(id) + 1).arg(in ? in->name : QString()));
 	setAttribute(Qt::WA_DeleteOnClose);
-	resize(1100, 640);
+	resize(1180, 680);
 
-	auto *root = new QHBoxLayout(this);
-	root->setContentsMargins(10, 10, 10, 10);
+	auto *root = new QVBoxLayout(this);
+	root->setContentsMargins(12, 12, 12, 12);
 	root->setSpacing(10);
+	auto *body = new QHBoxLayout;
+	body->setSpacing(10);
 
-	auto *left = new QVBoxLayout;
-	auto *note = new QLabel("Ao vivo nesta janela — a prévia e o programa não mudam.");
-	note->setObjectName("muted");
-	left->addWidget(note);
+	auto *live = section("Ao vivo — a prévia e o programa não mudam");
+	auto *lv = new QVBoxLayout(live);
 	auto *video = new VideoDisplay;
-	video->setMinimumSize(640, 360);
+	video->setMinimumSize(560, 315);
 	video->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 	if (in)
 		video->showSource(in->scene);
-	left->addWidget(video, 1);
+	lv->addWidget(video, 1);
 	auto *btns = new QHBoxLayout;
 	auto *toPvw = new QPushButton("Mandar para Prévia");
+	toPvw->setObjectName("greenButton");
 	auto *toPgm = new QPushButton("Cortar para Programa");
+	toPgm->setObjectName("redButton");
 	auto *ov1 = new QPushButton("Overlay 1");
 	connect(toPvw, &QPushButton::clicked, this, [this] { Engine::get().setPreview(id); });
 	connect(toPgm, &QPushButton::clicked, this, [this] { Engine::get().cutTo(id); });
@@ -51,34 +61,53 @@ InputWindow::InputWindow(int inputId, QWidget *parent) : QDialog(parent), id(inp
 	btns->addWidget(toPgm);
 	btns->addWidget(ov1);
 	btns->addStretch(1);
-	left->addLayout(btns);
-	root->addLayout(left, 1);
+	lv->addLayout(btns);
+	body->addWidget(live, 1);
 
-	auto *right = new QVBoxLayout;
+	auto *opts = section("Opções");
+	opts->setMinimumWidth(420);
+	auto *ov = new QVBoxLayout(opts);
 	auto *form = new QFormLayout;
 	nameEdit = new QLineEdit(in ? in->name : QString());
-	connect(nameEdit, &QLineEdit::editingFinished, this, [this] {
-		if (!nameEdit->text().trimmed().isEmpty())
-			Engine::get().renameInput(id, nameEdit->text().trimmed());
-	});
 	form->addRow("Nome", nameEdit);
 	if (in)
 		form->addRow("Tipo", new QLabel(Engine::typeDisplayName(obs_source_get_id(in->source))));
-	right->addLayout(form);
+	ov->addLayout(form);
 	if (in) {
-		auto *props = new PropertiesView(in->source, nullptr, obs_source_get_id(in->source));
-		props->setMinimumWidth(340);
-		right->addWidget(props, 1);
+		props = new PropertiesView(in->source, obs_source_get_id(in->source));
+		ov->addWidget(props, 1);
 	}
-	auto *closeBox = new QDialogButtonBox(QDialogButtonBox::Close);
-	connect(closeBox, &QDialogButtonBox::rejected, this, &QDialog::close);
-	right->addWidget(closeBox);
-	root->addLayout(right);
+	body->addWidget(opts);
+	root->addLayout(body, 1);
+
+	auto *bb = new QDialogButtonBox;
+	auto *ok = bb->addButton("OK", QDialogButtonBox::AcceptRole);
+	ok->setObjectName("primaryButton");
+	auto *applyBtn = bb->addButton("Aplicar", QDialogButtonBox::ApplyRole);
+	bb->addButton("Cancelar", QDialogButtonBox::RejectRole);
+	connect(bb, &QDialogButtonBox::accepted, this, [this] {
+		applyChanges();
+		close();
+	});
+	connect(applyBtn, &QPushButton::clicked, this, &InputWindow::applyChanges);
+	connect(bb, &QDialogButtonBox::rejected, this, &QDialog::close);
+	root->addWidget(bb);
 
 	connect(&Engine::get(), &Engine::inputsChanged, this, [this] {
 		if (!Engine::get().input(id))
 			close();
 	});
+}
+
+void InputWindow::applyChanges()
+{
+	Input *in = Engine::get().input(id);
+	if (!in)
+		return;
+	if (!nameEdit->text().trimmed().isEmpty() && nameEdit->text().trimmed() != in->name)
+		Engine::get().renameInput(id, nameEdit->text().trimmed());
+	if (props && props->hasChanges())
+		props->applyToSource(in->source);
 }
 
 /* ---------------- Adicionar entrada ---------------- */
@@ -92,7 +121,7 @@ static const TypeDef typeDefs[] = {
 	{"dshow_input", "Câmera / placa de captura"},
 	{"decklink-input", "Blackmagic DeckLink"},
 	{"aja_source", "AJA"},
-	{"ffmpeg_source", "Vídeo, link ou celular (SRT/RTMP)"},
+	{"ffmpeg_source", "Vídeo, link ou celular"},
 	{"vlc_source", "Lista de vídeos"},
 	{"image_source", "Imagem"},
 	{"slideshow", "Sequência de imagens"},
@@ -123,14 +152,21 @@ AddInputDialog::AddInputDialog(QWidget *parent) : QDialog(parent)
 {
 	setWindowTitle("Adicionar entrada");
 	resize(1180, 680);
-	setMinimumSize(900, 520);
+	setMinimumSize(960, 540);
 
 	auto *root = new QVBoxLayout(this);
+	root->setContentsMargins(12, 12, 12, 12);
+	root->setSpacing(10);
 	auto *body = new QHBoxLayout;
+	body->setSpacing(10);
+
+	auto *typeBox = section("Tipo de entrada");
+	typeBox->setFixedWidth(250);
+	auto *tv = new QVBoxLayout(typeBox);
 	types = new QListWidget;
 	types->setObjectName("typeList");
-	types->setFixedWidth(240);
-	types->setSpacing(1);
+	types->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+	types->setTextElideMode(Qt::ElideRight);
 	for (const TypeDef &t : typeDefs) {
 		const QString latest = latestType(t.id);
 		if (latest.isEmpty())
@@ -138,32 +174,41 @@ AddInputDialog::AddInputDialog(QWidget *parent) : QDialog(parent)
 		typeIds << latest;
 		types->addItem(QString::fromUtf8(t.label));
 	}
-	body->addWidget(types);
+	tv->addWidget(types);
+	body->addWidget(typeBox);
 
-	auto *center = new QVBoxLayout;
+	auto *optBox = section("Opções");
+	auto *ov = new QVBoxLayout(optBox);
 	auto *form = new QFormLayout;
 	nameEdit = new QLineEdit;
 	form->addRow("Nome", nameEdit);
-	center->addLayout(form);
+	ov->addLayout(form);
 	propsHolder = new QWidget;
 	auto *ph = new QVBoxLayout(propsHolder);
 	ph->setContentsMargins(0, 0, 0, 0);
-	center->addWidget(propsHolder, 1);
-	body->addLayout(center, 1);
+	ov->addWidget(propsHolder, 1);
+	body->addWidget(optBox, 1);
 
-	auto *right = new QVBoxLayout;
-	auto *lbl = new QLabel("Prévia");
-	lbl->setObjectName("muted");
-	right->addWidget(lbl);
+	auto *pvBox = section("Prévia");
+	pvBox->setFixedWidth(380);
+	auto *pv = new QVBoxLayout(pvBox);
 	video = new VideoDisplay;
 	video->setFixedSize(352, 198);
-	right->addWidget(video);
-	right->addStretch(1);
-	body->addLayout(right);
+	pv->addWidget(video);
+	videoHint = new QLabel("Escolha as opções e clique em \"Testar imagem\" para ver antes de adicionar.");
+	videoHint->setObjectName("muted");
+	videoHint->setWordWrap(true);
+	pv->addWidget(videoHint);
+	testBtn = new QPushButton("Testar imagem");
+	connect(testBtn, &QPushButton::clicked, this, &AddInputDialog::testImage);
+	pv->addWidget(testBtn);
+	pv->addStretch(1);
+	body->addWidget(pvBox);
 	root->addLayout(body, 1);
 
 	auto *bb = new QDialogButtonBox;
-	bb->addButton("Adicionar", QDialogButtonBox::AcceptRole);
+	auto *addBtn = bb->addButton("Adicionar", QDialogButtonBox::AcceptRole);
+	addBtn->setObjectName("primaryButton");
 	bb->addButton("Cancelar", QDialogButtonBox::RejectRole);
 	connect(bb, &QDialogButtonBox::accepted, this, &AddInputDialog::accept);
 	connect(bb, &QDialogButtonBox::rejected, this, &AddInputDialog::reject);
@@ -182,47 +227,69 @@ AddInputDialog::~AddInputDialog()
 void AddInputDialog::dropTemp()
 {
 	video->clear();
-	delete props;
-	props = nullptr;
 	if (temp) {
 		obs_source_dec_showing(temp);
 		obs_source_remove(temp);
 		temp = nullptr;
 	}
+	testBtn->setText("Testar imagem");
 }
 
+/* trocar o tipo só monta o formulário: nenhuma câmera é aberta até testar ou adicionar */
 void AddInputDialog::selectType(int row)
 {
 	dropTemp();
+	delete props;
+	props = nullptr;
 	if (row < 0 || row >= typeIds.size())
 		return;
-	const QByteArray id = typeIds[row].toUtf8();
-	temp = obs_source_create_private(id.constData(), "nova entrada", nullptr);
-	if (!temp) {
-		QMessageBox::warning(this, "Adicionar entrada", "Este tipo de entrada não está disponível neste computador.");
-		return;
-	}
-	obs_source_inc_showing(temp);
-	video->showSource(temp);
-	props = new PropertiesView(temp, nullptr, id.constData());
+	currentType = typeIds[row];
+	const QByteArray id = currentType.toUtf8();
+	props = new PropertiesView(nullptr, id.constData());
 	propsHolder->layout()->addWidget(props);
 	QString base = types->item(row)->text().section(' ', 0, 0);
 	base.remove(QRegularExpression("[^\\p{L}\\p{N}]"));
 	nameEdit->setText(base.toUpper() + " " + QString::number(Engine::get().inputs().size() + 1));
 }
 
+void AddInputDialog::testImage()
+{
+	if (!props)
+		return;
+	if (temp) {
+		/* já testando: aplica as opções atuais na fonte de teste */
+		props->applyToSource(temp);
+		return;
+	}
+	const QByteArray id = currentType.toUtf8();
+	temp = obs_source_create_private(id.constData(), "teste", props->settings());
+	if (!temp) {
+		QMessageBox::warning(this, "Adicionar entrada", "Não foi possível abrir esta entrada com essas opções.");
+		return;
+	}
+	props->applyToSource(nullptr);
+	obs_source_inc_showing(temp);
+	video->showSource(temp);
+	testBtn->setText("Atualizar teste");
+}
+
 void AddInputDialog::accept()
 {
-	if (!temp)
+	if (!props)
 		return;
 	const QString name = nameEdit->text().trimmed().isEmpty() ? QString("ENTRADA") : nameEdit->text().trimmed();
 	video->clear();
-	delete props;
-	props = nullptr;
-	obs_source_dec_showing(temp);
-	Engine::get().adoptSource(temp.Get(), name);
-	obs_source_get_ref(temp); /* a entrada ficou com uma referência; a nossa sai abaixo */
-	temp = nullptr;
+	if (temp) {
+		/* reaproveita a fonte de teste (a câmera já está aberta) com as opções finais */
+		if (props->hasChanges())
+			props->applyToSource(temp);
+		obs_source_dec_showing(temp);
+		Engine::get().adoptSource(temp.Get(), name);
+		obs_source_get_ref(temp); /* a entrada ficou com uma referência; a nossa sai abaixo */
+		temp = nullptr;
+	} else {
+		Engine::get().addInput(currentType, name, props->settings());
+	}
 	QDialog::accept();
 }
 

@@ -18,16 +18,20 @@
 #include <QTimer>
 #include <QVBoxLayout>
 
-PropertiesView::PropertiesView(obs_source_t *source, obs_data_t *settings, const char *sourceType, QWidget *parent)
+PropertiesView::PropertiesView(obs_source_t *source, const char *sourceType, QWidget *parent)
 	: QWidget(parent),
 	  type(sourceType)
 {
 	if (source) {
+		/* cópia: nada muda na fonte até confirmar */
 		weak = obs_source_get_weak_source(source);
-		data = obs_source_get_settings(source);
+		OBSDataAutoRelease cur = obs_source_get_settings(source);
+		data = obs_data_get_defaults(cur);
+		obs_data_apply(data, cur);
 	} else {
-		data = settings;
-		obs_data_addref(data);
+		data = obs_get_source_defaults(sourceType);
+		if (!data)
+			data = obs_data_create();
 	}
 	auto *lay = new QVBoxLayout(this);
 	lay->setContentsMargins(0, 0, 0, 0);
@@ -53,6 +57,8 @@ void PropertiesView::rebuild()
 	obs_properties_destroy(props);
 	OBSSourceAutoRelease src = obs_weak_source_get_source(weak);
 	props = src ? obs_source_properties(src) : obs_get_source_properties(type.constData());
+	if (props)
+		obs_properties_apply_settings(props, data); /* listas que dependem de outras opções já vêm certas */
 
 	delete content->layout();
 	for (QObject *c : content->children())
@@ -78,18 +84,23 @@ void PropertiesView::rebuild()
 	}
 }
 
-/* grava a alteração na fonte; se a fonte pedir, refaz o formulário (ex.: escolheu outro dispositivo) */
+/* guarda a alteração; se a fonte pedir (ex.: escolheu outro dispositivo), refaz o formulário */
 void PropertiesView::apply(obs_property_t *p)
 {
 	if (rebuilding)
 		return;
-	OBSSourceAutoRelease src = obs_weak_source_get_source(weak);
-	if (src)
-		obs_source_update(src, data);
+	dirty = true;
 	const bool refresh = obs_property_modified(p, data);
 	emit changed();
 	if (refresh)
 		QTimer::singleShot(0, this, &PropertiesView::rebuild);
+}
+
+void PropertiesView::applyToSource(obs_source_t *source)
+{
+	if (source)
+		obs_source_update(source, data);
+	dirty = false;
 }
 
 static QString text(const char *s)

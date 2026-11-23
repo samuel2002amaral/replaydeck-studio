@@ -135,10 +135,24 @@ void VideoDisplay::draw(void *data, uint32_t cx, uint32_t cy)
 	if (!self->hasContent)
 		return;
 
-	obs_video_info ovi;
-	if (!obs_get_video_info(&ovi))
-		return;
-	const float bw = (float)ovi.base_width, bh = (float)ovi.base_height;
+	OBSSourceAutoRelease src;
+	float bw, bh;
+	if (self->mode == Mode::Program) {
+		obs_video_info ovi;
+		if (!obs_get_video_info(&ovi))
+			return;
+		bw = (float)ovi.base_width;
+		bh = (float)ovi.base_height;
+	} else {
+		/* uma fonte é desenhada no tamanho dela (câmera 640x480, 1280x720...) e encaixada na tela */
+		src = obs_weak_source_get_source(self->weak);
+		if (!src)
+			return;
+		bw = (float)obs_source_get_width(src);
+		bh = (float)obs_source_get_height(src);
+		if (bw < 1.0f || bh < 1.0f)
+			return;
+	}
 	const float scale = std::min((float)cx / bw, (float)cy / bh);
 	const int w = (int)(bw * scale), h = (int)(bh * scale);
 	const int x = ((int)cx - w) / 2, y = ((int)cy - h) / 2;
@@ -148,13 +162,10 @@ void VideoDisplay::draw(void *data, uint32_t cx, uint32_t cy)
 	gs_set_viewport(x, y, w, h);
 	gs_ortho(0.0f, bw, 0.0f, bh, -100.0f, 100.0f);
 
-	if (self->mode == Mode::Program) {
+	if (self->mode == Mode::Program)
 		obs_render_main_texture();
-	} else {
-		OBSSourceAutoRelease src = obs_weak_source_get_source(self->weak);
-		if (src)
-			obs_source_video_render(src);
-	}
+	else
+		obs_source_video_render(src);
 
 	gs_projection_pop();
 	gs_viewport_pop();

@@ -30,4 +30,6 @@ private:
 	QPushButton *ovBtn[5] = {};
 	QPushButton *audio = nullptr;
 	QPushButton *loop = nullptr;
+	QString lastBus;
+	int lastOv = -1;
 };

@@ -28,7 +28,7 @@ static QPushButton *tileButton(const QString &text, const QString &tip = QString
 InputTile::InputTile(int inputId, QWidget *parent) : QFrame(parent), id(inputId)
 {
 	setObjectName("inputTile");
-	setFixedWidth(232);
+	setFixedWidth(216);
 	auto *v = new QVBoxLayout(this);
 	v->setContentsMargins(1, 1, 1, 1);
 	v->setSpacing(0);
@@ -55,7 +55,7 @@ InputTile::InputTile(int inputId, QWidget *parent) : QFrame(parent), id(inputId)
 	v->addWidget(header);
 
 	video = new VideoDisplay;
-	video->setFixedSize(230, 129);
+	video->setFixedSize(214, 120);
 	video->setToolTip("Clique: mandar para a Prévia · duplo clique: abrir");
 	connect(video, &VideoDisplay::clicked, this, [this] { Engine::get().setPreview(id); });
 	connect(video, &VideoDisplay::doubleClicked, this, [this] { emit openRequested(id); });
@@ -104,17 +104,28 @@ void InputTile::refresh()
 	num->setText(QString::number(e.indexOf(id) + 1));
 	name->setText(in->name);
 	name->setToolTip(in->name);
-	const char *state = id == e.programId() ? "program" : id == e.previewId() ? "preview" : "";
-	setProperty("bus", state);
-	header->setProperty("bus", state);
-	for (QWidget *w : {static_cast<QWidget *>(this), header}) {
-		w->style()->unpolish(w);
-		w->style()->polish(w);
+	/* só refaz o visual quando o estado muda de verdade (refazer estilo é caro) */
+	const QString state = id == e.programId() ? "program" : id == e.previewId() ? "preview" : "";
+	if (state != lastBus) {
+		lastBus = state;
+		setProperty("bus", state);
+		header->setProperty("bus", state);
+		for (QWidget *w : {static_cast<QWidget *>(this), header}) {
+			w->style()->unpolish(w);
+			w->style()->polish(w);
+		}
 	}
-	for (int ch = 1; ch <= 4; ch++) {
-		ovBtn[ch]->setProperty("on", e.overlay(ch) == id);
-		ovBtn[ch]->style()->unpolish(ovBtn[ch]);
-		ovBtn[ch]->style()->polish(ovBtn[ch]);
+	int ovMask = 0;
+	for (int ch = 1; ch <= 4; ch++)
+		if (e.overlay(ch) == id)
+			ovMask |= 1 << ch;
+	if (ovMask != lastOv) {
+		lastOv = ovMask;
+		for (int ch = 1; ch <= 4; ch++) {
+			ovBtn[ch]->setProperty("on", (ovMask & (1 << ch)) != 0);
+			ovBtn[ch]->style()->unpolish(ovBtn[ch]);
+			ovBtn[ch]->style()->polish(ovBtn[ch]);
+		}
 	}
 	audio->setChecked(in->audioOn);
 	loop->setChecked(in->loop);
