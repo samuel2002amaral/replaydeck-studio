@@ -45,6 +45,12 @@ public:
 	int indexOf(int id) const;
 	Input *addInput(const QString &sourceType, const QString &name, obs_data_t *settings = nullptr);
 	Input *adoptSource(obs_source_t *source, const QString &name); /* fica com a referência */
+	/* nova entrada que usa a MESMA fonte de outra (ex.: a mesma câmera: o Windows só deixa abrir uma vez) */
+	Input *addSharedInput(int fromId, const QString &name);
+	int sharedFrom(int id) const; /* id da primeira entrada com a mesma fonte, ou 0 */
+	/* identifica o aparelho de uma fonte (câmera/placa); vazio se não for de aparelho */
+	static QString deviceKey(const char *unversionedType, obs_data_t *settings);
+	int inputUsingDevice(const char *unversionedType, const QString &key) const;
 	void removeInput(int id);
 	void renameInput(int id, const QString &name);
 	void moveInput(int id, int newIndex);

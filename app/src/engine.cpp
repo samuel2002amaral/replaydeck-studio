@@ -267,6 +267,59 @@ Input *Engine::adoptSource(obs_source_t *src, const QString &name)
 	return in;
 }
 
+Input *Engine::addSharedInput(int fromId, const QString &name)
+{
+	Input *from = input(fromId);
+	if (!from)
+		return nullptr;
+	const int id = nextId++;
+	Input *in = wrapSource(id, name, obs_source_get_ref(from->source), baseW, baseH);
+	in->audioOn = from->audioOn;
+	list.append(in);
+	blog(LOG_INFO, "entrada %d criada usando a mesma fonte da entrada %d", id, fromId);
+	emit inputsChanged();
+	return in;
+}
+
+int Engine::sharedFrom(int id) const
+{
+	Input *in = input(id);
+	if (!in)
+		return 0;
+	for (Input *other : list) {
+		if (other == in)
+			return 0; /* é a primeira com esta fonte */
+		if (other->source.Get() == in->source.Get())
+			return other->id;
+	}
+	return 0;
+}
+
+QString Engine::deviceKey(const char *unversionedType, obs_data_t *settings)
+{
+	if (!unversionedType || !settings)
+		return QString();
+	if (strcmp(unversionedType, "dshow_input") == 0)
+		return QString::fromUtf8(obs_data_get_string(settings, "video_device_id"));
+	if (strcmp(unversionedType, "decklink-input") == 0)
+		return QString::fromUtf8(obs_data_get_string(settings, "device_hash"));
+	return QString();
+}
+
+int Engine::inputUsingDevice(const char *unversionedType, const QString &key) const
+{
+	if (key.isEmpty())
+		return 0;
+	for (Input *in : list) {
+		if (strcmp(obs_source_get_unversioned_id(in->source), unversionedType) != 0)
+			continue;
+		OBSDataAutoRelease st = obs_source_get_settings(in->source);
+		if (deviceKey(unversionedType, st) == key)
+			return in->id;
+	}
+	return 0;
+}
+
 void Engine::removeInput(int id)
 {
 	const int idx = indexOf(id);
@@ -286,7 +339,11 @@ void Engine::removeInput(int id)
 		pvw = 0;
 	Input *in = list.takeAt(idx);
 	obs_source_dec_showing(in->scene);
-	obs_source_remove(in->source);
+	bool stillUsed = false;
+	for (Input *other : list)
+		stillUsed = stillUsed || other->source.Get() == in->source.Get();
+	if (!stillUsed)
+		obs_source_remove(in->source); /* fonte compartilhada continua viva na outra entrada */
 	delete in;
 	emit inputsChanged();
 	emit busChanged();
@@ -505,8 +562,12 @@ bool Engine::saveProject(const QString &path)
 		obs_data_set_string(o, "nome", in->name.toUtf8().constData());
 		obs_data_set_bool(o, "loop", in->loop);
 		obs_data_set_bool(o, "audio", in->audioOn);
-		OBSDataAutoRelease src = obs_save_source(in->source);
-		obs_data_set_obj(o, "fonte", src);
+		if (const int from = sharedFrom(in->id)) {
+			obs_data_set_int(o, "mesma_fonte_de", from);
+		} else {
+			OBSDataAutoRelease src = obs_save_source(in->source);
+			obs_data_set_obj(o, "fonte", src);
+		}
 		obs_data_array_push_back(arr, o);
 	}
 	obs_data_set_array(root, "entradas", arr);
@@ -535,9 +596,15 @@ bool Engine::loadProject(const QString &path)
 	const size_t n = obs_data_array_count(arr);
 	for (size_t i = 0; i < n; i++) {
 		OBSDataAutoRelease o = obs_data_array_item(arr, i);
-		OBSDataAutoRelease srcData = obs_data_get_obj(o, "fonte");
-		obs_data_erase(srcData, "uuid"); /* a fonte antiga pode ainda estar saindo da memória */
-		obs_source_t *src = obs_load_private_source(srcData);
+		obs_source_t *src = nullptr;
+		if (const int from = (int)obs_data_get_int(o, "mesma_fonte_de")) {
+			if (Input *f = input(from))
+				src = obs_source_get_ref(f->source);
+		} else {
+			OBSDataAutoRelease srcData = obs_data_get_obj(o, "fonte");
+			obs_data_erase(srcData, "uuid"); /* a fonte antiga pode ainda estar saindo da memória */
+			src = obs_load_private_source(srcData);
+		}
 		if (!src) {
 			blog(LOG_WARNING, "entrada %zu do projeto não pôde ser recriada (tipo indisponível?)", i);
 			continue;

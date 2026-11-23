@@ -404,22 +404,10 @@ NewInputDialog::NewInputDialog(const QString &typeId, const QString &label, QWid
 	props = PropertiesView::create(id.constData());
 	root->addWidget(props, 4);
 
-	auto openSource = [this] {
-		if (source)
-			return;
-		const QByteArray tid = type.toUtf8();
-		source = obs_source_create_private(tid.constData(), "nova entrada", props->settings());
-		if (source) {
-			props->applyToSource(nullptr); /* já abriu com estas opções */
-			obs_source_inc_showing(source);
-			video->showSource(source);
-			waitTimer->start();
-		}
-	};
 	if (props->isLoading())
-		connect(props, &PropertiesView::loaded, this, openSource);
+		connect(props, &PropertiesView::loaded, this, &NewInputDialog::syncPreview);
 	else
-		openSource();
+		syncPreview();
 
 	/* a prévia acompanha as opções (com um pequeno atraso para não reabrir a cada tecla).
 	 * Nada entra no projeto antes do OK; Cancelar descarta tudo. */
@@ -427,8 +415,8 @@ NewInputDialog::NewInputDialog(const QString &typeId, const QString &label, QWid
 	debounce->setSingleShot(true);
 	debounce->setInterval(400);
 	connect(debounce, &QTimer::timeout, this, [this] {
-		if (source && !props->isLoading() && props->hasChanges())
-			props->applyToSource(source);
+		if (!props->isLoading())
+			syncPreview();
 	});
 	connect(props, &PropertiesView::changed, debounce, qOverload<>(&QTimer::start));
 
@@ -451,6 +439,42 @@ NewInputDialog::~NewInputDialog()
 	drop();
 }
 
+/* Mostra a imagem: se o aparelho escolhido já está em outra entrada, usa a imagem que já está
+ * rodando (o Windows só deixa abrir uma câmera uma vez); senão abre a entrada nova. */
+void NewInputDialog::syncPreview()
+{
+	const QByteArray unver = unversionedOf(type.toUtf8());
+	const QString key = Engine::deviceKey(unver.constData(), props->settings());
+	const int used = Engine::get().inputUsingDevice(unver.constData(), key);
+	if (used) {
+		drop();
+		sharedId = used;
+		Input *in = Engine::get().input(used);
+		video->showSource(in->scene);
+		waitTimer->stop();
+		status->setText(QString("Este aparelho já está na entrada %1 (%2): a nova entrada vai usar a mesma imagem, "
+					"sem abrir de novo.")
+					.arg(Engine::get().indexOf(used) + 1)
+					.arg(in->name));
+		props->applyToSource(nullptr);
+		return;
+	}
+	sharedId = 0;
+	if (!source) {
+		const QByteArray tid = type.toUtf8();
+		source = obs_source_create_private(tid.constData(), "nova entrada", props->settings());
+		if (!source)
+			return;
+		props->applyToSource(nullptr); /* já abriu com estas opções */
+		obs_source_inc_showing(source);
+		video->showSource(source);
+		status->setText("Ligando…");
+		waitTimer->start();
+	} else if (props->hasChanges()) {
+		props->applyToSource(source);
+	}
+}
+
 void NewInputDialog::drop()
 {
 	video->clear();
@@ -465,7 +489,9 @@ void NewInputDialog::accept()
 {
 	const QString name = nameEdit->text().trimmed().isEmpty() ? QString("ENTRADA") : nameEdit->text().trimmed();
 	video->clear();
-	if (source) {
+	if (sharedId && Engine::get().input(sharedId)) {
+		Engine::get().addSharedInput(sharedId, name);
+	} else if (source) {
 		if (props->hasChanges())
 			props->applyToSource(source);
 		obs_source_dec_showing(source);

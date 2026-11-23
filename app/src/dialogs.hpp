@@ -61,8 +61,10 @@ private:
 	void accept() override;
 	void reject() override;
 	void drop();
+	void syncPreview();
 
 	QString type;
+	int sharedId = 0;
 	QLineEdit *nameEdit = nullptr;
 	PropertiesView *props = nullptr;
 	VideoDisplay *video = nullptr;
