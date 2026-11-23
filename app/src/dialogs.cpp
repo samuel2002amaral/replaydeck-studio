@@ -389,12 +389,18 @@ NewInputDialog::NewInputDialog(const QString &typeId, const QString &label, QWid
 	props = new PropertiesView(nullptr, id.constData());
 	root->addWidget(props, 4);
 
-	/* a entrada abre sozinha com as opções iniciais, para a imagem já aparecer */
-	source = obs_source_create_private(id.constData(), "nova entrada", props->settings());
-	if (source) {
-		obs_source_inc_showing(source);
-		video->showSource(source);
-	}
+	/* assim que as opções chegam (dispositivo já escolhido), a entrada abre sozinha e a imagem aparece */
+	connect(props, &PropertiesView::loaded, this, [this] {
+		if (source)
+			return;
+		const QByteArray tid = type.toUtf8();
+		source = obs_source_create_private(tid.constData(), "nova entrada", props->settings());
+		if (source) {
+			props->applyToSource(nullptr); /* já abriu com estas opções */
+			obs_source_inc_showing(source);
+			video->showSource(source);
+		}
+	});
 
 	/* a prévia acompanha as opções (com um pequeno atraso para não reabrir a cada tecla).
 	 * Nada entra no projeto antes do OK; Cancelar descarta tudo. */
@@ -402,7 +408,7 @@ NewInputDialog::NewInputDialog(const QString &typeId, const QString &label, QWid
 	debounce->setSingleShot(true);
 	debounce->setInterval(400);
 	connect(debounce, &QTimer::timeout, this, [this] {
-		if (source && props->hasChanges())
+		if (source && !props->isLoading() && props->hasChanges())
 			props->applyToSource(source);
 	});
 	connect(props, &PropertiesView::changed, debounce, qOverload<>(&QTimer::start));
@@ -448,7 +454,7 @@ void NewInputDialog::accept()
 		obs_source_get_ref(source); /* a entrada ficou com uma referência; a nossa sai abaixo */
 		source = nullptr;
 	} else {
-		Engine::get().addInput(type, name, props->settings());
+		Engine::get().addInput(type, name, props->settings()); /* OK antes de terminar a busca */
 	}
 	QDialog::accept();
 }

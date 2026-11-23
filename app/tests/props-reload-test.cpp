@@ -9,6 +9,7 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QCoreApplication>
+#include <QElapsedTimer>
 #include <cstdio>
 
 int main(int argc, char **argv)
@@ -25,7 +26,17 @@ int main(int argc, char **argv)
 	obs_post_load_modules();
 
 	PropertiesView view(nullptr, "ffmpeg_source");
+	/* a janela não pode esperar a busca (na câmera ela leva segundos): ela acontece em segundo plano */
+	const bool waitedOnOpen = PropertiesView::reloadCount() != 0 || !view.isLoading();
+	QElapsedTimer t;
+	t.start();
+	while (view.isLoading() && t.elapsed() < 5000)
+		QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
 	const int afterOpen = PropertiesView::reloadCount();
+	if (waitedOnOpen) {
+		printf("FALHA: a busca das opções travou a abertura da janela\n");
+		return 1;
+	}
 	/* "Arquivo local" tem callback que pede para redesenhar; o formulário é refeito, então procura de novo */
 	auto findLocal = [&view]() -> QCheckBox * {
 		for (QCheckBox *cb : view.findChildren<QCheckBox *>())

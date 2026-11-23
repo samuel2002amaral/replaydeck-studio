@@ -8,6 +8,8 @@
 
 #include <QApplication>
 #include <QListWidget>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QMessageBox>
 #include <QTimer>
 #include <QProcess>
@@ -24,6 +26,8 @@ static void runSelfTest(MainWindow &w)
 {
 	auto step = [](int ms, std::function<void()> fn) { QTimer::singleShot(ms, fn); };
 	Engine &e = Engine::get();
+	if (qEnvironmentVariableIsSet("RDS_SELFTEST_SMALL"))
+		w.resize(1100, 640);
 	step(500, [&e] {
 		for (int i = 0; i < 3; i++) {
 			OBSDataAutoRelease s = obs_data_create();
@@ -44,6 +48,13 @@ static void runSelfTest(MainWindow &w)
 		blog(LOG_INFO, "[teste] abrir=%d entradas=%d pgm=%d", e.loadProject(p), (int)e.inputs().size(), e.programId());
 		e.setPreview(e.inputs()[0]->id);
 		e.toggleOverlay(2, e.inputs()[1]->id);
+	});
+	step(6000, [&w] {
+		/* reproduz o problema das entradas saindo do painel: rola a lista um pouco */
+		if (qEnvironmentVariableIsSet("RDS_SELFTEST_SCROLL"))
+			for (QScrollArea *sa : w.findChildren<QScrollArea *>())
+				if (sa->widget() && sa->widget()->objectName() == "tilesHost")
+					sa->verticalScrollBar()->setValue(qEnvironmentVariableIntValue("RDS_SELFTEST_SCROLL"));
 	});
 	step(6500, [] { QProcess::execute("import", {"-window", "root", qEnvironmentVariable("RDS_SELFTEST")}); });
 	step(7000, [&w] { w.close(); });

@@ -192,7 +192,7 @@ QWidget *MainWindow::buildTransitions()
 	tbar = new QSlider(Qt::Vertical);
 	tbar->setObjectName("tbar");
 	tbar->setRange(0, 1000);
-	tbar->setMinimumHeight(90);
+	tbar->setMinimumHeight(40);
 	connect(tbar, &QSlider::sliderMoved, this, [&e](int val) { e.tbarMove(val / 1000.0f); });
 	connect(tbar, &QSlider::sliderReleased, this, [this, &e] {
 		e.tbarRelease(tbar->value() / 1000.0f);
@@ -243,6 +243,9 @@ QWidget *MainWindow::buildInputsArea()
 	auto *scroll = new QScrollArea;
 	scroll->setWidgetResizable(true);
 	scroll->setFrameShape(QFrame::NoFrame);
+	/* as imagens das entradas são janelas nativas (desenhadas pela placa de vídeo): só uma área
+	 * de rolagem também nativa consegue cortar o que passa da borda do painel */
+	scroll->viewport()->setAttribute(Qt::WA_NativeWindow);
 	tilesHost = new QWidget;
 	tilesHost->setObjectName("tilesHost");
 	tilesGrid = new QGridLayout(tilesHost);

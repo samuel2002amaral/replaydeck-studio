@@ -1,6 +1,6 @@
 ## ReplayDeck Studio — fase 2 (base do programa)
 
-> 2.0.4: corrige o travamento da câmera na janela de adicionar (a lista de dispositivos era buscada de novo a cada clique; agora é buscada uma vez só). Novo jeito de adicionar: escolhe o tipo → "Adicionar nova entrada" → a imagem aparece sozinha → OK.
+> 2.0.5: a janela da câmera abre na hora (a procura de dispositivos roda em segundo plano, com "Procurando dispositivos…") e as imagens das entradas não saem mais para fora do painel.
 
 Programa próprio, com a tela aprovada (estilo vMix). Do OBS fica só o motor de vídeo por baixo.
 

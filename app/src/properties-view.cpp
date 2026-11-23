@@ -17,6 +17,16 @@
 #include <QSpinBox>
 #include <QTimer>
 #include <QVBoxLayout>
+#include <QApplication>
+#include <QPointer>
+
+#include <thread>
+
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <Windows.h>
+#include <objbase.h>
+#endif
 
 PropertiesView::PropertiesView(obs_source_t *source, const char *sourceType, QWidget *parent)
 	: QWidget(parent),
@@ -57,15 +67,47 @@ int PropertiesView::reloadCount()
 	return reloads;
 }
 
+/* Busca as opções em segundo plano: na câmera (DirectShow) isso varre todos os dispositivos e
+ * resoluções e leva segundos; a janela abre na hora e os campos aparecem quando a busca termina. */
 void PropertiesView::reload()
 {
+	if (loading)
+		return;
+	loading = true;
 	obs_properties_destroy(props);
-	OBSSourceAutoRelease src = obs_weak_source_get_source(weak);
-	props = src ? obs_source_properties(src) : obs_get_source_properties(type.constData());
-	reloads++;
-	if (props && !src)
-		obs_properties_apply_settings(props, data); /* listas que dependem de outras opções já vêm certas */
-	refresh();
+	props = nullptr;
+	refresh(); /* mostra "Procurando…" */
+
+	OBSSource src = OBSSourceAutoRelease(obs_weak_source_get_source(weak)).Get();
+	OBSData settings = data;
+	const QByteArray typeId = type;
+	QPointer<PropertiesView> self(this);
+	std::thread([self, src, settings, typeId]() {
+#ifdef _WIN32
+		const HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED); /* a câmera usa COM */
+#endif
+		obs_properties_t *p = src ? obs_source_properties(src) : obs_get_source_properties(typeId.constData());
+		if (p && !src)
+			obs_properties_apply_settings(p, settings); /* listas que dependem de outras opções já vêm certas */
+#ifdef _WIN32
+		if (SUCCEEDED(com))
+			CoUninitialize();
+#endif
+		QMetaObject::invokeMethod(
+			qApp,
+			[self, p]() {
+				if (!self) {
+					obs_properties_destroy(p);
+					return;
+				}
+				self->props = p;
+				self->loading = false;
+				reloads++;
+				self->refresh();
+				emit self->loaded();
+			},
+			Qt::QueuedConnection);
+	}).detach();
 }
 
 void PropertiesView::refresh()
@@ -86,8 +128,13 @@ void PropertiesView::refresh()
 		for (obs_property_t *p = obs_properties_first(props); p; obs_property_next(&p))
 			addProperty(form, p);
 	}
-	if (form->rowCount() == 0)
+	if (loading) {
+		auto *l = new QLabel("Procurando dispositivos e opções…");
+		l->setObjectName("muted");
+		form->addRow(l);
+	} else if (form->rowCount() == 0) {
 		form->addRow(new QLabel("Esta entrada não tem opções."));
+	}
 	rebuilding = false;
 	if (pendingApply) {
 		obs_property_t *pa = pendingApply;

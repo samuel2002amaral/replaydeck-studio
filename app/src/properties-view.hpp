@@ -22,10 +22,12 @@ public:
 	~PropertiesView() override;
 
 	obs_data_t *settings() const { return data; }
+	bool isLoading() const { return loading; }
 	static int reloadCount(); /* quantas vezes as opções foram buscadas na fonte (teste/diagnóstico) */
 
 signals:
 	void changed();
+	void loaded(); /* as opções chegaram (a busca roda em segundo plano) */
 
 private:
 	void reload();  /* busca as opções na fonte (lento na câmera): só ao abrir e em botões */
@@ -40,6 +42,8 @@ private:
 	QWidget *content = nullptr;
 	bool rebuilding = false;
 	bool dirty = false;
+	bool loading = false;
+	class QLabel *loadingLabel = nullptr;
 	obs_property_t *pendingApply = nullptr;
 	int autoPicks = 0;
 };
