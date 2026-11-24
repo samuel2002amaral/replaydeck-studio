@@ -269,8 +269,9 @@ int main(int argc, char *argv[])
 				auto *d = new SettingsDialog(&w, qEnvironmentVariableIntValue("RDS_SELFTEST_TAB"));
 				d->show();
 			});
+			const int hold = qMax(2, qEnvironmentVariableIntValue("RDS_SELFTEST_HOLD")) * 1000;
 			QTimer::singleShot(1500, [] { QProcess::execute("import", {"-window", "root", qEnvironmentVariable("RDS_SELFTEST_SETTINGS")}); });
-			QTimer::singleShot(2000, [&w] { QApplication::closeAllWindows(); w.close(); });
+			QTimer::singleShot(hold, [&w] { QApplication::closeAllWindows(); w.close(); });
 		}
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST_OUTPUTS")) {
 			/* teste das saídas: grava 3 s, transmite 4 s para RDS_SELFTEST_RTMP, muda para 720p */

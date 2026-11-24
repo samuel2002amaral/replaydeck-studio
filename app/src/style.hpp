@@ -103,6 +103,8 @@ QScrollBar::add-line, QScrollBar::sub-line, QScrollBar::add-page, QScrollBar::su
 #tileButton:hover { background: #343c4b; }
 #tileButton:checked { background: #2f5d9e; color: #ffffff; }
 #tileButton[on="true"] { background: #c27414; color: #ffffff; }
+#keyCapture { text-align: left; padding: 3px 8px; }
+#keyCapture[on="true"] { background: #c27414; border-color: #e08a1e; color: #ffffff; }
 #outButton[on="true"] { background: #a52a21; border-color: #c3362b; color: #ffffff; }
 #outButton[on="true"]:hover { background: #b3302a; }
 #mixerStrip, #masterStrip { background: #222833; border: 1px solid #363e4c; border-radius: 4px; }

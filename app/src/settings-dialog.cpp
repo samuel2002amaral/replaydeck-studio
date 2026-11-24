@@ -234,14 +234,16 @@ SettingsDialog::SettingsDialog(QWidget *parent, int startTab) : QDialog(parent)
 		auto *w = new QWidget;
 		auto *v = new QVBoxLayout(w);
 		v->setContentsMargins(14, 12, 14, 12);
-		auto *h = new QLabel("Tecla → função (os mesmos nomes do vMix). Entrada: número ou nome; vazio = a da Prévia. "
-				     "Não disparam enquanto você digita num campo de texto.");
+		auto *h = new QLabel("Clique na tecla e aperte a do teclado: vale a TECLA FÍSICA (o 7 do teclado numérico é "
+				     "diferente do 7 de cima, e funciona com Num Lock ligado ou não). Função com os nomes do vMix. "
+				     "Entrada: número ou nome; vazio = a da Prévia.");
 		h->setObjectName("muted");
 		h->setWordWrap(true);
 		v->addWidget(h);
 		keys = new QTableWidget(0, 4);
 		keys->setHorizontalHeaderLabels({"Tecla", "Função", "Entrada", "Value"});
-		keys->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+		keys->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Fixed);
+		keys->setColumnWidth(0, 140);
 		keys->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
 		keys->setColumnWidth(2, 130);
 		keys->setColumnWidth(3, 70);
@@ -250,13 +252,19 @@ SettingsDialog::SettingsDialog(QWidget *parent, int startTab) : QDialog(parent)
 		v->addWidget(keys, 1);
 		for (const Shortcut &s : Shortcuts::get().list())
 			addShortcutRow(s);
+		globalKeys = new QCheckBox("Funcionar também com outro programa na frente (navegador, WhatsApp...)");
+		globalKeys->setToolTip("A tecla continua indo para o outro programa também. Só no Windows.");
+		globalKeys->setChecked(Shortcuts::get().global());
+		v->addWidget(globalKeys);
 		auto *row = new QHBoxLayout;
 		auto *add = new QPushButton("+ Adicionar");
 		connect(add, &QPushButton::clicked, this, [this] {
-			addShortcutRow(Shortcut{QKeySequence(), "Cut", "", ""});
+			Shortcut s;
+			s.function = "Cut";
+			addShortcutRow(s);
 			keys->scrollToBottom();
-			if (auto *ed = qobject_cast<QKeySequenceEdit *>(keys->cellWidget(keys->rowCount() - 1, 0)))
-				ed->setFocus();
+			if (auto *ed = qobject_cast<KeyCapture *>(keys->cellWidget(keys->rowCount() - 1, 0)))
+				ed->startCapture(); /* já esperando a tecla */
 		});
 		auto *del = new QPushButton("Remover");
 		connect(del, &QPushButton::clicked, this, [this] {
@@ -270,7 +278,7 @@ SettingsDialog::SettingsDialog(QWidget *parent, int startTab) : QDialog(parent)
 			for (const Shortcut &s : Shortcuts::suggested()) {
 				bool exists = false;
 				for (int r = 0; r < keys->rowCount(); r++)
-					if (auto *ed = qobject_cast<QKeySequenceEdit *>(keys->cellWidget(r, 0)); ed && ed->keySequence() == s.key)
+					if (auto *ed = qobject_cast<KeyCapture *>(keys->cellWidget(r, 0)); ed && ed->sameKey(s))
 						exists = true;
 				if (!exists)
 					addShortcutRow(s);
@@ -344,16 +352,7 @@ void SettingsDialog::addShortcutRow(const Shortcut &s)
 {
 	const int r = keys->rowCount();
 	keys->insertRow(r);
-	auto *ed = new QKeySequenceEdit(s.key);
-#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
-	ed->setMaximumSequenceLength(1); /* uma tecla (com Ctrl/Shift/Alt), não sequência */
-#else
-	connect(ed, &QKeySequenceEdit::editingFinished, ed, [ed] {
-		if (ed->keySequence().count() > 1)
-			ed->setKeySequence(QKeySequence(ed->keySequence()[0]));
-	});
-#endif
-	ed->setClearButtonEnabled(true);
+	auto *ed = new KeyCapture(s); /* grava a tecla física */
 	keys->setCellWidget(r, 0, ed);
 	auto *fn = new QComboBox;
 	QString lastCat;
@@ -423,20 +422,25 @@ bool SettingsDialog::apply()
 	s.monitorDeviceName = m.value(1);
 	QList<Shortcut> list;
 	for (int r = 0; r < keys->rowCount(); r++) {
-		auto *ed = qobject_cast<QKeySequenceEdit *>(keys->cellWidget(r, 0));
+		auto *ed = qobject_cast<KeyCapture *>(keys->cellWidget(r, 0));
 		auto *fn = qobject_cast<QComboBox *>(keys->cellWidget(r, 1));
 		auto *in = qobject_cast<QComboBox *>(keys->cellWidget(r, 2));
 		auto *val = qobject_cast<QLineEdit *>(keys->cellWidget(r, 3));
-		if (!ed || ed->keySequence().isEmpty() || fn->currentData().toString().isEmpty())
+		if (!ed || ed->isEmpty() || fn->currentData().toString().isEmpty())
 			continue;
 		/* "3  CAM 1" escolhido na lista vira "3" */
 		QString input = in->currentText().trimmed();
 		const int idx = in->findText(input);
 		if (idx > 0)
 			input = in->itemData(idx).toString();
-		list << Shortcut{ed->keySequence(), fn->currentData().toString(), input, val->text().trimmed()};
+		Shortcut sc = ed->shortcut();
+		sc.function = fn->currentData().toString();
+		sc.input = input;
+		sc.value = val->text().trimmed();
+		list << sc;
 	}
 	Shortcuts::get().setList(list);
+	Shortcuts::get().setGlobal(globalKeys->isChecked());
 	QString err;
 	if (!Outputs::get().setSettings(s, err)) {
 		QMessageBox::warning(this, "Configurações", err);

@@ -27,6 +27,7 @@ private:
 	QComboBox *recEncoder = nullptr;
 	QSpinBox *recKbps = nullptr;
 	class QTableWidget *dests = nullptr;
+	class QCheckBox *globalKeys = nullptr;
 	QComboBox *streamEncoder = nullptr;
 	QSpinBox *streamKbps = nullptr;
 	QSpinBox *verticalKbps = nullptr;
