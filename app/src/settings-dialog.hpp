@@ -22,6 +22,7 @@ private:
 	QTabWidget *tabs = nullptr;
 	QComboBox *resolution = nullptr;
 	QComboBox *fps = nullptr;
+	QComboBox *adapter = nullptr;
 	QLineEdit *recFolder = nullptr;
 	QComboBox *recFormat = nullptr;
 	QComboBox *recEncoder = nullptr;

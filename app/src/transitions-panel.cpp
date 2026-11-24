@@ -28,7 +28,25 @@ extern "C" {
 #include <libavformat/avformat.h>
 }
 
+#include <QDateTime>
+#include <QHash>
+
+static int probeDurationMs(const QString &file);
+
 int videoDurationMs(const QString &file)
+{
+	/* abrir o vídeo custa: guarda pelo arquivo + data de modificação */
+	static QHash<QString, QPair<qint64, int>> cache;
+	const qint64 mtime = QFileInfo(file).lastModified().toMSecsSinceEpoch();
+	auto it = cache.constFind(file);
+	if (it != cache.constEnd() && it->first == mtime)
+		return it->second;
+	const int ms = probeDurationMs(file);
+	cache.insert(file, qMakePair(mtime, ms));
+	return ms;
+}
+
+static int probeDurationMs(const QString &file)
 {
 	AVFormatContext *fc = nullptr;
 	const QByteArray p = file.toUtf8();

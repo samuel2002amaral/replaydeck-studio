@@ -1,4 +1,5 @@
 #include "main-window.hpp"
+#include <media-io/video-io.h>
 #include "gt/gt-dock.hpp"
 #include "transitions-panel.hpp"
 #include "replay-host.hpp"
@@ -632,8 +633,25 @@ void MainWindow::updateStatus()
 	status[0]->setText(QString("%1x%2  %3 fps").arg(ovi.base_width).arg(ovi.base_height).arg(obs_get_active_fps(), 0, 'f', 2));
 	status[1]->setText(QString("Render %1 ms").arg(obs_get_average_frame_time_ns() / 1000000.0, 0, 'f', 1));
 	status[2]->setText(QString("CPU %1%").arg(os_cpu_usage_info_query(cpu), 0, 'f', 0));
-	status[3]->setText(QString("Atrasados %1 de %2 quadros").arg(skipped).arg(total));
+	/* atrasados = a placa de vídeo não deu conta de desenhar; codificação = o codificador não deu conta */
+	const uint32_t encSkipped = video_output_get_skipped_frames(obs_get_video());
+	QString lag = QString("Atrasados %1 de %2 quadros").arg(skipped).arg(total);
+	if (encSkipped)
+		lag += QString("  ·  codificação perdeu %1").arg(encSkipped);
+	status[3]->setText(lag);
+	status[3]->setToolTip("Placa de vídeo: " + Engine::get().adapterName() +
+			      "\nAtrasados: quadros que a placa não desenhou a tempo"
+			      "\nCodificação: quadros que o codificador (gravação/transmissão) não deu conta");
 	status[4]->setText(QString("%1 entradas").arg(Engine::get().inputs().size()));
+	/* uma linha por minuto no log: com o log dá para ver como o programa rodou no PC de quem usa */
+	static int perfTick = 0;
+	static const int perfEvery = qEnvironmentVariableIsSet("RDS_PERF_LOG") ? 2 : 60;
+	if (++perfTick >= perfEvery) {
+		perfTick = 0;
+		blog(LOG_INFO, "[desempenho] %.2f fps, desenho %.1f ms, CPU %.0f%%, atrasados %u/%u, codificação perdeu %u",
+		     obs_get_active_fps(), obs_get_average_frame_time_ns() / 1000000.0, os_cpu_usage_info_query(cpu),
+		     skipped, total, encSkipped);
+	}
 	updateOutputs();
 }
 

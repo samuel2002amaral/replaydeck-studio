@@ -22,6 +22,7 @@ struct StudioSettings {
 	/* vídeo */
 	int width = 1920, height = 1080;
 	int fpsNum = 30, fpsDen = 1;
+	QString adapter = "auto"; /* placa de vídeo: "auto" (a dedicada) ou o nome; vale ao reabrir */
 	/* gravação */
 	QString recFolder;          /* vazio = Vídeos/ReplayDeck Studio */
 	QString recFormat = "mp4";  /* mp4 (fragmentado: não corrompe se cair a energia), mkv, mov */

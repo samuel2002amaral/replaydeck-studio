@@ -35,6 +35,8 @@ add_executable(replaydeck-studio WIN32
   src/shortcuts.cpp src/shortcuts.hpp
   src/style.hpp
   src/gt-host.cpp src/gt-host.hpp src/gt-stinger.cpp
+  src/gpu.cpp src/gpu.hpp
+  src/perf.cpp src/perf.hpp
   src/transitions-panel.cpp src/transitions-panel.hpp
   # replay (veio do plugin ReplayDeck; roda dentro do programa)
   replay/engine.cpp replay/engine.hpp
@@ -90,6 +92,11 @@ install(DIRECTORY replay/data/ DESTINATION "${CMAKE_INSTALL_DATAROOTDIR}/replayd
 if(MSVC)
   target_compile_options(replaydeck-studio PRIVATE /utf-8 /W3)
   target_compile_definitions(replaydeck-studio PRIVATE NOMINMAX _CRT_SECURE_NO_WARNINGS)
+  # otimização máxima também na versão com símbolos (RelWithDebInfo só inline parcial por padrão):
+  # inline completo, intrínsecos e otimização do programa inteiro na ligação
+  target_compile_options(replaydeck-studio PRIVATE $<$<NOT:$<CONFIG:Debug>>:/Ob2 /Oi /GL /Gy>)
+  target_link_options(replaydeck-studio PRIVATE $<$<NOT:$<CONFIG:Debug>>:/LTCG /OPT:REF /OPT:ICF /INCREMENTAL:NO>)
+  target_link_libraries(replaydeck-studio PRIVATE dxgi winmm)
   if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/res/app.rc")
     target_sources(replaydeck-studio PRIVATE res/app.rc)
   endif()
@@ -112,15 +119,15 @@ if(RDS_BUILD_TESTS)
   add_executable(props-cache-test tests/props-cache-test.cpp src/props-cache.cpp src/props-cache.hpp src/properties-view.cpp src/properties-view.hpp)
   target_link_libraries(props-cache-test PRIVATE OBS::libobs Qt6::Core Qt6::Gui Qt6::Widgets)
   set_target_properties(props-cache-test PROPERTIES CXX_STANDARD 17 AUTOMOC ON)
-  add_executable(engine-share-test tests/engine-share-test.cpp src/engine.cpp src/engine.hpp src/props-cache.cpp)
+  add_executable(engine-share-test tests/engine-share-test.cpp src/engine.cpp src/engine.hpp src/props-cache.cpp src/gpu.cpp)
   target_link_libraries(engine-share-test PRIVATE OBS::libobs Qt6::Core Qt6::Gui Qt6::Widgets)
   target_compile_definitions(engine-share-test PRIVATE RDS_VERSION="teste")
   set_target_properties(engine-share-test PROPERTIES CXX_STANDARD 17 AUTOMOC ON)
-  add_executable(engine-enable-test tests/engine-enable-test.cpp src/engine.cpp src/engine.hpp src/props-cache.cpp)
+  add_executable(engine-enable-test tests/engine-enable-test.cpp src/engine.cpp src/engine.hpp src/props-cache.cpp src/gpu.cpp)
   target_link_libraries(engine-enable-test PRIVATE OBS::libobs Qt6::Core Qt6::Gui Qt6::Widgets)
   target_compile_definitions(engine-enable-test PRIVATE RDS_VERSION="teste")
   set_target_properties(engine-enable-test PROPERTIES CXX_STANDARD 17 AUTOMOC ON)
-  add_executable(engine-audio-test tests/engine-audio-test.cpp src/engine.cpp src/engine.hpp src/props-cache.cpp)
+  add_executable(engine-audio-test tests/engine-audio-test.cpp src/engine.cpp src/engine.hpp src/props-cache.cpp src/gpu.cpp)
   target_link_libraries(engine-audio-test PRIVATE OBS::libobs Qt6::Core Qt6::Gui Qt6::Widgets)
   target_compile_definitions(engine-audio-test PRIVATE RDS_VERSION="teste")
   set_target_properties(engine-audio-test PROPERTIES CXX_STANDARD 17 AUTOMOC ON)

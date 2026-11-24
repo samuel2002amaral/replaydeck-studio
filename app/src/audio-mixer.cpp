@@ -248,6 +248,8 @@ AudioMixer::AudioMixer(QWidget *parent) : QWidget(parent)
 	timer = new QTimer(this);
 	timer->setInterval(33);
 	connect(timer, &QTimer::timeout, this, [this] {
+		if (!isVisible())
+			return; /* aba escondida: nada a desenhar */
 		for (MixerStrip *s : strips)
 			s->meter()->tick();
 		master->meter()->tick();

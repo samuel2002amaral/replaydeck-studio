@@ -89,6 +89,7 @@ void Outputs::load()
 		num("altura", s.height);
 		num("fps_num", s.fpsNum);
 		num("fps_den", s.fpsDen);
+		str("placa_video", s.adapter);
 		str("gravar_pasta", s.recFolder);
 		str("gravar_formato", s.recFormat);
 		str("gravar_codificador", s.recEncoder);
@@ -136,6 +137,7 @@ void Outputs::save()
 	obs_data_set_int(d, "altura", cfg.height);
 	obs_data_set_int(d, "fps_num", cfg.fpsNum);
 	obs_data_set_int(d, "fps_den", cfg.fpsDen);
+	obs_data_set_string(d, "placa_video", cfg.adapter.toUtf8().constData());
 	obs_data_set_string(d, "gravar_pasta", cfg.recFolder.toUtf8().constData());
 	obs_data_set_string(d, "gravar_formato", cfg.recFormat.toUtf8().constData());
 	obs_data_set_string(d, "gravar_codificador", cfg.recEncoder.toUtf8().constData());

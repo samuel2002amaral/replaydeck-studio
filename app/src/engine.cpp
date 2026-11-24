@@ -1,4 +1,5 @@
 #include "engine.hpp"
+#include "gpu.hpp"
 
 #include <QTimer>
 #include "props-cache.hpp"
@@ -98,6 +99,8 @@ bool Engine::start(QString &error)
 		/* resolução e fps escolhidos em Configurações (configuracoes.json) */
 		OBSDataAutoRelease st = obs_data_create_from_json_file_safe(
 			QFile::encodeName(cfgDir + "/configuracoes.json").constData(), "bak");
+		if (st)
+			adapterWanted = QString::fromUtf8(obs_data_get_string(st, "placa_video"));
 		if (st && obs_data_has_user_value(st, "largura")) {
 			const int w = (int)obs_data_get_int(st, "largura"), h = (int)obs_data_get_int(st, "altura");
 			const int n = (int)obs_data_get_int(st, "fps_num"), d = (int)obs_data_get_int(st, "fps_den");
@@ -124,7 +127,9 @@ bool Engine::start(QString &error)
 	ovi.output_format = VIDEO_FORMAT_NV12;
 	ovi.colorspace = VIDEO_CS_709;
 	ovi.range = VIDEO_RANGE_PARTIAL;
-	ovi.adapter = 0;
+	ovi.adapter = (uint32_t)gpu::pick(adapterWanted, &adapterUsed);
+	blog(LOG_INFO, "vídeo na placa: %s (%s)", adapterUsed.toUtf8().constData(),
+	     adapterWanted.isEmpty() || adapterWanted == "auto" ? "automático" : "escolhida em Configurações");
 	ovi.gpu_conversion = true;
 	ovi.scale_type = OBS_SCALE_BICUBIC;
 	const int rv = obs_reset_video(&ovi);

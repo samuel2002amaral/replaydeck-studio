@@ -40,6 +40,7 @@ protected:
 	bool event(QEvent *e) override;
 	void resizeEvent(QResizeEvent *) override;
 	void showEvent(QShowEvent *) override;
+	void hideEvent(QHideEvent *) override;
 	void mousePressEvent(QMouseEvent *) override;
 	void mouseDoubleClickEvent(QMouseEvent *) override;
 
@@ -47,11 +48,14 @@ private:
 	static void draw(void *data, uint32_t cx, uint32_t cy);
 	void createDisplay();
 	void destroyDisplay();
+	void updateEnabled(); /* só desenha quando aparece na tela */
+	static void checkAll();
 
 	obs_display_t *display = nullptr;
 	OBSWeakSourceAutoRelease weak;
 	Mode mode = Mode::Source;
 	bool hasContent = false;
+	bool drawing = true;
 	QSize forced;
 	std::mutex m; /* o desenho roda na thread de vídeo */
 };

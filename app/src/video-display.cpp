@@ -3,6 +3,7 @@
 #include <graphics/matrix4.h>
 
 #include <QMouseEvent>
+#include <QApplication>
 #include <QTimer>
 
 #include <algorithm>
@@ -15,8 +16,42 @@
 #include <obs-nix-platform.h>
 #endif
 
+/* Toda tela de vídeo custa um desenho por quadro na placa de vídeo. As que não aparecem
+ * (aba escondida, entrada rolada para fora da lista, janela minimizada, entrada minimizada em
+ * barra) param de desenhar — o que vai ao ar não muda nada. */
+static QList<VideoDisplay *> g_displays;
+static QTimer *g_visTimer = nullptr;
+
+void VideoDisplay::checkAll()
+{
+	for (VideoDisplay *d : g_displays)
+		d->updateEnabled();
+}
+
+void VideoDisplay::updateEnabled()
+{
+	QWidget *top = window();
+	static const bool always = qEnvironmentVariableIsSet("RDS_NO_GATE"); /* diagnóstico: comparar */
+	const bool exposed = top && top->windowHandle() && top->windowHandle()->isExposed();
+	const bool on = always || (isVisible() && exposed && !top->isMinimized() && !visibleRegion().isEmpty());
+	if (on == drawing && display)
+		return;
+	drawing = on;
+	if (display)
+		obs_display_set_enabled(display, on);
+	static const bool dbg = qEnvironmentVariableIsSet("RDS_DEBUG_GATE");
+	if (dbg)
+		blog(LOG_INFO, "[tela] %p %s", (void *)this, on ? "desenha" : "parada");
+}
+
 VideoDisplay::VideoDisplay(QWidget *parent) : QWidget(parent)
 {
+	g_displays.append(this);
+	if (!g_visTimer) {
+		g_visTimer = new QTimer(qApp);
+		QObject::connect(g_visTimer, &QTimer::timeout, &VideoDisplay::checkAll);
+		g_visTimer->start(250);
+	}
 	setAttribute(Qt::WA_PaintOnScreen);
 	setAttribute(Qt::WA_StaticContents);
 	setAttribute(Qt::WA_NoSystemBackground);
@@ -28,6 +63,7 @@ VideoDisplay::VideoDisplay(QWidget *parent) : QWidget(parent)
 
 VideoDisplay::~VideoDisplay()
 {
+	g_displays.removeOne(this);
 	destroyDisplay();
 }
 
@@ -66,8 +102,11 @@ void VideoDisplay::createDisplay()
 #endif
 	/* fora da imagem: a cor do painel (#1c212a, em 0xAABBGGRR); preto só onde é vídeo */
 	display = obs_display_create(&info, 0xFF2A211C);
-	if (display)
+	if (display) {
 		obs_display_add_draw_callback(display, draw, this);
+		drawing = true;
+		updateEnabled();
+	}
 }
 
 void VideoDisplay::paintEvent(QPaintEvent *)
@@ -90,6 +129,16 @@ void VideoDisplay::showEvent(QShowEvent *e)
 {
 	QWidget::showEvent(e);
 	createDisplay();
+	updateEnabled();
+}
+
+void VideoDisplay::hideEvent(QHideEvent *e)
+{
+	QWidget::hideEvent(e);
+	if (display && drawing) {
+		drawing = false;
+		obs_display_set_enabled(display, false);
+	}
 }
 
 void VideoDisplay::resizeEvent(QResizeEvent *e)

@@ -40,6 +40,7 @@ public:
 	static QList<Shortcut> suggested();
 	static QList<Shortcut> suggestedReplay(); /* teclado numérico para o replay (com os de segurar) */
 	void install(); /* passa a ouvir o teclado do programa todo */
+	void shutdown(); /* ao sair: desliga o gancho global (thread própria) */
 
 	/* uma tecla apertada (programa ou gancho global): roda os atalhos dela */
 	bool trigger(quint32 scan, int mods, int qtKey, bool keypad);

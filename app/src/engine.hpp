@@ -73,6 +73,7 @@ public:
 	/* resolução e quadros por segundo (só sem nada gravando/transmitindo) */
 	bool resetVideo(uint32_t w, uint32_t h, uint32_t num, uint32_t den, QString &error);
 	QString configDir() const { return cfgDir; }
+	QString adapterName() const { return adapterUsed; } /* placa de vídeo em uso */
 
 	/* entradas */
 	const QVector<Input *> &inputs() const { return list; }
@@ -181,6 +182,7 @@ private:
 	uint32_t baseW = 1920, baseH = 1080;
 	uint32_t fpsNum = 30, fpsDen = 1;
 	QString cfgDir;
+	QString adapterWanted, adapterUsed;
 	QString projPath;
 	QVector<Input *> list;
 	int nextId = 1;

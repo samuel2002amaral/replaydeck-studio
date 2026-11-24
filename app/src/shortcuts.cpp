@@ -1,4 +1,8 @@
 #include "shortcuts.hpp"
+
+#include <atomic>
+#include <future>
+#include <thread>
 #include "engine.hpp"
 #include "functions.hpp"
 
@@ -460,16 +464,55 @@ static LRESULT CALLBACK lowLevelKeyboard(int code, WPARAM wParam, LPARAM lParam)
 }
 #endif
 
+#ifdef _WIN32
+/* O gancho roda numa thread só dele: o Windows espera o gancho responder a CADA tecla do
+ * computador; na thread da interface, um momento ocupado (abrir câmera, janela) atrasava o
+ * teclado do PC inteiro. Aqui ele responde na hora, sempre. */
+static std::thread g_hookThread;
+static std::atomic<DWORD> g_hookThreadId{0};
+
+static void hookThreadMain(std::promise<bool> started)
+{
+	g_hookThreadId = GetCurrentThreadId();
+	g_hook = SetWindowsHookExW(WH_KEYBOARD_LL, lowLevelKeyboard, GetModuleHandleW(nullptr), 0);
+	started.set_value(g_hook != nullptr);
+	if (!g_hook)
+		return;
+	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+	MSG msg;
+	while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
+		TranslateMessage(&msg);
+		DispatchMessageW(&msg);
+	}
+	UnhookWindowsHookEx(g_hook);
+	g_hook = nullptr;
+	g_down.clear();
+}
+#endif
+
+void Shortcuts::shutdown()
+{
+	releaseAll();
+	const bool was = globalOn;
+	globalOn = false;
+	applyGlobalHook();
+	globalOn = was; /* a escolha continua salva */
+}
+
 void Shortcuts::applyGlobalHook()
 {
 #ifdef _WIN32
-	if (globalOn && !g_hook) {
-		g_hook = SetWindowsHookExW(WH_KEYBOARD_LL, lowLevelKeyboard, GetModuleHandleW(nullptr), 0);
-		blog(LOG_INFO, "atalhos globais %s", g_hook ? "ligados" : "NÃO ligaram");
-	} else if (!globalOn && g_hook) {
-		UnhookWindowsHookEx(g_hook);
-		g_hook = nullptr;
-		g_down.clear();
+	if (globalOn && !g_hookThread.joinable()) {
+		std::promise<bool> started;
+		std::future<bool> ok = started.get_future();
+		g_hookThread = std::thread(hookThreadMain, std::move(started));
+		const bool on = ok.get();
+		if (!on)
+			g_hookThread.join();
+		blog(LOG_INFO, "atalhos globais %s", on ? "ligados (thread própria)" : "NÃO ligaram");
+	} else if (!globalOn && g_hookThread.joinable()) {
+		PostThreadMessageW(g_hookThreadId, WM_QUIT, 0, 0);
+		g_hookThread.join();
 		blog(LOG_INFO, "atalhos globais desligados");
 	}
 #endif

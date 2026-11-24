@@ -8,6 +8,7 @@
 #include "settings-dialog.hpp"
 #include "external-output.hpp"
 #include "main-window.hpp"
+#include "perf.hpp"
 #include "transitions-panel.hpp"
 #include "functions.hpp"
 #include "gt/gt-source.hpp"
@@ -126,6 +127,7 @@ int main(int argc, char *argv[])
 		obs_set_nix_platform_display(x11->display());
 #endif
 
+	perf::tuneProcess();
 	QString error;
 	Engine::beforeProjectLoad = replayhost::registerTypes; /* entradas Replay A/B do projeto */
 	if (!Engine::get().start(error)) {
@@ -135,6 +137,7 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
+	perf::logState();
 	VerticalCanvas::registerSource();
 	Outputs::get().load();
 	Shortcuts::get().load();
@@ -143,6 +146,8 @@ int main(int argc, char *argv[])
 	{
 		MainWindow w;
 		w.showMaximized();
+		perf::startAutosave(&w);
+		perf::startHangWatch();
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST"))
 			runSelfTest(w);
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST_REPLAY"))
@@ -522,6 +527,8 @@ int main(int argc, char *argv[])
 			QTimer::singleShot(3000, [&w] { w.close(); });
 		}
 		ret = app.exec();
+		perf::stopHangWatch();
+		Shortcuts::get().shutdown();
 		VirtualCam::get().shutdown();
 		Outputs::get().shutdown(); /* fecha o arquivo da gravação e a transmissão */
 		VerticalCanvas::get().shutdown();
@@ -529,5 +536,6 @@ int main(int argc, char *argv[])
 	}
 	replayhost::finish();
 	Engine::get().stop();
+	perf::restore();
 	return ret;
 }

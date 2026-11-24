@@ -84,7 +84,10 @@ GtDock::GtDock(QWidget *parent) : QWidget(parent)
 	gridBtn->setChecked(gridMode);
 
 	auto *timer = new QTimer(this);
-	connect(timer, &QTimer::timeout, this, &GtDock::refresh);
+	connect(timer, &QTimer::timeout, this, [this] {
+		if (isVisible()) /* aba escondida: não precisa atualizar */
+			refresh();
+	});
 	timer->start(200);
 }
 

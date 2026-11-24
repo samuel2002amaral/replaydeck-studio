@@ -1,4 +1,6 @@
 #include "settings-dialog.hpp"
+#include "gpu.hpp"
+#include "engine.hpp"
 #include "engine.hpp"
 #include "outputs.hpp"
 #include "functions.hpp"
@@ -89,6 +91,19 @@ SettingsDialog::SettingsDialog(QWidget *parent, int startTab) : QDialog(parent)
 	const int fi = fps->findData(QPoint(s.fpsNum, s.fpsDen));
 	fps->setCurrentIndex(fi < 0 ? 2 : fi);
 	f->addRow("Quadros por segundo", fps);
+	adapter = new QComboBox;
+	adapter->addItem("Automática (a dedicada: NVIDIA / AMD)", "auto");
+	for (const gpu::Adapter &a : gpu::adapters())
+		if (!a.software)
+			adapter->addItem(a.name + (a.dedicatedMB ? QString("  (%1 MB)").arg(a.dedicatedMB) : QString()), a.name);
+	{
+		const int ai = adapter->findData(s.adapter.isEmpty() ? QString("auto") : s.adapter);
+		adapter->setCurrentIndex(ai < 0 ? 0 : ai);
+	}
+	adapter->setToolTip("Em notebook com duas placas, a dedicada deixa tudo mais leve e libera o codificador\n"
+			    "NVIDIA direto da placa. Em uso agora: " + Engine::get().adapterName() +
+			    "\nVale ao abrir o programa de novo.");
+	f->addRow("Placa de vídeo", adapter);
 
 	/* ---- gravação ---- */
 	page(tabs, "Gravação", f, "O botão Gravar grava o Programa (com o áudio do Master) num arquivo.");
@@ -409,6 +424,12 @@ bool SettingsDialog::apply()
 	s.height = sz.height();
 	s.fpsNum = r.x();
 	s.fpsDen = r.y();
+	if (adapter) {
+		const QString a = adapter->currentData().toString();
+		if (a != (s.adapter.isEmpty() ? QString("auto") : s.adapter))
+			QMessageBox::information(this, "Placa de vídeo", "A troca da placa de vídeo vale quando o programa abrir de novo.");
+		s.adapter = a;
+	}
 	s.recFolder = recFolder->text().trimmed();
 	s.recFormat = recFormat->currentData().toString();
 	s.recEncoder = recEncoder->currentData().toString();
