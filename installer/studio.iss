@@ -30,6 +30,9 @@ SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayIcon={app}\bin\64bit\ReplayDeckStudio.exe
 CloseApplications=yes
+; só pede para fechar o próprio programa: o arquivo da câmera virtual fica aberto no Chrome,
+; Claude, Zoom, Teams (eles listam as câmeras do Windows) e isso não pode travar a instalação
+CloseApplicationsFilter=*.exe
 LicenseFile={#SrcDir}\LICENCA.txt
 
 [Languages]
@@ -41,7 +44,9 @@ Name: "es"; MessagesFile: "compiler:Languages\Spanish.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
-Source: "{#SrcDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#SrcDir}\*"; DestDir: "{app}"; Excludes: "obs-virtualcam-module*.dll"; Flags: ignoreversion recursesubdirs createallsubdirs
+; câmera virtual: só troca se a versão mudou (a mesma versão em uso por outro programa fica como está)
+Source: "{#SrcDir}\core\win-dshow\data\obs-virtualcam-module*.dll"; DestDir: "{app}\core\win-dshow\data"; Flags: skipifsourcedoesntexist
 
 [InstallDelete]
 ; versões 1.x eram o OBS com plugins: tira o que não faz mais parte do programa
