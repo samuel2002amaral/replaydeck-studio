@@ -120,7 +120,7 @@ jobs:
           cmake -S studio/app -B appbuild -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 "-DCMAKE_PREFIX_PATH=$prefix" "-Dlibobs_DIR=$libobs_dir" \
             "-DRDS_VERSION=$STUDIO_VERSION" -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF
-          cmake --build appbuild --parallel 4 2>&1 | grep -vE "warning:|note:|^\s+[0-9]+ \||^\s+\||^\s*\^" | tail -60
+          cmake --build appbuild --parallel 4 -- -k 2>&1 | grep -vE "warning:|note:|^\s+[0-9]+ \||^\s+\||^\s*\^" | tail -60
           test -f appbuild/ReplayDeckStudio
 
       - name: Montar o ReplayDeck Studio.app

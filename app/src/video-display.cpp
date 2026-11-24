@@ -12,7 +12,7 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
-#else
+#elif !defined(__APPLE__)
 #include <obs-nix-platform.h>
 #endif
 
@@ -94,6 +94,8 @@ void VideoDisplay::createDisplay()
 	info.zsformat = GS_ZS_NONE;
 #ifdef _WIN32
 	info.window.hwnd = (HWND)windowHandle()->winId();
+#elif defined(__APPLE__)
+	info.window.view = (id)windowHandle()->winId();
 #else
 	if (obs_get_nix_platform() != OBS_NIX_PLATFORM_X11_EGL)
 		return;
