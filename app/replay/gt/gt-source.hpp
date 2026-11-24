@@ -23,6 +23,7 @@ void gtPlayPage(obs_source_t *src, const QString &page);
 int gtState(obs_source_t *src);
 /* duração da animação de saída, em ms */
 int gtOutLengthMs(obs_source_t *src);
+int gtInLengthMs(obs_source_t *src);
 QString gtTitleName(obs_source_t *src);
 QString gtFile(obs_source_t *src);
 QStringList gtPages(obs_source_t *src);

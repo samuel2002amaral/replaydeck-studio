@@ -34,7 +34,7 @@ add_executable(replaydeck-studio WIN32
   src/vertical-canvas.cpp src/vertical-canvas.hpp
   src/shortcuts.cpp src/shortcuts.hpp
   src/style.hpp
-  src/gt-host.cpp src/gt-host.hpp
+  src/gt-host.cpp src/gt-host.hpp src/gt-stinger.cpp
   src/transitions-panel.cpp src/transitions-panel.hpp
   # replay (veio do plugin ReplayDeck; roda dentro do programa)
   replay/engine.cpp replay/engine.hpp

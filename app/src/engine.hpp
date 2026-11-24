@@ -51,7 +51,8 @@ struct StudioTransition {
 	QString name;
 	OBSSourceAutoRelease source;
 	int durationMs = 1000; /* ignorada nas de duração fixa (stinger: a duração do vídeo) */
-	bool isStinger() const;
+	bool isStinger() const;      /* stinger de vídeo ou GT */
+	bool isVideoStinger() const; /* obs_stinger_transition (vídeo) */
 	bool fixedDuration() const;
 };
 

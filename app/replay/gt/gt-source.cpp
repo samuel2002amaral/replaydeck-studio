@@ -646,6 +646,18 @@ std::shared_ptr<GtTitle> gtTitleOf(obs_source_t *src)
 	return g->title;
 }
 
+int gtInLengthMs(obs_source_t *src)
+{
+	GtSource *g = gtData(src);
+	if (!g)
+		return 0;
+	std::lock_guard<std::recursive_mutex> lk(g->mtx);
+	if (!g->title)
+		return 0;
+	auto it = g->title->storyboards.find("TransitionIn");
+	return it == g->title->storyboards.end() ? 0 : (int)std::ceil(it->second.length() * 1000.0);
+}
+
 int gtOutLengthMs(obs_source_t *src)
 {
 	GtSource *g = gtData(src);

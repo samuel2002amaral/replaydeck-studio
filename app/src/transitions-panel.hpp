@@ -14,6 +14,7 @@ public:
 
 public slots:
 	void addStinger();
+	void addGtStinger();
 	void addOther(const QString &type);
 
 private:

@@ -180,6 +180,7 @@ namespace gthost {
 void install()
 {
 	registerGtSource();
+	registerGtStinger();
 	/* título saindo de um overlay: anima a saída e só depois tira da tela */
 	Engine::beforeOverlayOff = [](obs_source_t *src) -> int {
 		if (!gtIsSource(src))

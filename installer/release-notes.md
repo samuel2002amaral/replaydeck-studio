@@ -1,5 +1,7 @@
 ## ReplayDeck Studio — fase 5 (títulos GT e transições)
 
+> 2.10.0: **Stinger GT**: um título GT do vMix (.gtzip) funciona como stinger, igual a um vídeo. Aba Transições → ＋ Stinger GT (título): escolha um título já importado (os textos e imagens seguem a entrada) ou um .gtzip solto. A animação de **entrada** do título cobre a tela, a imagem troca por baixo e a animação de **saída** revela a entrada nova. "Cobrindo" ajusta quanto tempo o título fica na tela inteira; em Opções dá para fixar o momento da troca. Vale nos botões do meio, nos atalhos (Stinger1…4), no replay e por cima dos overlays.
+>
 > 2.9.0: **aba Transições, com stinger**. ＋ Stinger: escolha o vídeo da vinheta (.webm/.mov com transparência, ou com máscara/track matte); o ponto de troca já vem no meio do vídeo e se ajusta no cartão ("Troca em"). Também: Deslizar, Varrer, Luma wipe, Fade para cor e Fade com outra duração. Cada transição vira um **botão no meio da tela**, abaixo do Fade, e pode ir para atalhos e scripts (Stinger1…4, Transition1…4). O stinger passa **por cima dos overlays** (placar, títulos GT) — dá para desligar na aba. O replay também enxerga essas transições (entrar/sair do replay com stinger). Tudo fica salvo no projeto.
 > **Atalhos de duas teclas**: segure Ctrl, Shift ou Alt e aperte a outra (Ctrl+7, Shift+F1, Ctrl+Num 7). Enquanto segura, o campo mostra "Ctrl + …". Ctrl+7 e o 7 sozinho são atalhos diferentes.
 >

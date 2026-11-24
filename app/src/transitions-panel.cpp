@@ -22,6 +22,8 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#include <cstring>
+
 extern "C" {
 #include <libavformat/avformat.h>
 }
@@ -80,6 +82,12 @@ TransitionsPanel::TransitionsPanel(QWidget *parent) : QWidget(parent)
 			  "No ponto de troca a imagem muda por baixo do vídeo.");
 	connect(addSt, &QPushButton::clicked, this, &TransitionsPanel::addStinger);
 	top->addWidget(addSt);
+	auto *addGt = new QPushButton("＋ Stinger GT (título)…");
+	addGt->setObjectName("primaryButton");
+	addGt->setToolTip("Um título GT do vMix (.gtzip) como stinger: a animação de entrada cobre a tela,\n"
+			  "a imagem troca por baixo e a animação de saída revela a entrada nova.");
+	connect(addGt, &QPushButton::clicked, this, &TransitionsPanel::addGtStinger);
+	top->addWidget(addGt);
 	auto *other = new QToolButton;
 	other->setText("＋ Outra transição");
 	other->setPopupMode(QToolButton::InstantPopup);
@@ -154,6 +162,39 @@ void TransitionsPanel::addStinger()
 	const QString name = uniqueTransitionName(QString("Stinger %1").arg(stingers + 1));
 	if (!Engine::get().addTransition("obs_stinger_transition", name, st))
 		QMessageBox::warning(this, "Transições", "Não foi possível criar o stinger.");
+}
+
+void TransitionsPanel::addGtStinger()
+{
+	QStringList titles;
+	for (Input *in : Engine::get().inputs())
+		if (strcmp(obs_source_get_id(in->source), "instant_replay_gt") == 0)
+			titles << in->name;
+	const QString otherFile = QString::fromUtf8("Outro arquivo .gtzip…");
+	QString choice = otherFile;
+	if (!titles.isEmpty()) {
+		bool ok = false;
+		choice = QInputDialog::getItem(this, "Stinger GT",
+					       "Qual título vira stinger?\n(os textos e imagens seguem a entrada do título)",
+					       titles + QStringList{otherFile}, 0, false, &ok);
+		if (!ok)
+			return;
+	}
+	OBSDataAutoRelease st = obs_data_create();
+	QString base;
+	if (choice == otherFile) {
+		const QString file =
+			QFileDialog::getOpenFileName(this, "Título GT para o stinger", QString(), "Títulos GT (*.gtzip)");
+		if (file.isEmpty())
+			return;
+		obs_data_set_string(st, "file", file.toUtf8().constData());
+		base = QFileInfo(file).completeBaseName();
+	} else {
+		obs_data_set_string(st, "titulo", choice.toUtf8().constData());
+		base = choice;
+	}
+	if (!Engine::get().addTransition("rds_gt_stinger", uniqueTransitionName("Stinger " + base), st))
+		QMessageBox::warning(this, "Transições", "Não foi possível criar o stinger GT.");
 }
 
 void TransitionsPanel::addOther(const QString &type)
@@ -253,7 +294,37 @@ QWidget *TransitionsPanel::card(int id)
 	/* linha 2: o que mais se ajusta + usar */
 	auto *h2 = new QHBoxLayout;
 	h2->setSpacing(8);
-	if (t->isStinger()) {
+	if (!t->isVideoStinger() && t->isStinger()) {
+		/* stinger GT: título de origem e tempo cobrindo a tela */
+		OBSDataAutoRelease st = obs_source_get_settings(t->source);
+		const QString title = QString::fromUtf8(obs_data_get_string(st, "titulo"));
+		const QString file = QString::fromUtf8(obs_data_get_string(st, "file"));
+		const bool missing = !title.isEmpty() && !e.inputByName(title);
+		auto *src = new QLabel(title.isEmpty() ? QFileInfo(file).fileName()
+						       : QString::fromUtf8("título: ") + title +
+								 (missing ? QString::fromUtf8("  (entrada não existe mais!)") : QString()));
+		src->setObjectName("muted");
+		src->setToolTip(title.isEmpty() ? file : QString("Usa a entrada de título GT \"%1\"").arg(title));
+		src->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+		h2->addWidget(src, 1);
+		h2->addWidget(new QLabel("Cobrindo"));
+		auto *hold = new QSpinBox;
+		hold->setRange(0, 10000);
+		hold->setSingleStep(50);
+		hold->setSuffix(" ms");
+		hold->setValue((int)obs_data_get_int(st, "segurar_ms"));
+		hold->setToolTip("Quanto tempo o título fica cobrindo a tela entre a entrada e a saída\n"
+				 "(a imagem troca no meio desse tempo)");
+		connect(hold, &QSpinBox::valueChanged, this, [id](int val) {
+			StudioTransition *x = Engine::get().userTransition(id);
+			if (!x)
+				return;
+			OBSDataAutoRelease s = obs_data_create();
+			obs_data_set_int(s, "segurar_ms", val);
+			obs_source_update(x->source, s);
+		});
+		h2->addWidget(hold);
+	} else if (t->isStinger()) {
 		OBSDataAutoRelease st = obs_source_get_settings(t->source);
 		const QString path = QString::fromUtf8(obs_data_get_string(st, "path"));
 		const int dur = videoDurationMs(path);
@@ -295,7 +366,7 @@ QWidget *TransitionsPanel::card(int id)
 		h2->addWidget(ms);
 	}
 	auto *opts = new QPushButton("Opções…");
-	opts->setToolTip(t->isStinger() ? "Vídeo, ponto de troca, máscara (track matte), áudio no fone..."
+	opts->setToolTip(t->isStinger() ? "Arquivo, ponto de troca, máscara (track matte), áudio..."
 					: "Direção, desenho do luma, cor...");
 	connect(opts, &QPushButton::clicked, this, [this, id] { openOptions(id); });
 	h2->addWidget(opts);

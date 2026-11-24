@@ -799,6 +799,11 @@ void Engine::transition(TransitionKind kind)
 
 bool StudioTransition::isStinger() const
 {
+	return source && strstr(obs_source_get_unversioned_id(source), "stinger") != nullptr;
+}
+
+bool StudioTransition::isVideoStinger() const
+{
 	return source && strcmp(obs_source_get_unversioned_id(source), "obs_stinger_transition") == 0;
 }
 
@@ -811,7 +816,7 @@ QString Engine::transitionTypeName(const char *type)
 {
 	static const struct {
 		const char *id, *label;
-	} names[] = {{"obs_stinger_transition", "Stinger"}, {"fade_transition", "Fade"},
+	} names[] = {{"obs_stinger_transition", "Stinger"}, {"rds_gt_stinger", "Stinger GT"}, {"fade_transition", "Fade"},
 		     {"slide_transition", "Deslizar"},        {"swipe_transition", "Varrer"},
 		     {"wipe_transition", "Luma wipe"},         {"fade_to_color_transition", "Fade para cor"},
 		     {"cut_transition", "Corte"}};

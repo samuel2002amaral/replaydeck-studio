@@ -201,6 +201,44 @@ int main(int argc, char *argv[])
 				w.close();
 			});
 		}
+		if (qEnvironmentVariableIsSet("RDS_SELFTEST_GTSTINGER")) {
+			/* stinger GT: um título .gtzip (entrada) como stinger entre vermelho e azul */
+			QTimer::singleShot(800, [] {
+				Engine &e = Engine::get();
+				while (!e.inputs().isEmpty())
+					e.removeInput(e.inputs().first()->id);
+				OBSDataAutoRelease r = obs_data_create();
+				obs_data_set_int(r, "color", 0xFF2020C0);
+				Input *red = e.addInput("color_source_v3", "VERMELHO", r);
+				OBSDataAutoRelease b = obs_data_create();
+				obs_data_set_int(b, "color", 0xFFC05020);
+				Input *blue = e.addInput("color_source_v3", "AZUL", b);
+				OBSSourceAutoRelease gt = gtLibraryAdd(qEnvironmentVariable("RDS_SELFTEST_GTSTINGER"));
+				e.cutTo(red->id);
+				e.setPreview(blue->id);
+				OBSDataAutoRelease st = obs_data_create();
+				obs_data_set_string(st, "titulo", gtDisplayName(gt).toUtf8().constData());
+				obs_data_set_int(st, "segurar_ms", 400);
+				StudioTransition *t = e.addTransition("rds_gt_stinger", "Stinger GT", st);
+				blog(LOG_INFO, "[gtst] criado=%d stinger=%d", t != nullptr, t && t->isStinger());
+			});
+			QTimer::singleShot(2500, [] {
+				QString err;
+				const bool ok = runFunction("Stinger1", QString(), QString(), &err);
+				blog(LOG_INFO, "[gtst] Stinger1 ok=%d %s", ok, err.toUtf8().constData());
+			});
+			QTimer::singleShot(5500, [&w] {
+				Engine &e = Engine::get();
+				Input *p = e.input(e.programId());
+				blog(LOG_INFO, "[gtst] programa=%s", p ? p->name.toUtf8().constData() : "-");
+				if (auto *tabs = w.findChild<QTabWidget *>("rightTabs"))
+					tabs->setCurrentIndex(3);
+			});
+			QTimer::singleShot(qMax(7000, qEnvironmentVariableIntValue("RDS_SELFTEST_HOLD") * 1000), [&w] {
+				w.grab().save(QDir::temp().filePath("rds-gtst.png"));
+				w.close();
+			});
+		}
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST_GT")) {
 			/* título GT: importar (vira entrada), overlay 1 liga, desliga com a saída animada
 			 * (fica na tela até a animação acabar), e volta ao abrir o projeto */
