@@ -11,8 +11,8 @@ Uma tela só; replay, títulos GT, áudio e saídas ficam dentro dela.
 | 2 | Base: entradas, prévia/programa, transições, overlays, janela da entrada, projeto | v2.0.11 |
 | 3 | Mixer de áudio, transmissão, gravação, configurações, saída externa | **v2.2.0** (falta o fone com o árbitro) |
 | 4 | Replay instantâneo (código do ReplayDeck) dentro do programa | v2.1.0 |
-| 5 | Títulos GT e overlays | v2.8.0 |
-| 6 | MultiCorder, PTZ, lista, fone com o árbitro, atalhos, API vMix | |
+| 5 | Títulos GT, overlays, transições e stingers (vídeo e GT) | v2.10.0 |
+| 6 | MultiCorder, PTZ, lista (playlist), atalhos, API vMix, scripts, filtros, plugins do OBS | v2.13.0 (falta o fone com o árbitro) |
 
 ## Código
 

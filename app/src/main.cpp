@@ -10,6 +10,7 @@
 #include "main-window.hpp"
 #include "perf.hpp"
 #include "playlist.hpp"
+#include "ptz.hpp"
 #include "filters-window.hpp"
 #include "plugins.hpp"
 #include "multicorder.hpp"
@@ -147,6 +148,7 @@ int main(int argc, char *argv[])
 	perf::logState();
 	Scripts::get().load();
 	Playlist::get().load();
+	Ptz::get().load();
 	VerticalCanvas::registerSource();
 	Outputs::get().load();
 	Shortcuts::get().load();

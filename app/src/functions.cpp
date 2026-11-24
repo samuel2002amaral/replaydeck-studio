@@ -4,6 +4,7 @@
 #include "virtualcam.hpp"
 #include "multicorder.hpp"
 #include "playlist.hpp"
+#include "ptz.hpp"
 #include <cstring>
 #include "../replay/gt/gt-source.hpp"
 #include "../replay/gt/gt-doc.hpp"
@@ -116,6 +117,15 @@ const QList<FunctionDef> &functionList()
 		{"ReplayZoomReset", "Replay", "Replay: zoom na imagem inteira", false, false},
 		{"ReplaySpeedUp", "Replay", "Replay: mais rápido (Value = passo em %, padrão 10)", false, true},
 		{"ReplaySpeedDown", "Replay", "Replay: mais lento (Value = passo em %, padrão 10)", false, true},
+		/* PTZ (aba PTZ): Value = câmera (nome ou número; vazio = a escolhida no painel) */
+		{"PTZPreset", "PTZ", "PTZ: vai para a posição gravada (Value = número; Input = câmera)", false, true},
+		{"PTZHome", "PTZ", "PTZ: posição inicial (Value = câmera)", false, true, false, true},
+		{"PTZHoldUp", "PTZ (segurar)", "Segure: PTZ sobe (Value = câmera)", false, true, true, true},
+		{"PTZHoldDown", "PTZ (segurar)", "Segure: PTZ desce", false, true, true, true},
+		{"PTZHoldLeft", "PTZ (segurar)", "Segure: PTZ para a esquerda", false, true, true, true},
+		{"PTZHoldRight", "PTZ (segurar)", "Segure: PTZ para a direita", false, true, true, true},
+		{"PTZHoldZoomIn", "PTZ (segurar)", "Segure: PTZ aproxima", false, true, true, true},
+		{"PTZHoldZoomOut", "PTZ (segurar)", "Segure: PTZ afasta", false, true, true, true},
 		/* de segurar: enquanto a tecla está apertada */
 		{"ReplayHoldPlay", "Replay (segurar)", "Segure: toca para frente (na velocidade escolhida); soltou, pausa", false, false, true},
 		{"ReplayHoldReverse", "Replay (segurar)", "Segure: toca de ré; soltou, pausa", false, false, true},
@@ -264,6 +274,15 @@ bool runFunction(const QString &name, const QString &inputSpec, const QString &v
 		const QString r = scriptHook(n, value.trimmed());
 		if (!r.isEmpty())
 			return fail(r);
+	} else if (n == "PTZPreset" || n == "PTZHome") {
+		Ptz &pz = Ptz::get();
+		const int cam = pz.find(n == "PTZHome" ? value : inputSpec);
+		if (cam < 0 || cam >= pz.cams.size())
+			return fail("PTZ: câmera não encontrada (aba PTZ)");
+		if (n == "PTZHome")
+			pz.home(cam);
+		else
+			pz.preset(cam, std::max(1, (int)v), false);
 	} else if (n == "StartPlayList") {
 		if (!Playlist::get().active() && !Playlist::get().start())
 			return fail("Playlist vazia (monte na aba Lista)");
@@ -501,6 +520,21 @@ bool runFunctionLine(const QString &line, QString *error, QWidget *parent)
 bool runHoldFunction(const QString &name, const QString &value, bool pressed)
 {
 	const FunctionDef *def = findFunction(name);
+	if (def && def->hold && QLatin1String(def->name).startsWith(QLatin1String("PTZHold"))) {
+		Ptz &pz = Ptz::get();
+		const int cam = pz.find(value);
+		if (cam < 0 || cam >= pz.cams.size())
+			return false;
+		const QString n = QString::fromLatin1(def->name);
+		if (n.endsWith("ZoomIn") || n.endsWith("ZoomOut"))
+			pz.zoom(cam, pressed ? (n.endsWith("ZoomIn") ? 1 : -1) : 0);
+		else if (!pressed)
+			pz.stop(cam);
+		else
+			pz.move(cam, n.endsWith("Left") ? -1 : n.endsWith("Right") ? 1 : 0,
+				n.endsWith("Up") ? 1 : n.endsWith("Down") ? -1 : 0);
+		return true;
+	}
 	if (!def || !def->hold || !engineAlive())
 		return false;
 	ReplayEngine &r = engine();

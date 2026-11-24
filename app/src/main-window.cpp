@@ -1,6 +1,7 @@
 #include "main-window.hpp"
 #include "multicorder.hpp"
 #include "playlist.hpp"
+#include "ptz.hpp"
 #include "scripts.hpp"
 #include "plugins.hpp"
 #include <QPointer>
@@ -464,7 +465,7 @@ QWidget *MainWindow::buildRightPanel()
 	rightTabs->addTab(new AudioMixer, "Mixer de áudio");
 	rightTabs->addTab(new GtDock, "Títulos GT");
 	rightTabs->addTab(new TransitionsPanel, "Transições");
-	rightTabs->addTab(comingSoon("PTZ", "Chega na fase 6."), "PTZ");
+	rightTabs->addTab(new PtzPanel, "PTZ");
 	rightTabs->addTab(new PlaylistPanel, "Lista");
 	return rightTabs;
 }
