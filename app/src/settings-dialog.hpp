@@ -14,7 +14,7 @@ class SettingsDialog : public QDialog {
 public:
 	explicit SettingsDialog(QWidget *parent = nullptr, int startTab = 0);
 
-	enum Tab { Video = 0, Recording = 1, Streaming = 2, Audio = 3 };
+	enum Tab { Video = 0, Recording = 1, Streaming = 2, Audio = 3, Shortcuts = 4 };
 
 private:
 	bool apply();
@@ -26,11 +26,16 @@ private:
 	QComboBox *recFormat = nullptr;
 	QComboBox *recEncoder = nullptr;
 	QSpinBox *recKbps = nullptr;
-	QComboBox *service = nullptr;
-	QLineEdit *server = nullptr;
-	QLineEdit *key = nullptr;
+	class QTableWidget *dests = nullptr;
 	QComboBox *streamEncoder = nullptr;
 	QSpinBox *streamKbps = nullptr;
+	QSpinBox *verticalKbps = nullptr;
+	QComboBox *verticalSize = nullptr;
+	QComboBox *verticalFit = nullptr;
+	class QSlider *verticalOffset = nullptr;
+	void addDestinationRow(const struct StreamDestination &d);
 	QSpinBox *audioKbps = nullptr;
 	QComboBox *monitor = nullptr;
+	class QTableWidget *keys = nullptr;
+	void addShortcutRow(const struct Shortcut &s);
 };

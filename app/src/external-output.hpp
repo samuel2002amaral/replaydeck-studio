@@ -12,7 +12,7 @@ class ExternalOutput : public QWidget {
 	Q_OBJECT
 
 public:
-	enum class What { Program, Preview, Input };
+	enum class What { Program, Preview, Input, Vertical };
 	ExternalOutput(What what, int inputId, QScreen *screen);
 	~ExternalOutput() override;
 	QString description() const;

@@ -1,0 +1,337 @@
+#include "functions.hpp"
+#include "engine.hpp"
+#include "outputs.hpp"
+#include "virtualcam.hpp"
+
+#include "../replay/air-control.hpp"
+#include "../replay/engine.hpp"
+
+#include <QRegularExpression>
+#include <QStringList>
+
+#include <cmath>
+
+const QList<FunctionDef> &functionList()
+{
+	static const QList<FunctionDef> list = {
+		/* transições */
+		{"Cut", "Transição", "Corte: a Prévia vai para o Programa", false, false},
+		{"Fade", "Transição", "Fade: a Prévia vai para o Programa", false, true},
+		{"QuickPlay", "Transição", "Entrada direto para o Programa, com fade", true, false},
+		{"CutDirect", "Transição", "Entrada direto para o Programa, corte seco", true, false},
+		{"FadeToBlack", "Transição", "Fade para o preto (liga/desliga)", false, false},
+		{"SetTransitionDuration", "Transição", "Duração das transições (Value = ms)", false, true},
+		/* prévia */
+		{"PreviewInput", "Prévia", "Entrada para a Prévia", true, false},
+		{"PreviewInputNext", "Prévia", "Próxima entrada na Prévia", false, false},
+		{"PreviewInputPrevious", "Prévia", "Entrada anterior na Prévia", false, false},
+		/* overlays */
+		{"OverlayInput1", "Overlay", "Overlay 1 liga/desliga", true, false},
+		{"OverlayInput2", "Overlay", "Overlay 2 liga/desliga", true, false},
+		{"OverlayInput3", "Overlay", "Overlay 3 liga/desliga", true, false},
+		{"OverlayInput4", "Overlay", "Overlay 4 liga/desliga", true, false},
+		{"OverlayInput1In", "Overlay", "Overlay 1 entra", true, false},
+		{"OverlayInput2In", "Overlay", "Overlay 2 entra", true, false},
+		{"OverlayInput3In", "Overlay", "Overlay 3 entra", true, false},
+		{"OverlayInput4In", "Overlay", "Overlay 4 entra", true, false},
+		{"OverlayInput1Out", "Overlay", "Overlay 1 sai", false, false},
+		{"OverlayInput2Out", "Overlay", "Overlay 2 sai", false, false},
+		{"OverlayInput3Out", "Overlay", "Overlay 3 sai", false, false},
+		{"OverlayInput4Out", "Overlay", "Overlay 4 sai", false, false},
+		{"OverlayInputAllOff", "Overlay", "Todos os overlays saem", false, false},
+		/* áudio */
+		{"Audio", "Áudio", "Áudio da entrada liga/desliga", true, false},
+		{"AudioOn", "Áudio", "Áudio da entrada liga", true, false},
+		{"AudioOff", "Áudio", "Áudio da entrada desliga", true, false},
+		{"AudioAuto", "Áudio", "Auto (segue o vídeo) liga/desliga", true, false},
+		{"SetVolume", "Áudio", "Volume da entrada (Value = 0 a 100)", true, true},
+		{"SetMasterVolume", "Áudio", "Volume geral (Value = 0 a 100)", false, true},
+		{"Solo", "Áudio", "Fone (monitorar) liga/desliga", true, false},
+		/* entradas */
+		{"Loop", "Entrada", "Loop do vídeo liga/desliga", true, false},
+		{"Minimise", "Entrada", "Minimizar/expandir na lista", true, false},
+		/* saídas */
+		{"StartStopRecording", "Saídas", "Gravar: começa/para", false, false},
+		{"StartRecording", "Saídas", "Gravar: começa", false, false},
+		{"StopRecording", "Saídas", "Gravar: para", false, false},
+		{"StartStopStreaming", "Saídas", "Transmitir: começa/para", false, false},
+		{"StartStreaming", "Saídas", "Transmitir: começa", false, false},
+		{"StopStreaming", "Saídas", "Transmitir: para", false, false},
+		{"StartStopVirtualCam", "Saídas", "Câmera virtual: liga/desliga (Input = o que mostrar; vazio = Programa)", true, false},
+		/* replay */
+		{"ReplayStartStopRecording", "Replay", "Replay: começa/para de gravar", false, false},
+		{"ReplayMarkIn", "Replay", "Replay: Mark In", false, false},
+		{"ReplayMarkOut", "Replay", "Replay: Mark Out", false, false},
+		{"ReplayMarkCancel", "Replay", "Replay: cancela o Mark In", false, false},
+		{"ReplayMarkInOut", "Replay", "Replay: evento dos últimos segundos (Value = segundos)", false, true},
+		{"ReplayPlay", "Replay", "Replay: play", false, false},
+		{"ReplayPause", "Replay", "Replay: pausa", false, false},
+		{"ReplayPlayPause", "Replay", "Replay: play/pausa", false, false},
+		{"ReplayPlayReverse", "Replay", "Replay: reverso", false, false},
+		{"ReplayFastForward", "Replay", "Replay: avanço rápido", false, false},
+		{"ReplayLive", "Replay", "Replay: volta ao vivo", false, false},
+		{"ReplayJumpFrames", "Replay", "Replay: pula quadros (Value = +/- quadros)", false, true},
+		{"ReplayJumpSeconds", "Replay", "Replay: pula segundos (Value = +/- segundos)", false, true},
+		{"ReplaySetSpeed", "Replay", "Replay: velocidade (Value = 0 a 100%)", false, true},
+		{"ReplayCamera", "Replay", "Replay: ângulo (Value = câmera 1 a 8)", false, true},
+		{"ReplaySelectChannelA", "Replay", "Replay: seleciona o canal A", false, false},
+		{"ReplaySelectChannelB", "Replay", "Replay: seleciona o canal B", false, false},
+		{"ReplaySelectChannelAB", "Replay", "Replay: seleciona A+B", false, false},
+		{"ReplayPlayLastEvent", "Replay", "Replay: toca o último evento (põe no ar)", false, false},
+		{"ReplayPlayAllEvents", "Replay", "Replay: Play Events (põe no ar)", false, false},
+		{"ReplayToProgram", "Replay", "Replay: põe no ar", false, false},
+		{"ReplayFromProgram", "Replay", "Replay: tira do ar", false, false},
+		{"ReplayRestart", "Replay", "Replay: volta ao início do clipe", false, false},
+		{"ReplayLoop", "Replay", "Replay: loop liga/desliga", false, false},
+		{"ReplayZoomReset", "Replay", "Replay: zoom na imagem inteira", false, false},
+	};
+	return list;
+}
+
+const FunctionDef *findFunction(const QString &name)
+{
+	for (const FunctionDef &f : functionList())
+		if (name.compare(QLatin1String(f.name), Qt::CaseInsensitive) == 0)
+			return &f;
+	return nullptr;
+}
+
+/* "3" = terceira entrada; "CAM 1" = pelo nome; vazio = a da Prévia */
+static Input *resolveInput(const QString &spec)
+{
+	Engine &e = Engine::get();
+	const QString s = spec.trimmed();
+	if (s.isEmpty())
+		return e.input(e.previewId());
+	bool isNum = false;
+	const int n = s.toInt(&isNum);
+	if (isNum)
+		return n >= 1 && n <= e.inputs().size() ? e.inputs()[n - 1] : nullptr;
+	for (Input *in : e.inputs())
+		if (in->name.compare(s, Qt::CaseInsensitive) == 0)
+			return in;
+	return nullptr;
+}
+
+bool runFunction(const QString &name, const QString &inputSpec, const QString &value, QString *error, QWidget *parent)
+{
+	auto fail = [error](const QString &msg) {
+		if (error)
+			*error = msg;
+		return false;
+	};
+	const FunctionDef *def = findFunction(name);
+	if (!def)
+		return fail("Função desconhecida: " + name);
+	Engine &e = Engine::get();
+	Input *in = nullptr;
+	if (def->input) {
+		in = resolveInput(inputSpec);
+		/* StartStopVirtualCam sem entrada = Programa */
+		if (!in && !(inputSpec.trimmed().isEmpty() && QLatin1String(def->name) == QLatin1String("StartStopVirtualCam")))
+			return fail(QString("%1: entrada \"%2\" não encontrada").arg(def->name, inputSpec));
+	}
+	bool numOk = true;
+	const double v = value.trimmed().isEmpty() ? 0.0 : value.trimmed().toDouble(&numOk);
+	if (def->value && !value.trimmed().isEmpty() && !numOk)
+		return fail(QString("%1: Value \"%2\" não é número").arg(def->name, value));
+	const QString n = QString::fromLatin1(def->name);
+	const bool replayUp = engineAlive();
+
+	/* ---- transições e prévia ---- */
+	if (n == "Cut")
+		e.transition(TransitionKind::Cut);
+	else if (n == "Fade") {
+		if (v > 0)
+			e.setTransitionMs((int)v);
+		e.transition(TransitionKind::Fade);
+	} else if (n == "QuickPlay")
+		e.quickPlay(in->id);
+	else if (n == "CutDirect")
+		e.cutTo(in->id);
+	else if (n == "FadeToBlack")
+		e.transition(TransitionKind::FadeToBlack);
+	else if (n == "SetTransitionDuration")
+		e.setTransitionMs((int)v);
+	else if (n == "PreviewInput")
+		e.setPreview(in->id);
+	else if (n == "PreviewInputNext" || n == "PreviewInputPrevious") {
+		if (e.inputs().isEmpty())
+			return fail("Sem entradas");
+		const int count = (int)e.inputs().size();
+		const int cur = qMax(0, e.indexOf(e.previewId()));
+		const int next = (cur + (n == "PreviewInputNext" ? 1 : count - 1)) % count;
+		e.setPreview(e.inputs()[next]->id);
+	}
+	/* ---- overlays ---- */
+	else if (n.startsWith("OverlayInput") && n != "OverlayInputAllOff") {
+		const int ch = n.mid(12, 1).toInt();
+		const QString mode = n.mid(13); /* "", "In", "Out" */
+		const bool isOn = e.overlay(ch) != 0;
+		if (mode == "Out") {
+			if (isOn)
+				e.toggleOverlay(ch, e.overlay(ch));
+		} else if (mode == "In") {
+			if (e.overlay(ch) != in->id)
+				e.toggleOverlay(ch, in->id);
+		} else {
+			e.toggleOverlay(ch, in->id);
+		}
+	} else if (n == "OverlayInputAllOff") {
+		for (int ch = 1; ch <= 4; ch++)
+			if (e.overlay(ch))
+				e.toggleOverlay(ch, e.overlay(ch));
+	}
+	/* ---- áudio e entradas ---- */
+	else if (n == "Audio")
+		e.setInputAudio(in->id, !in->audioOn);
+	else if (n == "AudioOn")
+		e.setInputAudio(in->id, true);
+	else if (n == "AudioOff")
+		e.setInputAudio(in->id, false);
+	else if (n == "AudioAuto")
+		e.setInputAudioAuto(in->id, !in->audioAuto);
+	else if (n == "SetVolume") /* 0-100 como no vMix (escala de fader: 100 = 0 dB) */
+		e.setInputVolume(in->id, (float)std::pow(std::clamp(v, 0.0, 100.0) / 100.0, 3.0));
+	else if (n == "SetMasterVolume")
+		e.setMasterVolume((float)std::pow(std::clamp(v, 0.0, 100.0) / 100.0, 3.0));
+	else if (n == "Solo")
+		e.setInputMonitor(in->id, !in->monitor);
+	else if (n == "Loop")
+		e.setInputLoop(in->id, !in->loop);
+	else if (n == "Minimise")
+		e.setInputCollapsed(in->id, !in->collapsed);
+	/* ---- saídas ---- */
+	else if (n == "StartStopRecording" || n == "StartRecording" || n == "StopRecording") {
+		Outputs &o = Outputs::get();
+		const bool want = n == "StartRecording" || (n == "StartStopRecording" && !o.recording());
+		if (want && !o.recording()) {
+			QString err;
+			if (!o.startRecording(err))
+				return fail(err);
+		} else if (!want) {
+			o.stopRecording();
+		}
+	} else if (n == "StartStopStreaming" || n == "StartStreaming" || n == "StopStreaming") {
+		Outputs &o = Outputs::get();
+		const bool want = n == "StartStreaming" || (n == "StartStopStreaming" && !o.streaming());
+		if (want && !o.streaming()) {
+			QString err;
+			if (!o.startStreaming(err))
+				return fail(err);
+		} else if (!want) {
+			o.stopStreaming();
+		}
+	} else if (n == "StartStopVirtualCam") {
+		VirtualCam &vc = VirtualCam::get();
+		if (vc.active()) {
+			vc.stop();
+		} else {
+			QString err;
+			if (!vc.start(in ? in->id : 0, parent, err))
+				return fail(err);
+		}
+	}
+	/* ---- replay ---- */
+	else if (n.startsWith("Replay")) {
+		if (!replayUp)
+			return fail("Replay indisponível");
+		ReplayEngine &r = engine();
+		AirControl *air = AirControl::instance();
+		if (n == "ReplayStartStopRecording") {
+			if (r.recording()) {
+				r.stopRecording();
+			} else {
+				std::string err;
+				if (!r.startRecording(err))
+					return fail(QString::fromStdString(err));
+			}
+		} else if (n == "ReplayMarkIn")
+			r.markIn();
+		else if (n == "ReplayMarkOut")
+			r.markOut();
+		else if (n == "ReplayMarkCancel")
+			r.markCancel();
+		else if (n == "ReplayMarkInOut")
+			r.autoEvent(v > 0 ? (int)v : 10);
+		else if (n == "ReplayPlay")
+			r.play();
+		else if (n == "ReplayPause")
+			r.pause();
+		else if (n == "ReplayPlayPause")
+			r.togglePlay();
+		else if (n == "ReplayPlayReverse")
+			r.playReverse();
+		else if (n == "ReplayFastForward")
+			r.fastForward();
+		else if (n == "ReplayLive")
+			r.goLive();
+		else if (n == "ReplayJumpFrames")
+			r.step((int)v);
+		else if (n == "ReplayJumpSeconds")
+			r.jumpSeconds(v);
+		else if (n == "ReplaySetSpeed")
+			r.setSpeedPercent((int)std::clamp(v, 0.0, 100.0));
+		else if (n == "ReplayCamera") {
+			if (v < 1 || v > MAX_CAMERAS)
+				return fail("ReplayCamera: Value = 1 a 8");
+			r.setAngle((int)v - 1);
+		} else if (n == "ReplaySelectChannelA")
+			r.setSelection(SEL_A);
+		else if (n == "ReplaySelectChannelB")
+			r.setSelection(SEL_B);
+		else if (n == "ReplaySelectChannelAB")
+			r.setSelection(SEL_AB);
+		else if (n == "ReplayPlayLastEvent") {
+			if (air)
+				air->toggleLast();
+		} else if (n == "ReplayPlayAllEvents") {
+			if (air)
+				air->toggleEvents(0);
+		} else if (n == "ReplayToProgram") {
+			if (air)
+				air->takeIn();
+		} else if (n == "ReplayFromProgram") {
+			if (air)
+				air->takeOut();
+		} else if (n == "ReplayRestart")
+			r.restartClip();
+		else if (n == "ReplayLoop")
+			r.setLoop(!r.loopOn());
+		else if (n == "ReplayZoomReset")
+			r.zoomReset();
+	}
+	blog(LOG_INFO, "função %s%s%s", def->name, in ? (" Input=" + in->name).toUtf8().constData() : "",
+	     value.isEmpty() ? "" : (" Value=" + value).toUtf8().constData());
+	return true;
+}
+
+/* Cut | Fade Value=500 | OverlayInput1In Input=3 | QuickPlay Input="CAM 1"
+ * (também aceita a forma do vMix: Function=Cut&Input=3&Value=...) */
+bool runFunctionLine(const QString &line, QString *error, QWidget *parent)
+{
+	QString l = line.trimmed();
+	if (l.startsWith("Function=", Qt::CaseInsensitive))
+		l = l.mid(9).replace('&', ' ');
+	static const QRegularExpression re(R"(^(\w+)\s*(.*)$)");
+	const auto m = re.match(l);
+	if (!m.hasMatch()) {
+		if (error)
+			*error = "Linha sem função: " + line;
+		return false;
+	}
+	QString input, value;
+	static const QRegularExpression arg(R"((Input|Value)\s*=\s*(\"[^\"]*\"|\S+))", QRegularExpression::CaseInsensitiveOption);
+	auto it = arg.globalMatch(m.captured(2));
+	while (it.hasNext()) {
+		const auto a = it.next();
+		QString val = a.captured(2);
+		if (val.startsWith('"'))
+			val = val.mid(1, val.size() - 2);
+		if (a.captured(1).compare("Input", Qt::CaseInsensitive) == 0)
+			input = val;
+		else
+			value = val;
+	}
+	return runFunction(m.captured(1), input, value, error, parent);
+}

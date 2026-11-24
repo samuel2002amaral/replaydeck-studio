@@ -537,6 +537,7 @@ void MainWindow::buildMenus()
 	cfg->addAction("Vídeo (resolução e fps)…", this, [this] { SettingsDialog(this, SettingsDialog::Video).exec(); });
 	cfg->addAction("Gravação…", this, [this] { SettingsDialog(this, SettingsDialog::Recording).exec(); });
 	cfg->addAction("Transmissão…", this, [this] { SettingsDialog(this, SettingsDialog::Streaming).exec(); });
+	cfg->addAction("Atalhos de teclado…", this, [this] { SettingsDialog(this, SettingsDialog::Shortcuts).exec(); });
 
 	QMenu *help = menuBar()->addMenu("Ajuda");
 	help->addAction("Abrir pasta de logs", this, [&e] { QDesktopServices::openUrl(QUrl::fromLocalFile(e.configDir() + "/logs")); });
@@ -606,7 +607,8 @@ void MainWindow::updateOutputs()
 	paint(recBtn, o.recording(), o.recording() ? "● Gravando " + hms(o.recordingMs()) : "Gravar");
 	QString st = "Transmitir";
 	if (o.streaming())
-		st = (o.streamReconnecting() ? "↻ Reconectando " : "● Ao vivo ") + hms(o.streamingMs());
+		st = (o.streamReconnecting() ? "↻ Reconectando " : "● Ao vivo ") +
+		     (o.liveCount() > 1 ? QString("(%1) ").arg(o.liveCount()) : QString()) + hms(o.streamingMs());
 	paint(streamBtn, o.streaming(), st);
 	VirtualCam &vc = VirtualCam::get();
 	paint(vcamBtn, vc.active(), vc.active() ? "● Câmera virtual: " + vc.description() + " ▾" : "Câmera virtual ▾");
@@ -637,13 +639,15 @@ void MainWindow::toggleStreaming()
 {
 	Outputs &o = Outputs::get();
 	if (o.streaming()) {
-		if (QMessageBox::question(this, "Transmitir", "Encerrar a transmissão ao vivo?") != QMessageBox::Yes)
+		if (QMessageBox::question(this, "Transmitir",
+					  o.liveCount() > 1 ? QString("Encerrar a transmissão nos %1 destinos?").arg(o.liveCount())
+							    : QString("Encerrar a transmissão ao vivo?")) != QMessageBox::Yes)
 			return;
 		o.stopStreaming();
 	} else {
-		if (o.settings().streamKey.trimmed().isEmpty()) {
+		if (!o.settings().hasStreamKey()) {
 			SettingsDialog d(this, SettingsDialog::Streaming);
-			if (d.exec() != QDialog::Accepted || o.settings().streamKey.trimmed().isEmpty())
+			if (d.exec() != QDialog::Accepted || !o.settings().hasStreamKey())
 				return;
 		}
 		QString err;

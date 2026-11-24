@@ -20,6 +20,12 @@ public:
 
 	/* o que mostrar: uma fonte (prévia/miniatura) ou a saída do programa */
 	void showSource(obs_source_t *src);
+	/* desenhar a fonte como se tivesse este tamanho (cena vertical 9:16); vazio = o tamanho dela */
+	void setCanvasSize(const QSize &s)
+	{
+		std::lock_guard<std::mutex> l(m);
+		forced = s;
+	}
 	void showProgram();
 	void clear();
 
@@ -46,5 +52,6 @@ private:
 	OBSWeakSourceAutoRelease weak;
 	Mode mode = Mode::Source;
 	bool hasContent = false;
+	QSize forced;
 	std::mutex m; /* o desenho roda na thread de vídeo */
 };

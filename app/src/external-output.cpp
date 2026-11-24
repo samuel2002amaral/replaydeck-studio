@@ -1,5 +1,7 @@
 #include "external-output.hpp"
 #include "engine.hpp"
+#include "outputs.hpp"
+#include "vertical-canvas.hpp"
 #include "video-display.hpp"
 
 #include <QGuiApplication>
@@ -58,6 +60,8 @@ QString ExternalOutput::description() const
 		return "Programa";
 	case What::Preview:
 		return "Prévia";
+	case What::Vertical:
+		return "Vertical 9:16";
 	default: {
 		Input *in = Engine::get().input(id);
 		return in ? in->name : QString("Entrada");
@@ -70,6 +74,13 @@ void ExternalOutput::refresh()
 	Engine &e = Engine::get();
 	if (what == What::Program) {
 		video->showProgram();
+	} else if (what == What::Vertical) {
+		const StudioSettings s = Outputs::get().settings();
+		VerticalCanvas &vc = VerticalCanvas::get();
+		if (vc.ensureScene(s.verticalWidth, s.verticalHeight, s.verticalFit, s.verticalOffset)) {
+			video->setCanvasSize(QSize(vc.width(), vc.height()));
+			video->showSource(vc.scene());
+		}
 	} else {
 		Input *in = e.input(what == What::Preview ? e.previewId() : id);
 		if (in)
@@ -161,6 +172,7 @@ void ExternalOutput::fillMenu(QMenu *menu, QWidget *parent)
 	menu->addSection("Mostrar em outra tela / TV");
 	addTarget(menu->addMenu("Programa"), What::Program, 0);
 	addTarget(menu->addMenu("Prévia"), What::Preview, 0);
+	addTarget(menu->addMenu("Vertical 9:16 (como sai no Reels/TikTok)"), What::Vertical, 0);
 	/* replay primeiro (monitor do VAR), depois as outras entradas */
 	QMenu *others = nullptr;
 	for (Input *in : Engine::get().inputs()) {

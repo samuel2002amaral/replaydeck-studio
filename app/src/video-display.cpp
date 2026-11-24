@@ -161,8 +161,8 @@ void VideoDisplay::draw(void *data, uint32_t cx, uint32_t cy)
 		src = obs_weak_source_get_source(self->weak);
 		if (!src)
 			return;
-		bw = (float)obs_source_get_width(src);
-		bh = (float)obs_source_get_height(src);
+		bw = self->forced.isValid() ? (float)self->forced.width() : (float)obs_source_get_width(src);
+		bh = self->forced.isValid() ? (float)self->forced.height() : (float)obs_source_get_height(src);
 		if (bw < 1.0f || bh < 1.0f)
 			return;
 	}

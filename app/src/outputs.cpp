@@ -1,5 +1,6 @@
 #include "outputs.hpp"
 #include "engine.hpp"
+#include "vertical-canvas.hpp"
 
 #include <util/platform.h>
 
@@ -14,6 +15,8 @@ const QList<StreamPreset> &streamPresets()
 		{"YouTube", "rtmp://a.rtmp.youtube.com/live2"},
 		{"Facebook", "rtmps://live-api-s.facebook.com:443/rtmp/"},
 		{"Twitch", "rtmp://live.twitch.tv/app"},
+		{"Instagram", "rtmps://live-upload.instagram.com:443/rtmp/"},
+		{"TikTok", ""},
 		{"Kick", "rtmps://fa723fc1b171.global-contribute.live-video.net/app"},
 		{"Personalizado", ""},
 	};
@@ -90,11 +93,34 @@ void Outputs::load()
 		str("gravar_formato", s.recFormat);
 		str("gravar_codificador", s.recEncoder);
 		num("gravar_kbps", s.recBitrate);
-		str("transmitir_servico", s.streamService);
-		str("transmitir_servidor", s.streamServer);
-		str("transmitir_chave", s.streamKey);
 		str("transmitir_codificador", s.streamEncoder);
 		num("transmitir_kbps", s.streamBitrate);
+		num("vertical_kbps", s.verticalBitrate);
+		num("vertical_largura", s.verticalWidth);
+		num("vertical_altura", s.verticalHeight);
+		num("vertical_deslocamento", s.verticalOffset);
+		s.verticalFit = obs_data_get_bool(d, "vertical_encaixar");
+		OBSDataArrayAutoRelease arr = obs_data_get_array(d, "destinos");
+		for (size_t i = 0; i < obs_data_array_count(arr); i++) {
+			OBSDataAutoRelease o = obs_data_array_item(arr, i);
+			StreamDestination dst;
+			dst.enabled = obs_data_get_bool(o, "ativo");
+			dst.name = QString::fromUtf8(obs_data_get_string(o, "nome"));
+			dst.service = QString::fromUtf8(obs_data_get_string(o, "servico"));
+			dst.server = QString::fromUtf8(obs_data_get_string(o, "servidor"));
+			dst.key = QString::fromUtf8(obs_data_get_string(o, "chave"));
+			dst.vertical = obs_data_get_bool(o, "vertical");
+			s.destinations << dst;
+		}
+		/* versão anterior: um destino só */
+		if (!arr && obs_data_has_user_value(d, "transmitir_servidor")) {
+			StreamDestination dst;
+			dst.service = QString::fromUtf8(obs_data_get_string(d, "transmitir_servico"));
+			dst.name = dst.service;
+			dst.server = QString::fromUtf8(obs_data_get_string(d, "transmitir_servidor"));
+			dst.key = QString::fromUtf8(obs_data_get_string(d, "transmitir_chave"));
+			s.destinations << dst;
+		}
 		num("audio_kbps", s.audioBitrate);
 		str("fone_id", s.monitorDeviceId);
 		str("fone_nome", s.monitorDeviceName);
@@ -114,11 +140,25 @@ void Outputs::save()
 	obs_data_set_string(d, "gravar_formato", cfg.recFormat.toUtf8().constData());
 	obs_data_set_string(d, "gravar_codificador", cfg.recEncoder.toUtf8().constData());
 	obs_data_set_int(d, "gravar_kbps", cfg.recBitrate);
-	obs_data_set_string(d, "transmitir_servico", cfg.streamService.toUtf8().constData());
-	obs_data_set_string(d, "transmitir_servidor", cfg.streamServer.toUtf8().constData());
-	obs_data_set_string(d, "transmitir_chave", cfg.streamKey.toUtf8().constData());
 	obs_data_set_string(d, "transmitir_codificador", cfg.streamEncoder.toUtf8().constData());
 	obs_data_set_int(d, "transmitir_kbps", cfg.streamBitrate);
+	obs_data_set_int(d, "vertical_kbps", cfg.verticalBitrate);
+	obs_data_set_int(d, "vertical_largura", cfg.verticalWidth);
+	obs_data_set_int(d, "vertical_altura", cfg.verticalHeight);
+	obs_data_set_int(d, "vertical_deslocamento", cfg.verticalOffset);
+	obs_data_set_bool(d, "vertical_encaixar", cfg.verticalFit);
+	OBSDataArrayAutoRelease arr = obs_data_array_create();
+	for (const StreamDestination &dst : cfg.destinations) {
+		OBSDataAutoRelease o = obs_data_create();
+		obs_data_set_bool(o, "ativo", dst.enabled);
+		obs_data_set_string(o, "nome", dst.name.toUtf8().constData());
+		obs_data_set_string(o, "servico", dst.service.toUtf8().constData());
+		obs_data_set_string(o, "servidor", dst.server.toUtf8().constData());
+		obs_data_set_string(o, "chave", dst.key.toUtf8().constData());
+		obs_data_set_bool(o, "vertical", dst.vertical);
+		obs_data_array_push_back(arr, o);
+	}
+	obs_data_set_array(d, "destinos", arr);
 	obs_data_set_int(d, "audio_kbps", cfg.audioBitrate);
 	obs_data_set_string(d, "fone_id", cfg.monitorDeviceId.toUtf8().constData());
 	obs_data_set_string(d, "fone_nome", cfg.monitorDeviceName.toUtf8().constData());
@@ -285,82 +325,161 @@ void Outputs::onRecStop(void *data, calldata_t *cd)
 	}, Qt::QueuedConnection);
 }
 
-/* ---------------- transmissão ---------------- */
+/* ---------------- transmissão (vários destinos) ---------------- */
 
 bool Outputs::streaming() const
 {
-	return streamOut && obs_output_active(streamOut);
+	return liveCount() > 0;
+}
+
+int Outputs::liveCount() const
+{
+	int n = 0;
+	for (const Live *l : live)
+		n += l->running ? 1 : 0;
+	return n;
+}
+
+bool Outputs::streamReconnecting() const
+{
+	for (const Live *l : live)
+		if (l->reconnecting)
+			return true;
+	return false;
 }
 
 int Outputs::streamDroppedFrames() const
 {
-	return streamOut ? obs_output_get_frames_dropped(streamOut) : 0;
+	int n = 0;
+	for (const Live *l : live)
+		n += obs_output_get_frames_dropped(l->out);
+	return n;
 }
 
 int Outputs::streamTotalFrames() const
 {
-	return streamOut ? obs_output_get_total_frames(streamOut) : 0;
+	int n = 0;
+	for (const Live *l : live)
+		n += obs_output_get_total_frames(l->out);
+	return n;
+}
+
+Outputs::Live *Outputs::liveFor(obs_output_t *out)
+{
+	for (Live *l : live)
+		if (l->out.Get() == out)
+			return l;
+	return nullptr;
+}
+
+void Outputs::releaseStreams()
+{
+	for (Live *l : live) {
+		signal_handler_t *sh = obs_output_get_signal_handler(l->out);
+		signal_handler_disconnect(sh, "stop", onStreamStop, this);
+		signal_handler_disconnect(sh, "reconnect", onStreamReconnect, this);
+		signal_handler_disconnect(sh, "reconnect_success", onStreamReconnected, this);
+		/* ligada (mesmo ainda conectando): para de vez; nunca ligada: não pode parar (trava) */
+		if (l->running || obs_output_active(l->out))
+			obs_output_force_stop(l->out);
+		delete l;
+	}
+	live.clear();
+	streamVideo = nullptr;
+	streamVideoV = nullptr;
+	streamAudio = nullptr;
+	VerticalCanvas::get().stop();
 }
 
 bool Outputs::startStreaming(QString &error)
 {
 	if (streaming())
 		return true;
-	if (cfg.streamServer.trimmed().isEmpty() || cfg.streamKey.trimmed().isEmpty()) {
-		error = "Configure o servidor e a chave da transmissão (Configurações → Transmissão).";
+	releaseStreams(); /* restos de uma transmissão anterior */
+	QList<StreamDestination> todo;
+	for (const StreamDestination &d : cfg.destinations)
+		if (d.enabled && !d.server.trimmed().isEmpty() && !d.key.trimmed().isEmpty())
+			todo << d;
+	if (todo.isEmpty()) {
+		error = "Nenhum destino ativo com servidor e chave (Configurações → Transmissão).";
 		return false;
 	}
-	OBSDataAutoRelease ss = obs_data_create();
-	obs_data_set_string(ss, "server", cfg.streamServer.trimmed().toUtf8().constData());
-	obs_data_set_string(ss, "key", cfg.streamKey.trimmed().toUtf8().constData());
-	service = obs_service_create("rtmp_custom", "transmitir-servico", ss, nullptr);
-	if (!service) {
-		error = "Serviço de transmissão indisponível.";
-		return false;
-	}
-	QString used;
-	streamVideo = makeVideoEncoder(cfg.streamEncoder, cfg.streamBitrate, "transmitir-video", used);
+	bool needH = false, needV = false;
+	for (const StreamDestination &d : todo)
+		(d.vertical ? needV : needH) = true;
+
+	QString usedH, usedV;
 	streamAudio = makeAudioEncoder(cfg.audioBitrate, "transmitir-audio");
-	if (!streamVideo || !streamAudio) {
+	if (needH)
+		streamVideo = makeVideoEncoder(cfg.streamEncoder, cfg.streamBitrate, "transmitir-video", usedH);
+	if (needV) {
+		if (!VerticalCanvas::get().start(cfg.verticalWidth, cfg.verticalHeight, cfg.verticalFit, cfg.verticalOffset,
+						 error))
+			return false;
+		streamVideoV = makeVideoEncoder(cfg.streamEncoder, cfg.verticalBitrate, "transmitir-vertical", usedV);
+		if (streamVideoV)
+			obs_encoder_set_video(streamVideoV, VerticalCanvas::get().videoOutput());
+	}
+	if (!streamAudio || (needH && !streamVideo) || (needV && !streamVideoV)) {
 		error = "Codificador indisponível.";
+		releaseStreams();
 		return false;
 	}
-	OBSDataAutoRelease os = obs_data_create();
-	streamOut = obs_output_create("rtmp_output", "transmitir", os, nullptr);
-	obs_output_set_service(streamOut, service);
-	obs_output_set_video_encoder(streamOut, streamVideo);
-	obs_output_set_audio_encoder(streamOut, streamAudio, 0);
-	obs_output_set_reconnect_settings(streamOut, 20, 3); /* caiu a internet: tenta de novo sozinho */
-	signal_handler_t *sh = obs_output_get_signal_handler(streamOut);
-	signal_handler_connect(sh, "stop", onStreamStop, this);
-	signal_handler_connect(sh, "reconnect", onStreamReconnect, this);
-	signal_handler_connect(sh, "reconnect_success", onStreamReconnected, this);
-	reconnecting = false;
-	if (!obs_output_start(streamOut)) {
-		const char *last = obs_output_get_last_error(streamOut);
-		error = last ? QString::fromUtf8(last) : "A transmissão não começou (servidor ou chave?).";
-		signal_handler_disconnect(sh, "stop", onStreamStop, this);
-		signal_handler_disconnect(sh, "reconnect", onStreamReconnect, this);
-		signal_handler_disconnect(sh, "reconnect_success", onStreamReconnected, this);
-		streamOut = nullptr;
+
+	QStringList failed;
+	for (const StreamDestination &d : todo) {
+		auto *l = new Live;
+		l->name = d.name.isEmpty() ? d.service : d.name;
+		OBSDataAutoRelease ss = obs_data_create();
+		obs_data_set_string(ss, "server", d.server.trimmed().toUtf8().constData());
+		obs_data_set_string(ss, "key", d.key.trimmed().toUtf8().constData());
+		const QByteArray outName = ("transmitir-" + l->name).toUtf8();
+		l->service = obs_service_create("rtmp_custom", outName.constData(), ss, nullptr);
+		OBSDataAutoRelease os = obs_data_create();
+		l->out = obs_output_create("rtmp_output", outName.constData(), os, nullptr);
+		obs_output_set_service(l->out, l->service);
+		obs_output_set_video_encoder(l->out, d.vertical ? streamVideoV : streamVideo);
+		obs_output_set_audio_encoder(l->out, streamAudio, 0);
+		obs_output_set_reconnect_settings(l->out, 20, 3); /* caiu a internet: tenta de novo sozinho */
+		signal_handler_t *sh = obs_output_get_signal_handler(l->out);
+		signal_handler_connect(sh, "stop", onStreamStop, this);
+		signal_handler_connect(sh, "reconnect", onStreamReconnect, this);
+		signal_handler_connect(sh, "reconnect_success", onStreamReconnected, this);
+		live << l;
+		if (obs_output_start(l->out)) {
+			l->running = true;
+			blog(LOG_INFO, "transmitindo para %s (%s, %s)", l->name.toUtf8().constData(),
+			     d.server.toUtf8().constData(), d.vertical ? "vertical" : "horizontal");
+		} else {
+			const char *last = obs_output_get_last_error(l->out);
+			failed << l->name + (last ? ": " + QString::fromUtf8(last) : QString());
+		}
+	}
+	if (!streaming()) {
+		error = "Nenhum destino conectou.\n" + failed.join("\n");
+		releaseStreams();
 		return false;
 	}
+	if (!failed.isEmpty())
+		emit this->failed("Transmissão", "Estes destinos não conectaram:\n" + failed.join("\n"));
 	streamTimer.start();
-	blog(LOG_INFO, "transmitindo para %s (%s, %d kbps)", cfg.streamServer.toUtf8().constData(), used.toUtf8().constData(),
-	     cfg.streamBitrate);
+	blog(LOG_INFO, "transmissão: %d destino(s) (%s%s%s)", liveCount(), usedH.toUtf8().constData(),
+	     needH && needV ? " + " : "", usedV.toUtf8().constData());
 	emit stateChanged();
 	return true;
 }
 
 void Outputs::stopStreaming()
 {
-	if (streamOut && obs_output_active(streamOut))
-		obs_output_stop(streamOut);
+	for (Live *l : live)
+		if (l->running)
+			obs_output_stop(l->out);
 }
 
 void Outputs::onStreamStop(void *data, calldata_t *cd)
 {
 	auto *self = static_cast<Outputs *>(data);
+	auto *out = static_cast<obs_output_t *>(calldata_ptr(cd, "output"));
 	const int code = (int)calldata_int(cd, "code");
 	QString msg;
 	if (code != OBS_OUTPUT_SUCCESS) {
@@ -372,29 +491,40 @@ void Outputs::onStreamStop(void *data, calldata_t *cd)
 			      : code == OBS_OUTPUT_DISCONNECTED    ? QString("A conexão caiu e não voltou.")
 							      : QString("código %1").arg(code);
 	}
-	QMetaObject::invokeMethod(self, [self, msg] {
-		self->reconnecting = false;
-		blog(LOG_INFO, "transmissão parada %s", msg.toUtf8().constData());
+	QMetaObject::invokeMethod(self, [self, out, msg] {
+		Live *l = self->liveFor(out);
+		const QString name = l ? l->name : QString("destino");
+		if (l) {
+			l->reconnecting = false;
+			l->running = false;
+		}
+		blog(LOG_INFO, "transmissão parada: %s %s", name.toUtf8().constData(), msg.toUtf8().constData());
 		if (!msg.isEmpty())
-			emit self->failed("Transmissão", msg);
+			emit self->failed("Transmissão", name + ": " + msg);
+		if (!self->streaming())
+			self->releaseStreams(); /* todos pararam: solta codificadores e o quadro vertical */
 		emit self->stateChanged();
 	}, Qt::QueuedConnection);
 }
 
-void Outputs::onStreamReconnect(void *data, calldata_t *)
+void Outputs::onStreamReconnect(void *data, calldata_t *cd)
 {
 	auto *self = static_cast<Outputs *>(data);
-	QMetaObject::invokeMethod(self, [self] {
-		self->reconnecting = true;
+	auto *out = static_cast<obs_output_t *>(calldata_ptr(cd, "output"));
+	QMetaObject::invokeMethod(self, [self, out] {
+		if (Live *l = self->liveFor(out))
+			l->reconnecting = true;
 		emit self->stateChanged();
 	}, Qt::QueuedConnection);
 }
 
-void Outputs::onStreamReconnected(void *data, calldata_t *)
+void Outputs::onStreamReconnected(void *data, calldata_t *cd)
 {
 	auto *self = static_cast<Outputs *>(data);
-	QMetaObject::invokeMethod(self, [self] {
-		self->reconnecting = false;
+	auto *out = static_cast<obs_output_t *>(calldata_ptr(cd, "output"));
+	QMetaObject::invokeMethod(self, [self, out] {
+		if (Live *l = self->liveFor(out))
+			l->reconnecting = false;
 		emit self->stateChanged();
 	}, Qt::QueuedConnection);
 }
@@ -406,22 +536,11 @@ void Outputs::shutdown()
 			obs_output_stop(recOut);
 		signal_handler_disconnect(obs_output_get_signal_handler(recOut), "stop", onRecStop, this);
 	}
-	if (streamOut) {
-		if (obs_output_active(streamOut))
-			obs_output_force_stop(streamOut);
-		signal_handler_t *sh = obs_output_get_signal_handler(streamOut);
-		signal_handler_disconnect(sh, "stop", onStreamStop, this);
-		signal_handler_disconnect(sh, "reconnect", onStreamReconnect, this);
-		signal_handler_disconnect(sh, "reconnect_success", onStreamReconnected, this);
-	}
+	releaseStreams();
 	/* espera a gravação fechar o arquivo */
 	for (int i = 0; i < 100 && recOut && obs_output_active(recOut); i++)
 		os_sleep_ms(50);
 	recOut = nullptr;
-	streamOut = nullptr;
 	recVideo = nullptr;
 	recAudio = nullptr;
-	streamVideo = nullptr;
-	streamAudio = nullptr;
-	service = nullptr;
 }

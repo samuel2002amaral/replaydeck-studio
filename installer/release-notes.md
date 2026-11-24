@@ -1,5 +1,11 @@
 ## ReplayDeck Studio — fase 3 (áudio, gravar, transmitir, saída externa)
 
+> 2.5.0:
+> - **Funções com os nomes do vMix** (Cut, Fade, QuickPlay, OverlayInput1In, SetVolume, ReplayMarkIn, ReplayPlayLastEvent… 60+) — base de atalhos, scripts e da API.
+> - **Atalhos de teclado para tudo** (Configurações → Atalhos): tecla (com Ctrl/Shift/Alt) → função, entrada e valor. Botão "Atalhos sugeridos" (Espaço = Corte, Enter = Fade, F1-F4 = overlays, 1-9 = Prévia, I/O = Mark In/Out, P = último lance…). Não disparam enquanto você digita.
+> - **Multitransmissão**: vários destinos ao mesmo tempo (YouTube, Facebook, Instagram, TikTok, Twitch, Kick, personalizado). Cada formato é comprimido uma vez só, mesmo com vários destinos.
+> - **Transmissão vertical 9:16** (Reels, TikTok, Shorts): o Programa inteiro (com overlays) recortado ao centro — dá para puxar para os lados — ou encaixado com faixas; 1080×1920 ou 720×1280. Veja antes em Externo → Vertical 9:16. Só gasta processamento enquanto um destino vertical está no ar.
+>
 > 2.4.1:
 > - **Câmera virtual**: o motor só criava a câmera se ela já estivesse instalada no Windows quando o programa abre, então aparecia "não tem câmera virtual". Agora ela existe sempre, e na primeira vez que você liga, o programa instala (64 e 32 bits, um pedido de permissão só).
 > - **Externo do Programa no Windows**: a tela de vídeo agora se religa sozinha quando o Windows recria a janela (ao abrir, ao trocar entre janela e tela cheia).

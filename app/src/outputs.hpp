@@ -8,6 +8,16 @@
 #include <QObject>
 #include <QString>
 
+/* um destino da transmissão (YouTube, Facebook, Instagram...) */
+struct StreamDestination {
+	bool enabled = true;
+	QString name;     /* como aparece para o operador */
+	QString service;  /* nome do serviço (lista streamPresets) */
+	QString server;
+	QString key;
+	bool vertical = false; /* quadro vertical 9:16 em vez do Programa 16:9 */
+};
+
 struct StudioSettings {
 	/* vídeo */
 	int width = 1920, height = 1080;
@@ -17,12 +27,21 @@ struct StudioSettings {
 	QString recFormat = "mp4";  /* mp4 (fragmentado: não corrompe se cair a energia), mkv, mov */
 	QString recEncoder = "auto";
 	int recBitrate = 15000;     /* kbps */
-	/* transmissão */
-	QString streamService = "YouTube";
-	QString streamServer = "rtmp://a.rtmp.youtube.com/live2";
-	QString streamKey;
+	/* transmissão: vários destinos ao mesmo tempo; um codificador por formato */
+	QList<StreamDestination> destinations;
 	QString streamEncoder = "auto";
-	int streamBitrate = 6000;
+	int streamBitrate = 6000;     /* horizontal */
+	int verticalBitrate = 6000;
+	int verticalWidth = 1080, verticalHeight = 1920;
+	bool verticalFit = false;     /* encaixar com faixas (senão recorta o centro) */
+	int verticalOffset = 0;       /* recorte: -100 esquerda .. 100 direita */
+	bool hasStreamKey() const
+	{
+		for (const StreamDestination &d : destinations)
+			if (d.enabled && !d.key.trimmed().isEmpty() && !d.server.trimmed().isEmpty())
+				return true;
+		return false;
+	}
 	/* áudio */
 	int audioBitrate = 160;
 	QString monitorDeviceId = "default";
@@ -58,7 +77,8 @@ public:
 	bool startStreaming(QString &error);
 	void stopStreaming();
 	bool streaming() const;
-	bool streamReconnecting() const { return reconnecting; }
+	int liveCount() const;         /* destinos no ar agora */
+	bool streamReconnecting() const;
 	qint64 streamingMs() const { return streaming() ? streamTimer.elapsed() : 0; }
 	int streamDroppedFrames() const;
 	int streamTotalFrames() const;
@@ -82,10 +102,19 @@ private:
 	static void onStreamReconnected(void *data, calldata_t *cd);
 
 	StudioSettings cfg;
-	OBSOutputAutoRelease recOut, streamOut;
-	OBSEncoderAutoRelease recVideo, recAudio, streamVideo, streamAudio;
-	OBSServiceAutoRelease service;
+	struct Live {
+		QString name;
+		OBSOutputAutoRelease out;
+		OBSServiceAutoRelease service;
+		bool reconnecting = false;
+		bool running = false; /* ligou (a conexão termina de abrir em segundo plano) até o aviso de parada */
+	};
+	Live *liveFor(obs_output_t *out);
+	void releaseStreams();
+
+	OBSOutputAutoRelease recOut;
+	OBSEncoderAutoRelease recVideo, recAudio, streamVideo, streamVideoV, streamAudio;
+	QList<Live *> live;
 	QElapsedTimer recTimer, streamTimer;
 	QString recFile;
-	bool reconnecting = false;
 };

@@ -2,6 +2,8 @@
 #include "engine.hpp"
 #include "replay-host.hpp"
 #include "outputs.hpp"
+#include "vertical-canvas.hpp"
+#include "shortcuts.hpp"
 #include "virtualcam.hpp"
 #include "settings-dialog.hpp"
 #include "external-output.hpp"
@@ -128,7 +130,10 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
+	VerticalCanvas::registerSource();
 	Outputs::get().load();
+	Shortcuts::get().load();
+	Shortcuts::get().install();
 	int ret;
 	{
 		MainWindow w;
@@ -218,7 +223,10 @@ int main(int argc, char *argv[])
 				if (Input *in = e.addInput("color_source_v3", "AMARELO", c))
 					e.cutTo(in->id);
 				blog(LOG_INFO, "[ext] abrindo janela");
-				auto *x = new ExternalOutput(ExternalOutput::What::Program, 0, nullptr);
+				auto *x = new ExternalOutput(qEnvironmentVariableIsSet("RDS_SELFTEST_EXT_VERTICAL")
+								     ? ExternalOutput::What::Vertical
+								     : ExternalOutput::What::Program,
+							     0, nullptr);
 				/* recria a janela nativa depois de aberta (o que o Windows faz ao mudar bordas):
 				 * o vídeo tem que voltar sozinho */
 				QTimer::singleShot(800, x, [x] {
@@ -279,8 +287,20 @@ int main(int argc, char *argv[])
 					e.setInputAudioAuto(in->id, false);
 				StudioSettings s = Outputs::get().settings();
 				s.recFolder = qEnvironmentVariable("RDS_SELFTEST_OUTPUTS");
-				s.streamServer = qEnvironmentVariable("RDS_SELFTEST_RTMP");
-				s.streamKey = "teste";
+				s.destinations.clear();
+				StreamDestination hd;
+				hd.name = "Horizontal";
+				hd.server = qEnvironmentVariable("RDS_SELFTEST_RTMP");
+				hd.key = "teste";
+				s.destinations << hd;
+				if (qEnvironmentVariableIsSet("RDS_SELFTEST_RTMP2")) {
+					StreamDestination vd;
+					vd.name = "Vertical";
+					vd.server = qEnvironmentVariable("RDS_SELFTEST_RTMP2");
+					vd.key = "teste";
+					vd.vertical = true;
+					s.destinations << vd;
+				}
 				QString err;
 				Outputs::get().setSettings(s, err);
 				const bool ok = Outputs::get().startRecording(err);
@@ -295,6 +315,7 @@ int main(int argc, char *argv[])
 				blog(LOG_INFO, "[teste-saidas] transmitir=%d %s", ok, err.toUtf8().constData());
 			});
 			QTimer::singleShot(8000, [] {
+				blog(LOG_INFO, "[teste-saidas] destinos no ar=%d", Outputs::get().liveCount());
 				blog(LOG_INFO, "[teste-saidas] transmitindo=%d quadros=%d perdidos=%d", Outputs::get().streaming(),
 				     Outputs::get().streamTotalFrames(), Outputs::get().streamDroppedFrames());
 				Outputs::get().stopStreaming();
@@ -354,6 +375,7 @@ int main(int argc, char *argv[])
 		ret = app.exec();
 		VirtualCam::get().shutdown();
 		Outputs::get().shutdown(); /* fecha o arquivo da gravação e a transmissão */
+		VerticalCanvas::get().shutdown();
 		replayhost::shutdown(); /* para a gravação do replay antes de fechar a janela */
 	}
 	replayhost::finish();
