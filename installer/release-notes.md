@@ -1,5 +1,7 @@
 ## ReplayDeck Studio — fase 3 (áudio, gravar, transmitir, saída externa)
 
+> 2.2.1: nas telas de vídeo (Prévia, Programa, miniaturas, janela da entrada) a sobra ao redor da imagem agora tem a cor da página; preto só onde é a imagem que vai ao ar.
+>
 > 2.2.0:
 > - **Mixer de áudio** (aba ao lado do replay): uma faixa por entrada com som — medidor, volume em dB, **On**, **Auto** (só toca quando a entrada está no ar; padrão das câmeras e vídeos) e **Fone**. Microfone e áudio do computador tocam sempre, mesmo fora do Programa. Faixa **MASTER** com o medidor do que sai.
 > - **Gravar**: grava o Programa em MP4 (não corrompe se cair a energia), MKV ou MOV; usa a placa de vídeo (NVIDIA/AMD/Intel) e cai para o processador se precisar.

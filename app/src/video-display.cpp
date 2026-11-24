@@ -63,7 +63,8 @@ void VideoDisplay::createDisplay()
 	info.window.id = (uint32_t)windowHandle()->winId();
 	info.window.display = obs_get_nix_platform_display();
 #endif
-	display = obs_display_create(&info, 0xFF000000);
+	/* fora da imagem: a cor do painel (#12161e, em 0xAABBGGRR); preto só onde é vídeo */
+	display = obs_display_create(&info, 0xFF1E1612);
 	if (display)
 		obs_display_add_draw_callback(display, draw, this);
 }
@@ -161,6 +162,14 @@ void VideoDisplay::draw(void *data, uint32_t cx, uint32_t cy)
 	gs_projection_push();
 	gs_set_viewport(x, y, w, h);
 	gs_ortho(0.0f, bw, 0.0f, bh, -100.0f, 100.0f);
+
+	/* a área da imagem é preta (é o que vai ao ar); o resto fica com a cor da página */
+	gs_effect_t *solid = obs_get_base_effect(OBS_EFFECT_SOLID);
+	struct vec4 black;
+	vec4_set(&black, 0.0f, 0.0f, 0.0f, 1.0f);
+	gs_effect_set_vec4(gs_effect_get_param_by_name(solid, "color"), &black);
+	while (gs_effect_loop(solid, "Solid"))
+		gs_draw_sprite(nullptr, 0, (uint32_t)bw, (uint32_t)bh);
 
 	if (self->mode == Mode::Program)
 		obs_render_main_texture();
