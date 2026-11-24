@@ -113,7 +113,9 @@ jobs:
           prefix="$PWD/engine/sdk;$PWD/engine/sdk/Frameworks"
           for d in "$PWD"/engine/deps/*; do prefix="$prefix;$d"; done
           echo "procurando bibliotecas em: $prefix"
-          libobs_dir=$(dirname "$(find "$PWD/engine/sdk" -name libobsConfig.cmake | head -1)")
+          # pelo link Resources/ do framework (o caminho real Versions/A confunde o cálculo da pasta)
+          libobs_dir="$PWD/engine/sdk/Frameworks/libobs.framework/Resources/cmake"
+          test -f "$libobs_dir/libobsConfig.cmake"
           echo "libobs: $libobs_dir"
           cmake -S studio/app -B appbuild -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 "-DCMAKE_PREFIX_PATH=$prefix" "-Dlibobs_DIR=$libobs_dir" \
