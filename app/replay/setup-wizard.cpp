@@ -81,7 +81,8 @@ bool needsSetup()
 static bool looksLikeCamera(obs_source_t *s)
 {
 	const char *id = obs_source_get_id(s);
-	static const char *ids[] = {"dshow_input",   "decklink-input",      "ndi_source", "v4l2_input",
+	static const char *ids[] = {"dshow_input",   "decklink-input",      "ndi_source", "v4l2_input", "macos-avcapture",
+				    "macos-avcapture-fast",
 				    "av_capture_input", "av_capture_input_v2", "aja_source", "teradek_source"};
 	for (const char *c : ids)
 		if (strcmp(id, c) == 0)

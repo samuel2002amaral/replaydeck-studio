@@ -39,6 +39,17 @@ static QString path()
 	return Engine::get().configDir() + "/atalhos.json";
 }
 
+/* tecla física: no Windows/Linux o scan code; no Mac o Qt não dá scan code, mas o "virtual key"
+ * do Mac já é a posição física (0 = A): soma 0x1000 para nunca ser 0 */
+static quint32 physicalKey(const QKeyEvent *e)
+{
+#ifdef __APPLE__
+	return e->nativeVirtualKey() + 0x1000;
+#else
+	return e->nativeScanCode();
+#endif
+}
+
 QString Shortcut::display() const
 {
 	if (!label.isEmpty())
@@ -200,6 +211,10 @@ QList<Shortcut> Shortcuts::suggestedReplay()
 	const quint32 KP[10] = {0x52, 0x4F, 0x50, 0x51, 0x4B, 0x4C, 0x4D, 0x47, 0x48, 0x49};
 	const quint32 DEC = 0x53, ENTER = 0x11C, ADD = 0x4E, SUB = 0x4A, MUL = 0x37, DIV = 0x135;
 	const quint32 LEFT = 0x14B, RIGHT = 0x14D, UP = 0x148, DOWN = 0x150;
+#elif defined(__APPLE__) /* códigos de tecla do Mac + 0x1000 (veja physicalKey) */
+	const quint32 KP[10] = {0x1052, 0x1053, 0x1054, 0x1055, 0x1056, 0x1057, 0x1058, 0x1059, 0x105B, 0x105C};
+	const quint32 DEC = 0x1041, ENTER = 0x104C, ADD = 0x1045, SUB = 0x104E, MUL = 0x1043, DIV = 0x104B;
+	const quint32 LEFT = 0x107B, RIGHT = 0x107C, UP = 0x107E, DOWN = 0x107D;
 #else /* X11 */
 	const quint32 KP[10] = {90, 87, 88, 89, 83, 84, 85, 79, 80, 81};
 	const quint32 DEC = 91, ENTER = 104, ADD = 86, SUB = 82, MUL = 63, DIV = 106;
@@ -393,12 +408,12 @@ bool Shortcuts::eventFilter(QObject *o, QEvent *e)
 	if ((e->type() == QEvent::KeyRelease || e->type() == QEvent::KeyPress) && qEnvironmentVariableIsSet("RDS_DEBUG_KEYS")) {
 		auto *ke = static_cast<QKeyEvent *>(e);
 		blog(LOG_INFO, "[tecla] %s scan=%u repete=%d em %s", e->type() == QEvent::KeyPress ? "aperta" : "solta",
-		     ke->nativeScanCode(), ke->isAutoRepeat(), o->metaObject()->className());
+		     physicalKey(ke), ke->isAutoRepeat(), o->metaObject()->className());
 	}
 	if (e->type() == QEvent::KeyRelease && !held.isEmpty()) {
 		auto *ke = static_cast<QKeyEvent *>(e);
 		if (!ke->isAutoRepeat())
-			release(ke->nativeScanCode());
+			release(physicalKey(ke));
 		return false;
 	}
 	if (e->type() == QEvent::ApplicationDeactivate && !held.isEmpty() && !globalOn) {
@@ -418,7 +433,7 @@ bool Shortcuts::eventFilter(QObject *o, QEvent *e)
 	if (key == Qt::Key_Control || key == Qt::Key_Shift || key == Qt::Key_Alt || key == Qt::Key_Meta ||
 	    key == Qt::Key_NumLock || key == Qt::Key_CapsLock || key == Qt::Key_ScrollLock)
 		return false;
-	return trigger(ke->nativeScanCode(), int(ke->modifiers()), key, ke->modifiers() & Qt::KeypadModifier);
+	return trigger(physicalKey(ke), int(ke->modifiers()), key, ke->modifiers() & Qt::KeypadModifier);
 }
 
 /* ---------------- global (Windows): com outro programa na frente ---------------- */
@@ -606,7 +621,7 @@ void KeyCapture::keyPressEvent(QKeyEvent *e)
 	}
 	const int mods = int(e->modifiers()) & MOD_MASK;
 	const bool keypad = e->modifiers() & Qt::KeypadModifier;
-	sc.scan = e->nativeScanCode();
+	sc.scan = physicalKey(e);
 	sc.mods = mods;
 	sc.label = Shortcuts::keyName(sc.scan, mods, key, keypad);
 	sc.key = keypad ? QKeySequence() : QKeySequence(QKeyCombination(Qt::KeyboardModifiers(mods), Qt::Key(key)));

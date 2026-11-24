@@ -113,6 +113,13 @@ else()
   target_compile_options(replaydeck-studio PRIVATE -Wall -Wextra)
 endif()
 
+if(APPLE)
+  # Mac: o programa vai dentro do .app, ao lado dos frameworks do motor e do Qt (Contents/Frameworks)
+  set_target_properties(replaydeck-studio PROPERTIES
+    BUILD_RPATH "@executable_path/../Frameworks"
+    INSTALL_RPATH "@executable_path/../Frameworks")
+endif()
+
 if(DEFINED OBS_EXECUTABLE_DESTINATION)
   # dentro da árvore do OBS: fica em bin/64bit junto do motor e das DLLs do Qt
   install(TARGETS replaydeck-studio RUNTIME DESTINATION "${OBS_EXECUTABLE_DESTINATION}" COMPONENT Runtime)

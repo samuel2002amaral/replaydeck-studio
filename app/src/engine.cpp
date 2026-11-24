@@ -69,6 +69,11 @@ bool Engine::start(QString &error)
 	const QString exeDir = QCoreApplication::applicationDirPath();
 	QDir::setCurrent(exeDir);
 
+#ifdef __APPLE__
+	/* Mac: dentro do .app não se escreve (quebra a assinatura): ~/Library/Application Support */
+	cfgDir = QDir::homePath() + "/Library/Application Support/ReplayDeckStudio";
+	QDir().mkpath(cfgDir + "/logs");
+#else
 	/* configurações ficam junto do programa (portátil): <pasta>/config/ReplayDeckStudio */
 	cfgDir = QDir::cleanPath(exeDir + "/../../config/ReplayDeckStudio");
 	if (!QDir().mkpath(cfgDir + "/logs")) {
@@ -76,6 +81,7 @@ bool Engine::start(QString &error)
 		cfgDir = QDir::homePath() + "/AppData/Roaming/ReplayDeckStudio";
 		QDir().mkpath(cfgDir + "/logs");
 	}
+#endif
 	const QString logPath = cfgDir + "/logs/" + QDateTime::currentDateTime().toString("yyyy-MM-dd hh-mm-ss") + ".txt";
 	logFile = fopen(QFile::encodeName(logPath).constData(), "w");
 	base_set_log_handler(logHandler, nullptr);
@@ -136,7 +142,11 @@ bool Engine::start(QString &error)
 	const int rv = obs_reset_video(&ovi);
 	if (rv != OBS_VIDEO_SUCCESS) {
 		error = rv == OBS_VIDEO_NOT_SUPPORTED
+#ifdef _WIN32
 				? "A placa de vídeo não é compatível (precisa de DirectX 11)."
+#else
+				? "A placa de vídeo não é compatível (precisa de OpenGL 3.3)."
+#endif
 				: QString("Não foi possível iniciar o vídeo (código %1). Atualize o driver da placa de vídeo.").arg(rv);
 		return false;
 	}
@@ -146,7 +156,8 @@ bool Engine::start(QString &error)
 					"obs-nvenc", "obs-qsv11", "image-source", "obs-filters", "obs-transitions",
 					"obs-text", "text-freetype2", "rtmp-services", "obs-browser", "vlc-video",
 					"decklink", "aja", "nv-filters", "obs-vst", "obs-webrtc", "coreaudio-encoder",
-					"linux-capture", "linux-v4l2", "linux-pulseaudio", "linux-alsa", "linux-pipewire"};
+					"linux-capture", "linux-v4l2", "linux-pulseaudio", "linux-alsa", "linux-pipewire",
+					"mac-avcapture", "mac-capture", "mac-videotoolbox", "mac-syphon"};
 	for (const char *m : modules)
 		obs_add_safe_module(m);
 #if LIBOBS_API_MAJOR_VER >= 32
@@ -190,7 +201,8 @@ bool Engine::start(QString &error)
 	const char *id = nullptr, *unver = nullptr;
 	/* só tipos conferidos que aceitam montar as opções sem nada aberto (AJA e v4l2 do Linux não) */
 	static const char *wanted[] = {"dshow_input", "decklink-input", "wasapi_input_capture", "wasapi_output_capture",
-				       "monitor_capture", "window_capture", "game_capture"};
+				       "monitor_capture", "window_capture", "game_capture", "macos-avcapture",
+				       "coreaudio_input_capture", "coreaudio_output_capture"};
 	for (size_t i = 0; obs_enum_input_types2(i, &id, &unver); i++) {
 		for (const char *w : wanted)
 			if (unver && strcmp(unver, w) == 0 && !(obs_get_source_output_flags(id) & OBS_SOURCE_DEPRECATED))

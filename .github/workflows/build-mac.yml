@@ -1,0 +1,197 @@
+name: Build Mac
+
+# Compila o ReplayDeck Studio para Mac (Apple Silicon: M1/M2/M3/M4).
+#
+# Igual ao Windows: o MOTOR (OBS Studio) é compilado uma vez e fica no cache; cada mudança no programa
+# compila só a pasta app/ e monta o "ReplayDeck Studio.app" dentro de um .dmg.
+# Commit com [release] anexa o .dmg à mesma página de Releases da versão do Windows.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-mac-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 300
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: studio
+
+      - name: Versões
+        run: |
+          grep -E '^\s*[A-Z_]+=' studio/versions.env | sed 's/^\s*//' >> "$GITHUB_ENV"
+          echo "STUDIO_VERSION=$(tr -d '[:space:]' < studio/VERSION)" >> "$GITHUB_ENV"
+          xcodebuild -version
+          sw_vers
+
+      - name: Motor guardado
+        id: engine
+        uses: actions/cache/restore@v4
+        with:
+          path: engine
+          key: engine-mac-arm64-${{ env.OBS_VERSION }}-${{ env.ENGINE_REV }}-${{ env.ENGINE_MAC_REV }}-${{ hashFiles('studio/tools/patch-obs.py') }}
+
+      # ---------- só quando o motor mudou ----------
+      - name: "Motor: baixar código do OBS"
+        if: steps.engine.outputs.cache-hit != 'true'
+        run: git clone --depth 1 --branch "$OBS_VERSION" --recursive --shallow-submodules https://github.com/obsproject/obs-studio.git obs
+
+      - name: "Motor: aplicar ajustes"
+        if: steps.engine.outputs.cache-hit != 'true'
+        run: python3 studio/tools/patch-obs.py obs studio
+
+      - name: "Motor: configurar"
+        if: steps.engine.outputs.cache-hit != 'true'
+        working-directory: obs
+        env:
+          CODESIGN_IDENT: "-"
+        # sem navegador (CEF) e sem câmera virtual (precisa de assinatura da Apple) por enquanto
+        run: |
+          cmake --preset macos -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF \
+            -DOBS_VERSION_OVERRIDE="$OBS_VERSION" -DENABLE_BROWSER=OFF -DENABLE_VIRTUALCAM=OFF \
+            -DENABLE_SCRIPTING=OFF -DENABLE_SPARKLE_UPDATER=OFF
+
+      - name: "Motor: compilar"
+        if: steps.engine.outputs.cache-hit != 'true'
+        working-directory: obs/build_macos
+        run: |
+          set -o pipefail
+          args=(ONLY_ACTIVE_ARCH=NO -project obs-studio.xcodeproj -target obs-studio
+                -destination "generic/platform=macOS,name=Any Mac" -configuration RelWithDebInfo
+                -parallelizeTargets -hideShellScriptEnvironment build)
+          if command -v xcbeautify >/dev/null; then
+            xcodebuild "${args[@]}" 2>&1 | xcbeautify --quiet --renderer github-actions
+          else
+            xcodebuild "${args[@]}" 2>&1 | grep -E "error:|warning: unable|BUILD (SUCCEEDED|FAILED)" || true
+            test -d frontend/RelWithDebInfo/OBS.app
+          fi
+
+      - name: "Motor: guardar arquivos"
+        if: steps.engine.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p engine/runtime engine/sdk engine/deps
+          app=$(find obs/build_macos -maxdepth 4 -name OBS.app -type d | head -1)
+          echo "OBS.app: $app"
+          test -n "$app"
+          ditto "$app" engine/runtime/OBS.app
+          cmake --install obs/build_macos --config RelWithDebInfo --component Development --prefix engine/sdk
+          cp obs/COPYING engine/runtime/LICENCA.txt
+          for d in obs/.deps/*; do
+            case "$d" in *cef*) ;; *) [ -d "$d" ] && cp -R "$d" engine/deps/ ;; esac
+          done
+          du -sh engine/* || true
+          ls engine/runtime/OBS.app/Contents/MacOS engine/runtime/OBS.app/Contents/PlugIns | head -80
+          find engine/sdk -maxdepth 4 | head -40
+
+      - name: "Motor: salvar no cache"
+        if: steps.engine.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: engine
+          key: ${{ steps.engine.outputs.cache-primary-key }}
+
+      # ---------- sempre: compila só o programa ----------
+      - name: Compilar o programa
+        run: |
+          prefix="$PWD/engine/sdk;$PWD/engine/sdk/Frameworks"
+          for d in "$PWD"/engine/deps/*; do prefix="$prefix;$d"; done
+          echo "procurando bibliotecas em: $prefix"
+          libobs_dir=$(dirname "$(find "$PWD/engine/sdk" -name libobsConfig.cmake | head -1)")
+          echo "libobs: $libobs_dir"
+          cmake -S studio/app -B appbuild -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 "-DCMAKE_PREFIX_PATH=$prefix" "-Dlibobs_DIR=$libobs_dir" \
+            "-DRDS_VERSION=$STUDIO_VERSION" -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF
+          cmake --build appbuild --parallel 4 2>&1 | grep -vE "warning:|note:|^\s+[0-9]+ \||^\s+\||^\s*\^" | tail -60
+          test -f appbuild/ReplayDeckStudio
+
+      - name: Montar o ReplayDeck Studio.app
+        run: |
+          APP="pkg/ReplayDeck Studio.app"
+          mkdir -p pkg
+          ditto engine/runtime/OBS.app "$APP"
+          # a interface do OBS sai; o resto do motor (frameworks, plugins, obs-ffmpeg-mux) fica
+          rm -f "$APP/Contents/MacOS/OBS"
+          cp appbuild/ReplayDeckStudio "$APP/Contents/MacOS/ReplayDeckStudio"
+          P="$APP/Contents/Info.plist"
+          pb() { /usr/libexec/PlistBuddy -c "$1" "$P" 2>/dev/null || true; }
+          pb "Set :CFBundleExecutable ReplayDeckStudio"
+          pb "Set :CFBundleIdentifier com.replaydeck.studio"
+          pb "Set :CFBundleName ReplayDeck Studio"
+          pb "Delete :CFBundleDisplayName"; pb "Add :CFBundleDisplayName string ReplayDeck Studio"
+          pb "Set :CFBundleShortVersionString $STUDIO_VERSION"
+          pb "Set :CFBundleVersion ${{ github.run_number }}"
+          pb "Delete :NSCameraUsageDescription"; pb "Add :NSCameraUsageDescription string O ReplayDeck Studio usa as câmeras e placas de captura da transmissão."
+          pb "Delete :NSMicrophoneUsageDescription"; pb "Add :NSMicrophoneUsageDescription string O ReplayDeck Studio usa os microfones e entradas de áudio da transmissão."
+          for k in SUFeedURL SUPublicEDKey SUEnableAutomaticChecks OBSFeedsURL; do pb "Delete :$k"; done
+          mkdir -p "$APP/Contents/Resources/data/replaydeck-studio/replay"
+          cp -R studio/app/replay/data/* "$APP/Contents/Resources/data/replaydeck-studio/replay/"
+          cp engine/runtime/LICENCA.txt pkg/LICENCA.txt
+          echo "ReplayDeck Studio $STUDIO_VERSION (Mac, Apple Silicon) - motor OBS $OBS_VERSION - build ${{ github.run_number }} ${{ github.sha }}" > "$APP/Contents/Resources/VERSAO.txt"
+          echo "--- dependências do programa:"
+          otool -L "$APP/Contents/MacOS/ReplayDeckStudio" | head -30
+          # assinatura "ad-hoc": sem ela o Mac com chip Apple não abre nada
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict "$APP" && echo "assinatura ok"
+
+      - name: Teste rápido (abre, carrega o motor, tira foto da janela)
+        run: |
+          APP="pkg/ReplayDeck Studio.app"
+          export RDS_SELFTEST="$PWD/teste-mac.png"
+          perl -e 'alarm shift; exec @ARGV' 150 "$APP/Contents/MacOS/ReplayDeckStudio" > teste-mac-saida.txt 2>&1 || echo "saiu com código $?"
+          tail -40 teste-mac-saida.txt || true
+          LOGS="$HOME/Library/Application Support/ReplayDeckStudio/logs"
+          ls -la "$LOGS" || true
+          cp "$(ls -t "$LOGS"/*.txt | head -1)" teste-mac-log.txt || true
+          grep -iE "módulo|module|erro|error|falh|placa|vídeo|video|carregad" teste-mac-log.txt | head -80 || true
+          test -f teste-mac.png && echo "foto ok" || echo "::warning::sem foto da janela"
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: teste-mac
+          path: |
+            teste-mac.png
+            teste-mac-log.txt
+            teste-mac-saida.txt
+
+      - name: DMG
+        run: |
+          mkdir -p dmg dist
+          ditto "pkg/ReplayDeck Studio.app" "dmg/ReplayDeck Studio.app"
+          ln -s /Applications dmg/Aplicativos
+          cp studio/installer/LEIA-ME-MAC.txt dmg/ 2>/dev/null || true
+          hdiutil create -volname "ReplayDeck Studio" -srcfolder dmg -ov -format UDZO "dist/ReplayDeck-Studio-$STUDIO_VERSION-Mac.dmg"
+          ls -la dist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ReplayDeck-Studio-mac
+          path: dist/*
+          compression-level: 0
+
+      - name: Anexar ao Release
+        if: contains(github.event.head_commit.message, '[release]')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # a página da versão é criada pelo job do Windows: espera até 60 min por ela
+          for i in $(seq 1 120); do
+            if gh release view "v$STUDIO_VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              gh release upload "v$STUDIO_VERSION" dist/*.dmg --clobber --repo "$GITHUB_REPOSITORY"
+              exit 0
+            fi
+            sleep 30
+          done
+          echo "::error::a página v$STUDIO_VERSION não apareceu"; exit 1

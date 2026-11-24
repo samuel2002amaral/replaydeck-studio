@@ -751,7 +751,7 @@ bool runFunction(const QString &name, const QString &inputSpec, const QString &v
 			if (ids.isEmpty()) /* nunca escolheu: as câmeras */
 				for (Input *x : e.inputs()) {
 					const char *tid = obs_source_get_unversioned_id(x->source);
-					if (tid && (strstr(tid, "dshow") || strstr(tid, "v4l2") || strstr(tid, "decklink")))
+					if (tid && (strstr(tid, "dshow") || strstr(tid, "v4l2") || strstr(tid, "decklink") || strstr(tid, "avcapture")))
 						ids << x->id;
 				}
 			QString err;

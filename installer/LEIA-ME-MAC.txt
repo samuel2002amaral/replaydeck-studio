@@ -1,0 +1,16 @@
+ReplayDeck Studio para Mac (Apple Silicon: M1, M2, M3, M4)
+
+INSTALAR
+1. Arraste "ReplayDeck Studio" para a pasta Aplicativos.
+2. Na primeira vez o Mac avisa que não pode verificar o programa (ele ainda não é assinado pela Apple):
+   - abra Ajustes do Sistema > Privacidade e Segurança, role até o fim e clique em "Abrir Mesmo Assim";
+   - ou clique com o botão direito no programa > Abrir > Abrir.
+   Só precisa fazer isso uma vez.
+3. Ao adicionar uma câmera ou microfone, o Mac pede permissão: clique em Permitir.
+
+AINDA NÃO TEM NO MAC
+- Câmera virtual (precisa de assinatura da Apple).
+- Entrada de página web (navegador).
+- Atalhos funcionando com outro programa na frente.
+
+Configurações e logs ficam em: ~/Library/Application Support/ReplayDeckStudio

@@ -157,6 +157,12 @@ bool VirtualCam::start(int inputId, QWidget *parent, QString &error)
 		return false;
 
 	id = inputId;
+#ifdef __APPLE__
+	/* no Mac a câmera virtual é uma "extensão de sistema" que só funciona assinada pela Apple */
+	error = "No Mac a câmera virtual ainda não está disponível (ela precisa ser assinada pela Apple). "
+		"Use a saída Externo ou um app de captura de tela.";
+	return false;
+#endif
 	output = obs_output_create("virtualcam_output", "camera-virtual", nullptr, nullptr);
 	if (!output) {
 		error = "Não foi possível criar a câmera virtual.";

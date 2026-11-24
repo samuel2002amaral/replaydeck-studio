@@ -157,6 +157,7 @@ struct TypeDef {
 static const TypeDef typeDefs[] = {
 	{"instant_replay_output", "Replay (saída A ou B)"},
 	{"dshow_input", "Câmera / placa de captura"},
+	{"macos-avcapture", "Câmera / placa de captura"},
 	{"decklink-input", "Blackmagic DeckLink"},
 	{"aja_source", "AJA"},
 	{"ffmpeg_source", "Vídeo, link ou celular"},
@@ -166,12 +167,18 @@ static const TypeDef typeDefs[] = {
 	{"browser_source", "Página web (navegador)"},
 	{"instant_replay_gt", "Título GT (.gtzip do vMix)"},
 	{"text_gdiplus", "Texto"},
+	{"text_ft2_source", "Texto"},
 	{"color_source", "Cor"},
 	{"monitor_capture", "Captura de tela"},
 	{"window_capture", "Captura de janela"},
 	{"game_capture", "Captura de jogo"},
 	{"wasapi_input_capture", "Microfone / entrada de áudio"},
 	{"wasapi_output_capture", "Áudio do computador"},
+	{"coreaudio_input_capture", "Microfone / entrada de áudio"},
+	{"sck_audio_capture", "Áudio do computador / de um app"},
+	{"coreaudio_output_capture", "Saída de áudio (BlackHole, Loopback...)"},
+	{"screen_capture", "Captura de tela"},
+	{"syphon-input", "Syphon"},
 	{"ndi_source", "NDI"},
 	{"v4l2_input", "Câmera (Linux)"},
 };
@@ -211,7 +218,7 @@ QIcon inputTypeIcon(const QString &typeId)
 	pen.setJoinStyle(Qt::RoundJoin);
 	p.setPen(pen);
 	p.setBrush(Qt::NoBrush);
-	if (t == "dshow_input" || t == "v4l2_input" || t == "decklink-input" || t == "aja_source") {
+	if (t == "dshow_input" || t == "v4l2_input" || t == "decklink-input" || t == "aja_source" || t.startsWith("macos-avcapture")) {
 		p.drawRoundedRect(QRectF(4, 10, 17, 13), 3, 3);
 		p.drawPolygon(QPolygonF({QPointF(21, 14), QPointF(28, 10), QPointF(28, 23), QPointF(21, 19)}));
 	} else if (t == "ffmpeg_source" || t == "vlc_source") {
@@ -240,7 +247,7 @@ QIcon inputTypeIcon(const QString &typeId)
 		p.drawRoundedRect(QRectF(4, 6, 24, 16), 2, 2);
 		p.drawLine(QPointF(12, 26), QPointF(20, 26));
 		p.drawLine(QPointF(16, 22), QPointF(16, 26));
-	} else if (t.startsWith("wasapi")) {
+	} else if (t.startsWith("wasapi") || t.startsWith("coreaudio") || t == "sck_audio_capture") {
 		p.drawRoundedRect(QRectF(12, 4, 8, 14), 4, 4);
 		p.drawArc(QRectF(8, 8, 16, 14), 180 * 16, 180 * 16);
 		p.drawLine(QPointF(16, 22), QPointF(16, 27));

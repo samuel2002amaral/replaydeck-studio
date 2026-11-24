@@ -185,7 +185,8 @@ char *rdsReplayDataFile(const char *file)
 {
 	const QString app = QCoreApplication::applicationDirPath();
 	const QString rel = QString::fromUtf8(file);
-	for (const QString &base : {app + "/../../data/replaydeck-studio/replay", app + "/replay-data"}) {
+	for (const QString &base : {app + "/../../data/replaydeck-studio/replay", app + "/replay-data",
+				    app + "/../Resources/data/replaydeck-studio/replay" /* Mac: dentro do .app */}) {
 		const QString p = QDir::cleanPath(base + "/" + rel);
 		if (QFileInfo::exists(p))
 			return bstrdup(p.toUtf8().constData());
@@ -258,7 +259,13 @@ QString rdsAddCameraDialog(QWidget *parent)
 	QList<int> before;
 	for (Input *in : Engine::get().inputs())
 		before << in->id;
+#ifdef __APPLE__
+	NewInputDialog dlg("macos-avcapture", "Câmera / placa de captura", parent);
+#elif defined(_WIN32)
 	NewInputDialog dlg("dshow_input", "Câmera / placa de captura", parent);
+#else
+	NewInputDialog dlg("v4l2_input", "Câmera / placa de captura", parent);
+#endif
 	dlg.exec();
 	for (Input *in : Engine::get().inputs())
 		if (!before.contains(in->id))

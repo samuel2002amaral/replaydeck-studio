@@ -1,5 +1,7 @@
 #include "i18n.hpp"
 #include "camera-recorder.hpp"
+
+#include <algorithm>
 #include <util/platform.h>
 #include <util/threading.h>
 #include <cstring>
@@ -16,7 +18,12 @@ extern "C" {
 
 #define MAX_QUEUE 30
 
+#ifdef __APPLE__
+/* Mac: o codificador da Apple (chip M1/M2/M3 ou a placa do Intel) */
+static const char *autoOrder[] = {"h264_videotoolbox", "mjpeg"};
+#else
 static const char *autoOrder[] = {"h264_nvenc", "h264_qsv", "h264_amf", "mjpeg"};
+#endif
 
 CameraRecorder::CameraRecorder(int index_, obs_source_t *source_, const RecConfig &cfg_, uint64_t startTs_,
 			       std::shared_ptr<Recording> rec_, const std::string &basePath_)
@@ -117,6 +124,15 @@ bool CameraRecorder::openEncoder(const char *name, std::string &err, bool withSl
 				c->flags |= AV_CODEC_FLAG_QSCALE;
 				c->global_quality = FF_QP2LAMBDA * cfg.cq;
 			}
+		} else if (n.find("videotoolbox") != std::string::npos) {
+			av_opt_set_int(c->priv_data, "realtime", 1, 0);
+			av_opt_set_int(c->priv_data, "allow_sw", 0, 0); /* só no chip: por CPU fica lento demais */
+			av_opt_set_int(c->priv_data, "prio_speed", 1, 0);
+			if (cqp) {
+				/* VideoToolbox: qualidade 0..100 (maior = melhor); cq 18 do replay ~ 80 */
+				c->flags |= AV_CODEC_FLAG_QSCALE;
+				c->global_quality = FF_QP2LAMBDA * std::clamp(116 - cfg.cq * 2, 50, 92);
+			}
 		} else if (n.find("amf") != std::string::npos) {
 			av_opt_set(c->priv_data, "usage", "lowlatency", 0);
 			if (isHevc)
@@ -182,7 +198,11 @@ bool CameraRecorder::start(std::string &err)
 	{
 		std::string gerr;
 		const char *forced = getenv("RDS_REPLAY_OBS_ENCODER"); /* testes: obs_x264 */
+#ifdef __APPLE__
+		const bool wantNv = false; /* Mac não tem NVIDIA */
+#else
 		const bool wantNv = cfg.encoder == "auto" || cfg.encoder.find("nvenc") != std::string::npos;
+#endif
 		const char *id = forced ? forced
 				 : cfg.encoder.find("hevc") != std::string::npos ? "obs_nvenc_hevc_tex"
 										  : "obs_nvenc_h264_tex";

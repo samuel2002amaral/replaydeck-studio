@@ -42,6 +42,9 @@ static const QList<QPair<QString, QString>> &encoderCandidates()
 		{"h264_texture_amf", "AMD (placa de vídeo)"},
 		{"obs_qsv11_v2", "Intel Quick Sync (placa de vídeo)"},
 		{"obs_qsv11", "Intel Quick Sync (placa de vídeo)"},
+		/* Mac: codificador da Apple (chip M1/M2/M3; nos Intel, o da placa) */
+		{"com.apple.videotoolbox.videoencoder.ave.avc", "Apple VideoToolbox (chip do Mac)"},
+		{"com.apple.videotoolbox.videoencoder.h264.gva", "Apple VideoToolbox (placa do Mac)"},
 		{"obs_x264", "x264 (processador)"},
 	};
 	return list;

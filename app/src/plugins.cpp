@@ -89,6 +89,16 @@ QList<Plugin> discover()
 			out << Plugin{name, f.filePath(), obs + "/data/obs-plugins/" + name, "pasta do OBS instalado"};
 		}
 	}
+#elif defined(__APPLE__)
+	/* Mac: <nome>.plugin/Contents/MacOS/<nome> e os dados em Contents/Resources */
+	for (const QString &root : {QDir::homePath() + "/Library/Application Support/obs-studio/plugins", ownFolder()}) {
+		for (const QFileInfo &d : QDir(root).entryInfoList({"*.plugin"}, QDir::Dirs)) {
+			const QString name = d.completeBaseName();
+			const QString bin = d.filePath() + "/Contents/MacOS/" + name;
+			if (QFileInfo::exists(bin))
+				out << Plugin{name, bin, d.filePath() + "/Contents/Resources", "plugins do OBS"};
+		}
+	}
 #else
 	scanModern(QDir::homePath() + "/.config/obs-studio/plugins", "plugins do OBS", out);
 #endif

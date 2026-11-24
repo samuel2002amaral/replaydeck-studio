@@ -215,7 +215,7 @@ MultiCorderDialog::MultiCorderDialog(QWidget *parent) : QDialog(parent)
 		auto *it = new QListWidgetItem(in->name, list);
 		it->setData(Qt::UserRole, in->id);
 		const char *tid = obs_source_get_unversioned_id(in->source);
-		const bool camera = tid && (strstr(tid, "dshow") || strstr(tid, "v4l2") || strstr(tid, "decklink") ||
+		const bool camera = tid && (strstr(tid, "dshow") || strstr(tid, "v4l2") || strstr(tid, "decklink") || strstr(tid, "avcapture") ||
 					    strstr(tid, "av_capture") || strstr(tid, "ndi"));
 		it->setCheckState((last.isEmpty() ? camera : last.contains(in->id)) ? Qt::Checked : Qt::Unchecked);
 	}

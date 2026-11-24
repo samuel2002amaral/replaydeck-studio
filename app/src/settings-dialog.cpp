@@ -303,6 +303,10 @@ SettingsDialog::SettingsDialog(QWidget *parent, int startTab) : QDialog(parent)
 		globalKeys = new QCheckBox("Funcionar também com outro programa na frente (navegador, WhatsApp...)");
 		globalKeys->setToolTip("A tecla continua indo para o outro programa também. Só no Windows.");
 		globalKeys->setChecked(Shortcuts::get().global());
+#ifndef _WIN32
+		globalKeys->setEnabled(false);
+		globalKeys->setText(globalKeys->text() + "  — por enquanto só no Windows");
+#endif
 		v->addWidget(globalKeys);
 		auto *row = new QHBoxLayout;
 		auto *add = new QPushButton("+ Adicionar");
