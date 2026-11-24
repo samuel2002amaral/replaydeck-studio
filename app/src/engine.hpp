@@ -19,6 +19,7 @@
 struct Input {
 	int id = 0; /* único e estável (usado no projeto salvo) */
 	QString name;
+	QString key; /* chave no formato do vMix (GUID): a API e apps externos acham a entrada por ela */
 	OBSSourceAutoRelease scene; /* a cena da entrada */
 	OBSSourceAutoRelease source; /* a fonte principal dentro da cena */
 	bool loop = false;
@@ -101,6 +102,8 @@ public:
 	void setInputAudioAuto(int id, bool on);
 	void setInputMonitor(int id, bool on);
 	void setInputColor(int id, const QString &key);
+	bool setInputKey(int id, const QString &key); /* false se outra entrada já usa */
+	Input *inputByKey(const QString &key) const;
 	void setInputCollapsed(int id, bool on);
 	float masterVolume() const { return master; }
 	void setMasterVolume(float mul);

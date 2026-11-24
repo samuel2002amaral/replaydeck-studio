@@ -176,10 +176,14 @@ void ReplayEngine::loadConfig()
 	obs_data_set_default_bool(d, "api_enabled", true);
 	obs_data_set_default_int(d, "api_http_port", 8088);
 	obs_data_set_default_int(d, "api_tcp_port", 8099);
+	obs_data_set_default_bool(d, "zoom_reset_mark", true);
+	obs_data_set_default_bool(d, "zoom_reset_events", true);
 	cfg.stingerSource = obs_data_get_string(d, "stinger_source");
 	cfg.stingerDurationMs = (int)obs_data_get_int(d, "stinger_duration_ms");
 	cfg.stingerCutMs = (int)obs_data_get_int(d, "stinger_cut_ms");
 	cfg.stingerCoverOverlays = obs_data_get_bool(d, "stinger_cover_overlays");
+	cfg.zoomResetOnMark = obs_data_get_bool(d, "zoom_reset_mark");
+	cfg.zoomResetOnEvents = obs_data_get_bool(d, "zoom_reset_events");
 	cfg.apiEnabled = obs_data_get_bool(d, "api_enabled");
 	cfg.apiHttpPort = (int)obs_data_get_int(d, "api_http_port");
 	cfg.apiTcpPort = (int)obs_data_get_int(d, "api_tcp_port");
@@ -225,6 +229,8 @@ void ReplayEngine::saveConfig()
 	obs_data_set_int(d, "stinger_duration_ms", cfg.stingerDurationMs);
 	obs_data_set_int(d, "stinger_cut_ms", cfg.stingerCutMs);
 	obs_data_set_bool(d, "stinger_cover_overlays", cfg.stingerCoverOverlays);
+	obs_data_set_bool(d, "zoom_reset_mark", cfg.zoomResetOnMark);
+	obs_data_set_bool(d, "zoom_reset_events", cfg.zoomResetOnEvents);
 	obs_data_set_bool(d, "api_enabled", cfg.apiEnabled);
 	obs_data_set_int(d, "api_http_port", cfg.apiHttpPort);
 	obs_data_set_int(d, "api_tcp_port", cfg.apiTcpPort);
@@ -687,6 +693,13 @@ void ReplayEngine::zoomReset()
 	forSelected([](PlaybackChannel &c) { c.resetZoom(); });
 }
 
+void ReplayEngine::zoomResetAll()
+{
+	for (auto &c : channels)
+		if (c)
+			c->resetZoom();
+}
+
 void ReplayEngine::zoomSet(float z, float x, float y)
 {
 	forSelected([=](PlaybackChannel &c) { c.zoomSet(z, x, y); });
@@ -809,6 +822,8 @@ void ReplayEngine::markIn()
 	if (!session)
 		return;
 	pendingIn = session->liveFrame();
+	if (cfg.zoomResetOnMark)
+		zoomResetAll();
 	evVersion++;
 }
 
@@ -823,6 +838,8 @@ void ReplayEngine::markOut()
 	/* sem Mark In prévio: assume 5 s antes */
 	int64_t in = pendingIn >= 0 ? pendingIn : live - (int64_t)(5 * session->fps());
 	pendingIn = -1;
+	if (cfg.zoomResetOnMark)
+		zoomResetAll();
 	addEvent(in, live);
 }
 
@@ -842,6 +859,8 @@ void ReplayEngine::autoEvent(int seconds)
 	if (live < 0)
 		return;
 	pendingIn = -1;
+	if (cfg.zoomResetOnMark)
+		zoomResetAll();
 	addEvent(live - (int64_t)(seconds * session->fps()), live);
 }
 
@@ -895,6 +914,8 @@ void ReplayEngine::playEvent(int list, int64_t id)
 		return;
 	const auto ranges = rangesFor(*e, false);
 	const bool rev = reverseFlag.load();
+	if (cfg.zoomResetOnEvents)
+		zoomReset();
 	forSelected([&ranges, rev](PlaybackChannel &c) {
 		c.playList(ranges, true);
 		if (rev)
@@ -909,6 +930,8 @@ void ReplayEngine::playEventAllAngles(int list, int64_t id)
 	if (!e)
 		return;
 	const auto ranges = rangesFor(*e, true);
+	if (cfg.zoomResetOnEvents)
+		zoomReset();
 	forSelected([&ranges](PlaybackChannel &c) { c.playList(ranges, true); });
 }
 
@@ -983,6 +1006,8 @@ void ReplayEngine::playEvents(int list, int64_t fromId)
 	}
 	if (ranges.empty())
 		return;
+	if (cfg.zoomResetOnEvents)
+		zoomReset();
 	forSelected([&ranges](PlaybackChannel &c) { c.playList(ranges, true); });
 }
 

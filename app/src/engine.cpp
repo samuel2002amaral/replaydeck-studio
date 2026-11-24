@@ -2,6 +2,7 @@
 #include "gpu.hpp"
 
 #include <QTimer>
+#include <QUuid>
 #include "props-cache.hpp"
 
 #include <obs-module.h>
@@ -281,6 +282,7 @@ static Input *wrapSource(int id, const QString &name, obs_source_t *src, uint32_
 	auto *in = new Input();
 	in->id = id;
 	in->name = name;
+	in->key = QUuid::createUuid().toString(QUuid::WithoutBraces);
 	in->source = src; /* fica com a referência */
 	const QByteArray sceneName = name.toUtf8(); /* a cena tem o nome da entrada (o replay lista por nome) */
 	obs_scene_t *scene = obs_scene_create_private(sceneName.constData());
@@ -547,6 +549,39 @@ QString inputColorHex(const QString &key)
 		if (key == QLatin1String(c.key))
 			return QString::fromLatin1(c.hex);
 	return QString::fromLatin1(inputColors().first().hex);
+}
+
+static QString normKey(QString k)
+{
+	k = k.trimmed();
+	if (k.startsWith('{') && k.endsWith('}'))
+		k = k.mid(1, k.size() - 2);
+	return k.toLower();
+}
+
+Input *Engine::inputByKey(const QString &key) const
+{
+	const QString k = normKey(key);
+	if (k.isEmpty())
+		return nullptr;
+	for (Input *in : list)
+		if (normKey(in->key) == k)
+			return in;
+	return nullptr;
+}
+
+bool Engine::setInputKey(int id, const QString &key)
+{
+	Input *in = input(id);
+	const QString k = normKey(key);
+	if (!in || k.isEmpty())
+		return false;
+	Input *other = inputByKey(k);
+	if (other && other != in)
+		return false;
+	in->key = k;
+	emit inputChanged(id);
+	return true;
 }
 
 void Engine::setInputColor(int id, const QString &key)
@@ -1089,6 +1124,7 @@ bool Engine::saveProject(const QString &path)
 		obs_data_set_bool(o, "fone", in->monitor);
 		obs_data_set_string(o, "cor", in->color.toUtf8().constData());
 		obs_data_set_bool(o, "minimizada", in->collapsed);
+		obs_data_set_string(o, "chave", in->key.toUtf8().constData());
 		if (const int from = sharedFrom(in->id)) {
 			obs_data_set_int(o, "mesma_fonte_de", from);
 		} else {
@@ -1159,6 +1195,8 @@ bool Engine::loadProject(const QString &path)
 		in->monitor = obs_data_get_bool(o, "fone");
 		in->color = QString::fromUtf8(obs_data_get_string(o, "cor"));
 		in->collapsed = obs_data_get_bool(o, "minimizada");
+		if (const char *k = obs_data_get_string(o, "chave"); k && *k)
+			in->key = QString::fromUtf8(k);
 		if (in->monitor)
 			obs_source_set_monitoring_type(src, OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT);
 		applyVolume(in);

@@ -5,6 +5,7 @@
 #include "multicorder.hpp"
 #include "playlist.hpp"
 #include "ptz.hpp"
+#include "external-output.hpp"
 #include <cstring>
 #include "../replay/gt/gt-source.hpp"
 #include "../replay/gt/gt-doc.hpp"
@@ -12,7 +13,21 @@
 #include "../replay/air-control.hpp"
 #include "../replay/engine.hpp"
 
+#include <QCryptographicHash>
+#include <QDateTime>
+#include <QDir>
+#include <QElapsedTimer>
+#include <QFile>
+#include <QFileInfo>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
 #include <QRegularExpression>
+#include <QStandardPaths>
+#include <QTimer>
+#include <QUrl>
+#include <QCoreApplication>
+#include <graphics/graphics.h>
+#include <graphics/vec4.h>
 #include <QStringList>
 
 #include <algorithm>
@@ -60,10 +75,61 @@ const QList<FunctionDef> &functionList()
 		/* títulos GT */
 		{"TitleBeginAnimation", "Título", "Título GT: anima (Value = TransitionIn, TransitionOut ou o nome da página)", true, true, false, true},
 		{"SetText", "Título", "Título GT: troca um texto (SelectedName = campo, ex.: Nome.Text; Value = texto)", true, true, false, true},
+		{"SetImage", "Título", "Título GT: troca uma imagem (SelectedName = campo; Value = arquivo ou link)", true, true, false, true},
+		{"SetTextColour", "Título", "Título GT: cor do texto (SelectedName; Value = #RRGGBB)", true, true, false, true},
+		{"SetColor", "Título", "Título GT: cor de uma forma (SelectedName; Value = #RRGGBB)", true, true, false, true},
+		{"SetTextVisible", "Título", "Título GT: mostra/esconde um texto (SelectedName)", true, false},
+		{"SetTextVisibleOn", "Título", "Título GT: mostra um texto (SelectedName)", true, false},
+		{"SetTextVisibleOff", "Título", "Título GT: esconde um texto (SelectedName)", true, false},
+		{"SetImageVisible", "Título", "Título GT: mostra/esconde uma imagem (SelectedName)", true, false},
+		{"SetImageVisibleOn", "Título", "Título GT: mostra uma imagem (SelectedName)", true, false},
+		{"SetImageVisibleOff", "Título", "Título GT: esconde uma imagem (SelectedName)", true, false},
+		{"SetCountdown", "Título", "Título GT: cronômetro (Value = 00:10:00 ou segundos; SelectedName = campo)", true, true, false, true},
+		{"StartCountdown", "Título", "Título GT: cronômetro começa", true, false},
+		{"StopCountdown", "Título", "Título GT: cronômetro para e volta ao início", true, false},
+		{"PauseCountdown", "Título", "Título GT: cronômetro pausa/continua", true, false},
+		{"AdjustCountdown", "Título", "Título GT: cronômetro + ou − segundos (Value)", true, true},
+		/* mídia (vídeos, listas) */
+		{"Play", "Entrada", "Vídeo: tocar", true, false},
+		{"Pause", "Entrada", "Vídeo: pausar", true, false},
+		{"PlayPause", "Entrada", "Vídeo: tocar/pausar", true, false},
+		{"Restart", "Entrada", "Vídeo: do início", true, false},
+		{"SetPosition", "Entrada", "Vídeo: posição (Value = ms)", true, true},
+		{"NextItem", "Entrada", "Lista/fotos: próximo", true, false},
+		{"PreviousItem", "Entrada", "Lista/fotos: anterior", true, false},
+		{"LoopOn", "Entrada", "Loop do vídeo liga", true, false},
+		{"LoopOff", "Entrada", "Loop do vídeo desliga", true, false},
 		/* scripts */
 		{"ScriptStart", "Script", "Roda um script (Value = nome)", false, true, false, true},
 		{"ScriptStop", "Script", "Para um script (Value = nome)", false, true, false, true},
 		{"ScriptStopAll", "Script", "Para todos os scripts", false, false},
+		{"SetDynamicInput1", "Script", "Variável Dynamic1 = entrada (Value)", false, true, false, true},
+		{"SetDynamicInput2", "Script", "Variável Dynamic2 = entrada", false, true, false, true},
+		{"SetDynamicInput3", "Script", "Variável Dynamic3 = entrada", false, true, false, true},
+		{"SetDynamicInput4", "Script", "Variável Dynamic4 = entrada", false, true, false, true},
+		{"SetDynamicValue1", "Script", "Variável DynamicValue1 (Value)", false, true, false, true},
+		{"SetDynamicValue2", "Script", "Variável DynamicValue2", false, true, false, true},
+		{"SetDynamicValue3", "Script", "Variável DynamicValue3", false, true, false, true},
+		{"SetDynamicValue4", "Script", "Variável DynamicValue4", false, true, false, true},
+		/* outros do vMix */
+		{"Merge", "Transição", "Merge (aqui: fade)", true, false},
+		{"SetTransitionDuration1", "Transição", "Duração da transição 1 (Value = ms)", false, true},
+		{"SetTransitionDuration2", "Transição", "Duração da transição 2", false, true},
+		{"SetTransitionDuration3", "Transição", "Duração da transição 3", false, true},
+		{"SetTransitionDuration4", "Transição", "Duração da transição 4", false, true},
+		{"OverlayInput1Off", "Overlay", "Overlay 1 sai na hora", false, false},
+		{"OverlayInput2Off", "Overlay", "Overlay 2 sai na hora", false, false},
+		{"OverlayInput3Off", "Overlay", "Overlay 3 sai na hora", false, false},
+		{"OverlayInput4Off", "Overlay", "Overlay 4 sai na hora", false, false},
+		{"SetVolumeFade", "Áudio", "Volume com fade (Value = volume,ms; ex.: 0,2000)", true, true, false, true},
+		{"MasterAudio", "Áudio", "Som geral liga/desliga", false, false},
+		{"MasterAudioON", "Áudio", "Som geral liga", false, false},
+		{"MasterAudioOFF", "Áudio", "Som geral desliga", false, false},
+		{"StartStopExternal", "Saída", "Saída externa do Programa liga/desliga", false, false},
+		{"Fullscreen", "Saída", "Programa em tela cheia liga/desliga", false, false},
+		{"FullscreenOn", "Saída", "Programa em tela cheia", false, false},
+		{"FullscreenOff", "Saída", "Fecha a tela cheia", false, false},
+		{"Snapshot", "Saída", "Foto do Programa (PNG na pasta de gravação)", false, false},
 		/* áudio */
 		{"Audio", "Áudio", "Áudio da entrada liga/desliga", true, false},
 		{"AudioOn", "Áudio", "Áudio da entrada liga", true, false},
@@ -115,6 +181,61 @@ const QList<FunctionDef> &functionList()
 		{"ReplayRestart", "Replay", "Replay: volta ao início do clipe", false, false},
 		{"ReplayLoop", "Replay", "Replay: loop liga/desliga", false, false},
 		{"ReplayZoomReset", "Replay", "Replay: zoom na imagem inteira", false, false},
+		{"ReplayRecorded", "Replay", "Replay: sai do ao vivo (gravado)", false, false},
+		{"ReplayLiveToggle", "Replay", "Replay: ao vivo / gravado", false, false},
+		{"ReplayJumpToNow", "Replay", "Replay: vai para o agora", false, false},
+		{"ReplayMarkInLive", "Replay", "Replay: Mark In no ao vivo", false, true},
+		{"ReplayMarkInOutLive", "Replay", "Replay: evento dos últimos Value segundos", false, true},
+		{"ReplayChangeSpeed", "Replay", "Replay: muda a velocidade (Value = +0.1, -0.25...)", false, true},
+		{"ReplayFastBackward", "Replay", "Replay: ré rápida (Value = vezes)", false, true},
+		{"ReplayStopEvents", "Replay", "Replay: para os eventos", false, false},
+		{"ReplayStartRecording", "Replay", "Replay: começa a gravar", false, false},
+		{"ReplayStopRecording", "Replay", "Replay: para de gravar", false, false},
+		{"ReplayShowHide", "Replay", "Replay: entra/sai do Programa", false, false},
+		{"ReplayPlayLastEventToOutput", "Replay", "Replay: último evento no ar", false, false},
+		{"ReplayPlaySelectedEventToOutput", "Replay", "Replay: evento escolhido no ar", false, false},
+		{"ReplayPlayAllEventsToOutput", "Replay", "Replay: todos os eventos no ar", false, false},
+		{"ReplaySelectFirstEvent", "Replay", "Replay: escolhe o primeiro evento", false, false},
+		{"ReplaySelectLastEvent", "Replay", "Replay: escolhe o último evento", false, false},
+		{"ReplaySelectNextEvent", "Replay", "Replay: escolhe o próximo evento", false, false},
+		{"ReplaySelectPreviousEvent", "Replay", "Replay: escolhe o evento anterior", false, false},
+		{"ReplayPlaySelectedEvent", "Replay", "Replay: toca o evento escolhido", false, false},
+		{"ReplayACamera1", "Replay", "Replay A: câmera 1", false, false},
+		{"ReplayBCamera1", "Replay", "Replay B: câmera 1", false, false},
+		{"ReplayACamera2", "Replay", "Replay A: câmera 2", false, false},
+		{"ReplayBCamera2", "Replay", "Replay B: câmera 2", false, false},
+		{"ReplayACamera3", "Replay", "Replay A: câmera 3", false, false},
+		{"ReplayBCamera3", "Replay", "Replay B: câmera 3", false, false},
+		{"ReplayACamera4", "Replay", "Replay A: câmera 4", false, false},
+		{"ReplayBCamera4", "Replay", "Replay B: câmera 4", false, false},
+		{"ReplayACamera5", "Replay", "Replay A: câmera 5", false, false},
+		{"ReplayBCamera5", "Replay", "Replay B: câmera 5", false, false},
+		{"ReplayACamera6", "Replay", "Replay A: câmera 6", false, false},
+		{"ReplayBCamera6", "Replay", "Replay B: câmera 6", false, false},
+		{"ReplayACamera7", "Replay", "Replay A: câmera 7", false, false},
+		{"ReplayBCamera7", "Replay", "Replay B: câmera 7", false, false},
+		{"ReplayACamera8", "Replay", "Replay A: câmera 8", false, false},
+		{"ReplayBCamera8", "Replay", "Replay B: câmera 8", false, false},
+		{"ReplaySelectEvents1", "Replay", "Replay: lista de eventos 1", false, false},
+		{"ReplaySelectEvents2", "Replay", "Replay: lista de eventos 2", false, false},
+		{"ReplaySelectEvents3", "Replay", "Replay: lista de eventos 3", false, false},
+		{"ReplaySelectEvents4", "Replay", "Replay: lista de eventos 4", false, false},
+		{"ReplaySelectEvents5", "Replay", "Replay: lista de eventos 5", false, false},
+		{"ReplaySelectEvents6", "Replay", "Replay: lista de eventos 6", false, false},
+		{"ReplaySelectEvents7", "Replay", "Replay: lista de eventos 7", false, false},
+		{"ReplaySelectEvents8", "Replay", "Replay: lista de eventos 8", false, false},
+		{"ReplaySelectEvents9", "Replay", "Replay: lista de eventos 9", false, false},
+		{"ReplaySelectEvents10", "Replay", "Replay: lista de eventos 10", false, false},
+		{"ReplaySelectEvents11", "Replay", "Replay: lista de eventos 11", false, false},
+		{"ReplaySelectEvents12", "Replay", "Replay: lista de eventos 12", false, false},
+		{"ReplaySelectEvents13", "Replay", "Replay: lista de eventos 13", false, false},
+		{"ReplaySelectEvents14", "Replay", "Replay: lista de eventos 14", false, false},
+		{"ReplaySelectEvents15", "Replay", "Replay: lista de eventos 15", false, false},
+		{"ReplaySelectEvents16", "Replay", "Replay: lista de eventos 16", false, false},
+		{"ReplaySelectEvents17", "Replay", "Replay: lista de eventos 17", false, false},
+		{"ReplaySelectEvents18", "Replay", "Replay: lista de eventos 18", false, false},
+		{"ReplaySelectEvents19", "Replay", "Replay: lista de eventos 19", false, false},
+		{"ReplaySelectEvents20", "Replay", "Replay: lista de eventos 20", false, false},
 		{"ReplaySpeedUp", "Replay", "Replay: mais rápido (Value = passo em %, padrão 10)", false, true},
 		{"ReplaySpeedDown", "Replay", "Replay: mais lento (Value = passo em %, padrão 10)", false, true},
 		/* PTZ (aba PTZ): Value = câmera (nome ou número; vazio = a escolhida no painel) */
@@ -156,7 +277,8 @@ std::function<QString(const QString &, const QString &)> scriptHook;
 
 QString inputKey(int id)
 {
-	return QString("5d1e0000-0000-4000-8000-%1").arg(id, 12, 10, QChar('0'));
+	Input *in = Engine::get().input(id);
+	return in ? in->key : QString();
 }
 
 /* "3" = terceira entrada; "CAM 1" = pelo nome; vazio = a da Prévia; também a chave do vMix */
@@ -170,11 +292,266 @@ static Input *resolveInput(const QString &spec)
 	const int n = s.toInt(&isNum);
 	if (isNum)
 		return n >= 1 && n <= e.inputs().size() ? e.inputs()[n - 1] : nullptr;
+	if (Input *in = e.inputByKey(s))
+		return in;
 	for (Input *in : e.inputs())
-		if (in->name.compare(s, Qt::CaseInsensitive) == 0 || inputKey(in->id).compare(s, Qt::CaseInsensitive) == 0)
+		if (in->name.compare(s, Qt::CaseInsensitive) == 0)
 			return in;
 	return nullptr;
 }
+
+/* ---------- vMix: variáveis dinâmicas, campos de título, cronômetro, foto ---------- */
+
+static QString g_dynInput[4], g_dynValue[4];
+
+/* "Nome.Text" / "Nome.Source" / "Nome.Fill.Color" -> "Nome" */
+static QString elementOfField(QString s)
+{
+	for (const char *suf : {".Fill.Bitmap", ".Fill.Color", ".Text", ".Source", ".Fill"})
+		if (s.endsWith(QLatin1String(suf), Qt::CaseInsensitive)) {
+			s.chop((int)strlen(suf));
+			break;
+		}
+	return s;
+}
+
+/* acha o campo do título pedido por SelectedName (ou SelectedIndex) */
+static bool findGtField(obs_source_t *src, const QMap<QString, QString> &params, int wantKind, GtField *out,
+			QString *err)
+{
+	std::shared_ptr<GtTitle> t = gtTitleOf(src);
+	if (!t) {
+		*err = "o título ainda não carregou";
+		return false;
+	}
+	const QString sel = params.value("SelectedName").trimmed();
+	const QString el = elementOfField(sel);
+	const int wantIdx = params.contains("SelectedIndex") ? params.value("SelectedIndex").toInt() : 0;
+	int idx = 0;
+	const std::vector<GtField> fields = t->fields();
+	/* 1º: o id exato; 2º: o elemento com o tipo pedido; 3º: o elemento com qualquer tipo */
+	for (int pass = 0; pass < 3; pass++)
+		for (const GtField &f : fields) {
+			const bool kindOk = wantKind < 0 || (int)f.kind == wantKind;
+			if (sel.isEmpty()) {
+				if (pass == 0 && kindOk && idx++ == wantIdx) {
+					*out = f;
+					return true;
+				}
+				continue;
+			}
+			if ((pass == 0 && f.id.compare(sel, Qt::CaseInsensitive) == 0) ||
+			    (pass == 1 && kindOk && f.element.compare(el, Qt::CaseInsensitive) == 0) ||
+			    (pass == 2 && f.element.compare(el, Qt::CaseInsensitive) == 0)) {
+				*out = f;
+				return true;
+			}
+		}
+	/* sem campo editável (ex.: forma sem cor no arquivo): ainda dá para mexer no elemento */
+	if (!sel.isEmpty()) {
+		for (const GtLayer &L : t->layers)
+			for (const GtElement &e : L.elements)
+				if (e.name.compare(el, Qt::CaseInsensitive) == 0) {
+					out->id = e.name;
+					out->element = e.name;
+					out->kind = e.kind == GtKind::Text ? GtField::Text : e.kind == GtKind::Image ? GtField::Image : GtField::Color;
+					return true;
+				}
+	}
+	*err = sel.isEmpty() ? QString("o título não tem esse campo") : QString("o título não tem o campo \"%1\"").arg(sel);
+	return false;
+}
+
+static bool elementVisible(obs_source_t *src, const QString &element)
+{
+	const GtValues v = gtValues(src);
+	const QString k = element + ".Visible";
+	if (v.contains(k))
+		return v.value(k) != "False";
+	if (std::shared_ptr<GtTitle> t = gtTitleOf(src))
+		for (const GtLayer &L : t->layers)
+			for (const GtElement &e : L.elements)
+				if (e.name == element)
+					return e.visible;
+	return true;
+}
+
+static void setGtValue(obs_source_t *src, const QString &key, const QString &value)
+{
+	GtValues v = gtValues(src);
+	if (v.value(key) == value && v.contains(key))
+		return;
+	v[key] = value;
+	gtSetValues(src, v);
+}
+
+/* imagem de um link (http): baixa uma vez para a pasta de cache e usa o arquivo */
+static void setGtImageFromUrl(int inputId, const QString &key, const QString &url)
+{
+	const QString dir = QDir(Engine::get().configDir()).filePath("cache-imagens");
+	QDir().mkpath(dir);
+	QString ext = QFileInfo(QUrl(url).path()).suffix().toLower();
+	if (ext.isEmpty() || ext.size() > 5)
+		ext = "png";
+	const QString file =
+		QDir(dir).filePath(QCryptographicHash::hash(url.toUtf8(), QCryptographicHash::Sha1).toHex() + "." + ext);
+	auto apply = [inputId, key, file] {
+		if (Input *in = Engine::get().input(inputId))
+			setGtValue(in->source, key, QDir::toNativeSeparators(file));
+	};
+	if (QFileInfo::exists(file)) {
+		apply();
+		return;
+	}
+	static QNetworkAccessManager *net = new QNetworkAccessManager(QCoreApplication::instance());
+	QNetworkRequest req{QUrl(url)};
+	req.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+	req.setTransferTimeout(15000);
+	QNetworkReply *r = net->get(req);
+	QObject::connect(r, &QNetworkReply::finished, r, [r, file, apply, url] {
+		r->deleteLater();
+		if (r->error() != QNetworkReply::NoError) {
+			blog(LOG_WARNING, "SetImage: não baixou %s: %s", url.toUtf8().constData(),
+			     r->errorString().toUtf8().constData());
+			return;
+		}
+		QFile f(file);
+		if (f.open(QIODevice::WriteOnly)) {
+			f.write(r->readAll());
+			f.close();
+			apply();
+		}
+	});
+}
+
+/* cronômetro dos títulos (como o countdown do vMix) */
+struct Countdown {
+	int inputId = 0;
+	QString field;
+	qint64 totalMs = 0, elapsedMs = 0;
+	bool running = false, hours = false;
+	qint64 startedAt = 0, elapsedAtStart = 0;
+	QString last;
+};
+static QMap<QString, Countdown> g_countdowns;
+
+static QString fmtCountdown(const Countdown &c)
+{
+	const qint64 shown = c.totalMs > 0 ? std::max<qint64>(0, c.totalMs - c.elapsedMs) : c.elapsedMs;
+	/* arredonda para cima na contagem regressiva (10:00 até o primeiro segundo passar) */
+	qint64 s = c.totalMs > 0 ? (shown + 999) / 1000 : shown / 1000;
+	const qint64 h = s / 3600, m = (s / 60) % 60, sec = s % 60;
+	if (c.hours || h > 0)
+		return QString("%1:%2:%3").arg(h, 2, 10, QChar('0')).arg(m, 2, 10, QChar('0')).arg(sec, 2, 10, QChar('0'));
+	return QString("%1:%2").arg(m + h * 60, 2, 10, QChar('0')).arg(sec, 2, 10, QChar('0'));
+}
+
+static void tickCountdowns()
+{
+	const qint64 now = QDateTime::currentMSecsSinceEpoch();
+	for (auto it = g_countdowns.begin(); it != g_countdowns.end();) {
+		Countdown &c = it.value();
+		Input *in = Engine::get().input(c.inputId);
+		if (!in) {
+			it = g_countdowns.erase(it);
+			continue;
+		}
+		if (c.running) {
+			c.elapsedMs = c.elapsedAtStart + (now - c.startedAt);
+			if (c.totalMs > 0 && c.elapsedMs >= c.totalMs) {
+				c.elapsedMs = c.totalMs;
+				c.running = false;
+			}
+		}
+		const QString text = fmtCountdown(c);
+		if (text != c.last) {
+			c.last = text;
+			setGtValue(in->source, c.field, text);
+		}
+		++it;
+	}
+}
+
+static Countdown &countdownFor(Input *in, const QString &field)
+{
+	static QTimer *timer = nullptr;
+	if (!timer) {
+		timer = new QTimer(QCoreApplication::instance());
+		timer->setTimerType(Qt::PreciseTimer);
+		QObject::connect(timer, &QTimer::timeout, tickCountdowns);
+		timer->start(100);
+	}
+	Countdown &c = g_countdowns[QString("%1|%2").arg(in->id).arg(field)];
+	c.inputId = in->id;
+	c.field = field;
+	return c;
+}
+
+/* "00:10:00", "10:00" ou segundos */
+static qint64 parseDuration(const QString &v, bool *hours)
+{
+	const QStringList p = v.trimmed().split(':');
+	*hours = p.size() >= 3;
+	qint64 s = 0;
+	for (const QString &x : p)
+		s = s * 60 + (qint64)x.trimmed().toDouble();
+	if (p.size() == 1)
+		return (qint64)(v.trimmed().toDouble() * 1000.0);
+	return s * 1000;
+}
+
+/* foto do Programa (o que está saindo), em PNG */
+static bool snapshotProgram(const QString &file, QString *err)
+{
+	obs_video_info ovi;
+	if (!obs_get_video_info(&ovi)) {
+		*err = "vídeo não iniciado";
+		return false;
+	}
+	const uint32_t w = ovi.base_width, h = ovi.base_height;
+	QImage img((int)w, (int)h, QImage::Format_RGBA8888);
+	bool ok = false;
+	obs_enter_graphics();
+	gs_texrender_t *tr = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+	gs_stagesurf_t *ss = gs_stagesurface_create(w, h, GS_RGBA);
+	if (tr && ss && gs_texrender_begin(tr, w, h)) {
+		vec4 clear;
+		vec4_zero(&clear);
+		gs_clear(GS_CLEAR_COLOR, &clear, 0.0f, 0);
+		gs_ortho(0.0f, (float)w, 0.0f, (float)h, -100.0f, 100.0f);
+		gs_blend_state_push();
+		gs_blend_function(GS_BLEND_ONE, GS_BLEND_ZERO);
+		obs_render_main_texture();
+		gs_blend_state_pop();
+		gs_texrender_end(tr);
+		gs_stage_texture(ss, gs_texrender_get_texture(tr));
+		uint8_t *data = nullptr;
+		uint32_t line = 0;
+		if (gs_stagesurface_map(ss, &data, &line)) {
+			for (uint32_t y = 0; y < h; y++)
+				memcpy(img.scanLine((int)y), data + (size_t)y * line, (size_t)w * 4);
+			gs_stagesurface_unmap(ss);
+			ok = true;
+		}
+	}
+	gs_stagesurface_destroy(ss);
+	gs_texrender_destroy(tr);
+	obs_leave_graphics();
+	if (!ok) {
+		*err = "não deu para copiar a imagem";
+		return false;
+	}
+	QDir().mkpath(QFileInfo(file).path());
+	if (!img.save(file, "PNG")) {
+		*err = "não deu para salvar " + file;
+		return false;
+	}
+	blog(LOG_INFO, "foto do Programa: %s", file.toUtf8().constData());
+	return true;
+}
+
+static int g_replaySelEvent = -1; /* evento escolhido pela API (índice na lista ativa) */
+static float g_masterBeforeMute = -1.0f;
 
 bool runFunctionParams(const QString &name, const QMap<QString, QString> &params, QString *error, QWidget *parent)
 {
@@ -191,9 +568,27 @@ bool runFunctionParams(const QString &name, const QMap<QString, QString> &params
 	/* Fade Duration=800 (vMix) = Value aqui */
 	if (value.isEmpty() && p.contains("Duration"))
 		value = p.value("Duration");
+	/* variáveis dinâmicas do vMix: Input=Dynamic1, Value=DynamicValue1 */
+	for (int i = 0; i < 4; i++) {
+		if (p.value("Input").compare(QString("Dynamic%1").arg(i + 1), Qt::CaseInsensitive) == 0)
+			p["Input"] = g_dynInput[i];
+		if (value.compare(QString("DynamicValue%1").arg(i + 1), Qt::CaseInsensitive) == 0)
+			value = g_dynValue[i];
+	}
+	/* Channel=1/2 do vMix: replay A ou B só nesta função */
+	int prevSel = -1;
+	if (name.startsWith("Replay", Qt::CaseInsensitive) && p.contains("Channel") && engineAlive()) {
+		const int ch = p.value("Channel").toInt();
+		if (ch == 1 || ch == 2) {
+			prevSel = engine().getSelection();
+			engine().setSelection(ch == 1 ? SEL_A : SEL_B);
+		}
+	}
 	g_params = p;
 	const bool ok = runFunction(name, p.value("Input"), value, error, parent);
 	g_params.clear();
+	if (prevSel >= 0 && engineAlive())
+		engine().setSelection(prevSel);
 	return ok;
 }
 
@@ -307,6 +702,159 @@ bool runFunction(const QString &name, const QString &inputSpec, const QString &v
 			if (!mc.start(ids, err))
 				return fail("MultiCorder: " + err);
 		}
+	} else if (n == "SetImage" || n == "SetTextColour" || n == "SetColor" || n.startsWith("SetTextVisible") ||
+		   n.startsWith("SetImageVisible") || n.endsWith("Countdown")) {
+		if (!gtIsSource(in->source))
+			return fail(QString("%1: \"%2\" não é um título GT").arg(n, in->name));
+		QString err;
+		GtField f;
+		const int kind = n == "SetImage" || n.startsWith("SetImageVisible") ? (int)GtField::Image
+				 : n == "SetColor"                                   ? -1
+										     : (int)GtField::Text;
+		if (!findGtField(in->source, g_params, kind, &f, &err))
+			return fail(n + ": " + err);
+		if (n == "SetImage") {
+			const QString val = value.trimmed();
+			QString key = f.id;
+			if (!key.endsWith(".Source") && !key.endsWith(".Fill.Bitmap"))
+				key = f.element + ".Source";
+			if (val.startsWith("http://", Qt::CaseInsensitive) || val.startsWith("https://", Qt::CaseInsensitive))
+				setGtImageFromUrl(in->id, key, val);
+			else
+				setGtValue(in->source, key, val);
+		} else if (n == "SetTextColour" || n == "SetColor") {
+			setGtValue(in->source, f.element + ".Fill.Color", value.trimmed());
+		} else if (n.contains("Visible")) {
+			const bool on = n.endsWith("On") ? true : n.endsWith("Off") ? false : !elementVisible(in->source, f.element);
+			setGtValue(in->source, f.element + ".Visible", on ? "True" : "False");
+		} else {
+			if (f.kind != GtField::Text)
+				return fail(n + ": o campo não é de texto");
+			Countdown &c = countdownFor(in, f.id);
+			const qint64 now = QDateTime::currentMSecsSinceEpoch();
+			if (n == "SetCountdown") {
+				c.totalMs = parseDuration(value, &c.hours);
+				c.elapsedMs = c.elapsedAtStart = 0;
+				c.running = false;
+				c.last.clear();
+			} else if (n == "StartCountdown") {
+				if (!c.running) {
+					c.running = true;
+					c.startedAt = now;
+					c.elapsedAtStart = c.elapsedMs;
+				}
+			} else if (n == "StopCountdown") {
+				c.running = false;
+				c.elapsedMs = c.elapsedAtStart = 0;
+			} else if (n == "PauseCountdown") {
+				if (c.running) {
+					c.running = false;
+				} else {
+					c.running = true;
+					c.startedAt = now;
+					c.elapsedAtStart = c.elapsedMs;
+				}
+			} else if (n == "AdjustCountdown") {
+				/* + segundos = mais tempo no relógio */
+				const qint64 d = (qint64)(v * 1000.0);
+				if (c.totalMs > 0)
+					c.elapsedMs = std::clamp<qint64>(c.elapsedMs - d, 0, c.totalMs);
+				else
+					c.elapsedMs = std::max<qint64>(0, c.elapsedMs + d);
+				c.elapsedAtStart = c.elapsedMs;
+				c.startedAt = now;
+			}
+			tickCountdowns();
+		}
+	} else if (n == "Play" || n == "Pause" || n == "PlayPause" || n == "Restart" || n == "SetPosition" ||
+		   n == "NextItem" || n == "PreviousItem") {
+		if (!(obs_source_get_output_flags(in->source) & OBS_SOURCE_CONTROLLABLE_MEDIA))
+			return fail(QString("%1: \"%2\" não é vídeo/lista").arg(n, in->name));
+		const obs_media_state st = obs_source_media_get_state(in->source);
+		if (n == "Play")
+			obs_source_media_play_pause(in->source, false);
+		else if (n == "Pause")
+			obs_source_media_play_pause(in->source, true);
+		else if (n == "PlayPause")
+			obs_source_media_play_pause(in->source, st == OBS_MEDIA_STATE_PLAYING);
+		else if (n == "Restart")
+			obs_source_media_restart(in->source);
+		else if (n == "SetPosition")
+			obs_source_media_set_time(in->source, (int64_t)v);
+		else if (n == "NextItem")
+			obs_source_media_next(in->source);
+		else
+			obs_source_media_previous(in->source);
+	} else if (n == "LoopOn" || n == "LoopOff") {
+		e.setInputLoop(in->id, n == "LoopOn");
+	} else if (n.startsWith("SetDynamicInput") || n.startsWith("SetDynamicValue")) {
+		const int k = n.right(1).toInt() - 1;
+		if (k < 0 || k > 3)
+			return fail(n + ": 1 a 4");
+		(n.startsWith("SetDynamicInput") ? g_dynInput : g_dynValue)[k] = value;
+	} else if (n == "Merge") {
+		e.transition(TransitionKind::Fade);
+	} else if (n.startsWith("SetTransitionDuration") && n.size() > 21) {
+		const int k = n.right(1).toInt();
+		if (StudioTransition *t = e.nthTransition(k, false))
+			e.setUserTransitionMs(t->id, (int)v);
+		else
+			e.setTransitionMs((int)v);
+	} else if (n.startsWith("OverlayInput") && n.endsWith("Off")) {
+		const int ch = n.mid(12, 1).toInt();
+		if (e.overlay(ch)) {
+			/* "Off" do vMix: sai na hora, sem a animação de saída */
+			auto keep = Engine::beforeOverlayOff;
+			Engine::beforeOverlayOff = nullptr;
+			e.toggleOverlay(ch, e.overlay(ch));
+			Engine::beforeOverlayOff = keep;
+		}
+	} else if (n == "SetVolumeFade") {
+		const QStringList parts = value.split(',');
+		const double target = std::clamp(parts.value(0).trimmed().toDouble(), 0.0, 100.0);
+		const int ms = std::max(1, parts.value(1, "1000").trimmed().toInt());
+		const int id = in->id;
+		const double from = std::cbrt(std::max(0.0f, in->volume)) * 100.0;
+		auto *t = new QTimer(QCoreApplication::instance());
+		auto *clock = new QElapsedTimer;
+		clock->start();
+		QObject::connect(t, &QTimer::timeout, t, [t, clock, id, from, target, ms] {
+			const double k = std::min(1.0, clock->elapsed() / (double)ms);
+			const double vol = from + (target - from) * k;
+			Engine::get().setInputVolume(id, (float)std::pow(vol / 100.0, 3.0));
+			if (k >= 1.0 || !Engine::get().input(id)) {
+				t->stop();
+				t->deleteLater();
+				delete clock;
+			}
+		});
+		t->start(20);
+	} else if (n == "MasterAudio" || n == "MasterAudioON" || n == "MasterAudioOFF") {
+		const bool muted = g_masterBeforeMute >= 0.0f;
+		const bool wantOn = n == "MasterAudioON" || (n == "MasterAudio" && muted);
+		if (wantOn && muted) {
+			e.setMasterVolume(g_masterBeforeMute);
+			g_masterBeforeMute = -1.0f;
+		} else if (!wantOn && !muted) {
+			g_masterBeforeMute = e.masterVolume();
+			e.setMasterVolume(0.0f);
+		}
+	} else if (n == "StartStopExternal" || n == "Fullscreen" || n == "FullscreenOn" || n == "FullscreenOff") {
+		const bool open = ExternalOutput::programOpen();
+		const bool want = n == "FullscreenOn" || ((n == "StartStopExternal" || n == "Fullscreen") && !open);
+		if (want)
+			ExternalOutput::openProgram();
+		else
+			ExternalOutput::closeProgram();
+	} else if (n == "Snapshot") {
+		QString dir = Outputs::get().settings().recFolder;
+		if (dir.isEmpty())
+			dir = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation) + "/ReplayDeck Studio";
+		QString err;
+		const QString file =
+			QDir(dir).filePath("Foto " + QDateTime::currentDateTime().toString("yyyy-MM-dd hh-mm-ss-zzz") + ".png");
+		if (!snapshotProgram(file, &err))
+			return fail("Snapshot: " + err);
 	} else if (n == "Cut")
 		e.transition(TransitionKind::Cut);
 	else if (n == "Fade") {
@@ -325,9 +873,12 @@ bool runFunction(const QString &name, const QString &inputSpec, const QString &v
 		const bool st = n.startsWith("Stinger");
 		const int k = n.right(1).toInt();
 		StudioTransition *t = e.nthTransition(k, st);
-		if (!t)
+		if (!t && st)
 			return fail(QString("%1: não existe — crie na aba Transições").arg(n));
-		e.transitionWith(t->id);
+		if (t)
+			e.transitionWith(t->id);
+		else
+			e.transition(TransitionKind::Fade); /* o vMix sempre tem as 4: sem uma criada, fade */
 	}
 	else if (n == "PreviewInput")
 		e.setPreview(in->id);
@@ -446,8 +997,89 @@ bool runFunction(const QString &name, const QString &inputSpec, const QString &v
 			r.step((int)v);
 		else if (n == "ReplayJumpSeconds")
 			r.jumpSeconds(v);
-		else if (n == "ReplaySetSpeed")
-			r.setSpeedPercent((int)std::clamp(v, 0.0, 100.0));
+		else if (n == "ReplaySetSpeed") {
+			/* vMix: Value de -1 a 1 (0.5 = 50%); aqui também aceita 0 a 100 */
+			double pct = std::fabs(v) <= 2.0 ? v * 100.0 : v;
+			if (pct < 0) {
+				r.setReverse(true);
+				pct = -pct;
+			} else if (r.reverseOn() && std::fabs(v) <= 2.0) {
+				r.setReverse(false);
+			}
+			r.setSpeedPercent((int)std::clamp(pct, 0.0, 100.0));
+		} else if (n == "ReplayChangeSpeed") {
+			const double d = std::fabs(v) <= 2.0 ? v * 100.0 : v;
+			r.setSpeedPercent((int)std::clamp(r.speedPercent() + d, 0.0, 100.0));
+		} else if (n == "ReplayRecorded")
+			r.pause();
+		else if (n == "ReplayLiveToggle") {
+			if (r.speedPercent() > 0 && !air)
+				r.pause();
+			else
+				r.goLive();
+		} else if (n == "ReplayJumpToNow")
+			r.goLive();
+		else if (n == "ReplayMarkInLive") {
+			r.goLive();
+			r.markIn();
+		} else if (n == "ReplayMarkInOutLive")
+			r.autoEvent(v > 0 ? (int)v : 10);
+		else if (n == "ReplayFastBackward")
+			r.shuttle(-1, v > 0 ? v : 4.0);
+		else if (n == "ReplayStopEvents") {
+			if (air && air->onAir())
+				air->abortRun();
+			r.pause();
+		} else if (n == "ReplayStartRecording" || n == "ReplayStopRecording") {
+			if (n == "ReplayStopRecording")
+				r.stopRecording();
+			else if (!r.recording()) {
+				std::string err;
+				if (!r.startRecording(err))
+					return fail(QString::fromStdString(err));
+			}
+		} else if (n == "ReplayShowHide") {
+			if (air)
+				air->onAir() ? air->takeOut() : air->takeIn();
+		} else if (n == "ReplayPlayLastEventToOutput") {
+			if (air && !air->onAir())
+				air->toggleLast();
+		} else if (n == "ReplayPlayAllEventsToOutput") {
+			if (air && !air->onAir())
+				air->toggleEvents(0);
+		} else if (n == "ReplayPlaySelectedEventToOutput" || n == "ReplayPlaySelectedEvent") {
+			const auto evs = r.events(r.activeList());
+			if (evs.empty())
+				return fail("Replay: sem eventos");
+			const int i = g_replaySelEvent < 0 || g_replaySelEvent >= (int)evs.size() ? (int)evs.size() - 1 : g_replaySelEvent;
+			if (n == "ReplayPlaySelectedEvent")
+				r.playEvent(r.activeList(), evs[(size_t)i].id);
+			else if (air && !air->onAir())
+				air->toggleEvents(evs[(size_t)i].id);
+		} else if (n.startsWith("ReplaySelect") && n.endsWith("Event")) {
+			const int count = (int)r.events(r.activeList()).size();
+			if (count == 0)
+				return fail("Replay: sem eventos");
+			int i = g_replaySelEvent < 0 || g_replaySelEvent >= count ? count - 1 : g_replaySelEvent;
+			if (n == "ReplaySelectFirstEvent")
+				i = 0;
+			else if (n == "ReplaySelectLastEvent")
+				i = count - 1;
+			else if (n == "ReplaySelectNextEvent")
+				i = std::min(count - 1, i + 1);
+			else
+				i = std::max(0, i - 1);
+			g_replaySelEvent = i;
+		} else if (n.startsWith("ReplaySelectEvents")) {
+			r.setActiveList(n.mid(18).toInt() - 1);
+			g_replaySelEvent = -1;
+		} else if (n.startsWith("ReplayACamera") || n.startsWith("ReplayBCamera")) {
+			const int cam = n.right(1).toInt() - 1;
+			const int prev = r.getSelection();
+			r.setSelection(n[6] == 'A' ? SEL_A : SEL_B);
+			r.setAngle(cam);
+			r.setSelection(prev);
+		}
 		else if (n == "ReplayCamera") {
 			if (v < 1 || v > MAX_CAMERAS)
 				return fail("ReplayCamera: Value = 1 a 8");

@@ -1329,6 +1329,13 @@ static bool showConfigDialog(QWidget *parent)
 		"Desligado: os overlays e títulos ficam sempre por cima, inclusive do stinger."));
 	fTr->addRow(tl("Stinger"), stCover);
 
+	auto *zMark = new QCheckBox(tl("Zoom volta ao normal a cada marcação nova (Mark In / Mark Out / evento)"), &dlg);
+	zMark->setChecked(cfg.zoomResetOnMark);
+	auto *zEv = new QCheckBox(tl("Zoom volta ao normal ao tocar eventos (Play Events / último evento)"), &dlg);
+	zEv->setChecked(cfg.zoomResetOnEvents);
+	fTr->addRow(tl("Zoom"), zMark);
+	fTr->addRow(QString(), zEv);
+
 	auto *peMode = new QComboBox(&dlg);
 	peMode->addItem(tl("Lista inteira"), 0);
 	peMode->addItem(tl("A partir do evento selecionado"), 1);
@@ -1497,6 +1504,8 @@ static bool showConfigDialog(QWidget *parent)
 	cfg.stingerDurationMs = stDur->value();
 	cfg.stingerCutMs = stCut->value();
 	cfg.stingerCoverOverlays = stCover->isChecked();
+	cfg.zoomResetOnMark = zMark->isChecked();
+	cfg.zoomResetOnEvents = zEv->isChecked();
 	cfg.playEventsMode = peMode->currentData().toInt();
 	cfg.autoIn = autoIn->isChecked();
 	cfg.autoOut = autoOut->isChecked();

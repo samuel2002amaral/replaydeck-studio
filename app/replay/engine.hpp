@@ -59,6 +59,10 @@ struct ReplayConfig {
 	int apiTcpPort = 8099;
 	bool apiLocalOnly = false; /* true: só aceita deste computador */
 	bool stingerCoverOverlays = true;
+	/* zoom volta para a imagem inteira a cada marcação nova e a cada evento tocado
+	 * (esquecer o zoom ligado e cortar com zoom errado) */
+	bool zoomResetOnMark = true;
+	bool zoomResetOnEvents = true;
 	bool smoothSlow = false;
 	/* disco: limite da pasta de gravações (GB, 0 = sem limite) e espaço livre mínimo (GB).
 	 * Passou do limite → apaga as gravações mais antigas (nunca a que está gravando).
@@ -141,6 +145,7 @@ public:
 	void zoomMove(int axis, int dir);
 	void zoomStep(float factor, float dx = 0, float dy = 0);
 	void zoomReset();
+	void zoomResetAll(); /* os dois canais (A e B) */
 	void zoomSet(float z, float x, float y);
 	/* predefinição (índice em zoomPresets()); as com movimento usam cfg.zoomAnimMs */
 	void zoomPreset(int index);

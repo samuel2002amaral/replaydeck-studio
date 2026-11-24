@@ -3,6 +3,9 @@
 #include "functions.hpp"
 #include "outputs.hpp"
 #include "virtualcam.hpp"
+#include "shortcuts.hpp"
+
+#include <QCryptographicHash>
 #include "multicorder.hpp"
 #include "playlist.hpp"
 
@@ -32,6 +35,14 @@ static QString esc(const QString &s)
 	return s.toHtmlEscaped();
 }
 
+/* id estável de um atalho (formato GUID, como no vMix) */
+static QString shortcutId(const Shortcut &sc)
+{
+	const QByteArray h = QCryptographicHash::hash(
+		(sc.display() + "|" + sc.function + "|" + sc.input + "|" + sc.value).toUtf8(), QCryptographicHash::Sha1).toHex();
+	return QString::fromLatin1(h.left(8) + "-" + h.mid(8, 4) + "-" + h.mid(12, 4) + "-" + h.mid(16, 4) + "-" + h.mid(20, 12));
+}
+
 /* tipo do vMix para o tipo de fonte */
 static QString vmixType(obs_source_t *src)
 {
@@ -59,8 +70,8 @@ static QString vmixType(obs_source_t *src)
 	return "Unknown";
 }
 
-/* campos de texto de um título GT: nome (Nome.Text) e valor atual */
-static QList<QPair<QString, QString>> gtTexts(obs_source_t *src)
+/* campos de um título GT (Nome.Text, Escudo.Source...) e o valor atual */
+static QList<QPair<QString, QString>> gtFields(obs_source_t *src, GtField::Kind kind)
 {
 	QList<QPair<QString, QString>> out;
 	std::shared_ptr<GtTitle> t = gtTitleOf(src);
@@ -68,7 +79,7 @@ static QList<QPair<QString, QString>> gtTexts(obs_source_t *src)
 		return out;
 	const QMap<QString, QString> vals = gtValues(src);
 	for (const GtField &f : t->fields())
-		if (f.kind == GtField::Text)
+		if (f.kind == kind)
 			out << qMakePair(f.id, vals.contains(f.id) ? vals.value(f.id) : f.value);
 	return out;
 }
@@ -92,8 +103,11 @@ QString VmixApi::stateXml()
 			     .arg(qRound(std::cbrt(in->volume) * 100.0));
 		if (gtIsSource(in->source)) {
 			int idx = 0;
-			for (const auto &t : gtTexts(in->source))
+			for (const auto &t : gtFields(in->source, GtField::Text))
 				x += QString("<text index=\"%1\" name=\"%2\">%3</text>").arg(idx++).arg(esc(t.first), esc(t.second));
+			idx = 0;
+			for (const auto &t : gtFields(in->source, GtField::Image))
+				x += QString("<image index=\"%1\" name=\"%2\">%3</image>").arg(idx++).arg(esc(t.first), esc(t.second));
 		}
 		x += "</input>";
 	}
@@ -111,15 +125,13 @@ QString VmixApi::stateXml()
 		     .arg(pvw)
 		     .arg(pgm)
 		     .arg(e.fadedToBlack() ? "True" : "False");
-	x += QString("<transition number=\"1\" effect=\"Fade\" duration=\"%1\" />").arg(e.transitionMs());
-	int tn = 1;
-	for (StudioTransition *t : e.userTransitions()) {
-		if (++tn > 4)
-			break;
+	/* 4 botões como no vMix: os da aba Transições, na ordem; os que faltam são fade */
+	for (int tn = 1; tn <= 4; tn++) {
+		StudioTransition *t = e.nthTransition(tn, false);
 		x += QString("<transition number=\"%1\" effect=\"%2\" duration=\"%3\" />")
 			     .arg(tn)
-			     .arg(esc(t->name))
-			     .arg(t->durationMs);
+			     .arg(t ? esc(t->name) : QString("Fade"))
+			     .arg(t ? t->durationMs : e.transitionMs());
 	}
 	Outputs &o = Outputs::get();
 	x += QString("</transitions><recording>%1</recording><external>False</external><streaming>%2</streaming>"
@@ -246,14 +258,52 @@ void VmixApi::handleHttp(QTcpSocket *s)
 				blog(LOG_INFO, "API: %s falhou: %s", fn.toUtf8().constData(), err.toUtf8().constData());
 			}
 		}
+	} else if (path == "/" && url.hasQuery() && QUrlQuery(url).hasQueryItem("shortcut")) {
+		/* atalho pelo controlador web do vMix: /?shortcut=ID */
+		const QString id = QUrlQuery(url).queryItemValue("shortcut");
+		type = "text/plain; charset=utf-8";
+		bool found = false;
+		for (const Shortcut &sc : Shortcuts::get().list()) {
+			if (shortcutId(sc) != id)
+				continue;
+			found = true;
+			QMap<QString, QString> params;
+			params.insert("Input", sc.input);
+			params.insert("Value", sc.value);
+			QString err;
+			if (!runFunctionParams(sc.function, params, &err)) {
+				code = 500;
+				body = err.toUtf8();
+			}
+			break;
+		}
+		if (!found) {
+			code = 404;
+			body = "Shortcut not found";
+		}
+	} else if (path == "/") {
+		/* página de atalhos do controlador web do vMix (apps como o APPVMIX leem esta lista) */
+		type = "text/html; charset=utf-8";
+		QString h = "<!doctype html><html><head><meta charset='utf-8'><title>ReplayDeck Studio - Shortcuts</title>"
+			    "<style>body{font-family:sans-serif;background:#1c212a;color:#eef}.shortcutButton{display:inline-block;"
+			    "margin:4px;padding:10px;background:#2b3549;border-radius:4px;cursor:pointer}</style>"
+			    "<script>function run(id){fetch('?shortcut='+id)}</script></head><body>"
+			    "<h3>ReplayDeck Studio</h3><p>API igual a do vMix: <a href='/api'>/api</a></p>";
+		for (const Shortcut &sc : Shortcuts::get().list()) {
+			const QString id = shortcutId(sc);
+			h += QString("<div onclick=\"javascript:run('%1');$.ajax('?shortcut=%1');\" class=\"shortcutButton\">\n"
+				     "    <div class=\"shortcutButtonText\">\n        <strong>%2</strong><br />%3<br />%4\n    </div>\n    </div>\n")
+				     .arg(id, esc(sc.display()), esc(sc.function), esc(sc.input.isEmpty() ? QString("Preview") : sc.input));
+		}
+		h += "</body></html>";
+		body = h.toUtf8();
 	} else if (path == "/tally" || path == "/tally/") {
 		type = "text/plain; charset=utf-8";
 		body = tallyString().toUtf8();
 	} else {
-		type = "text/html; charset=utf-8";
-		body = "<html><body style='font-family:sans-serif'><h3>ReplayDeck Studio</h3>"
-		       "<p>API igual a do vMix: <code>/api/?Function=Cut&amp;Input=1</code> &middot; "
-		       "estado: <a href='/api'>/api</a></p></body></html>";
+		code = 404;
+		type = "text/plain; charset=utf-8";
+		body = "not found";
 	}
 	QByteArray resp = "HTTP/1.1 " + QByteArray::number(code) + (code == 200 ? " OK" : " Error") +
 			  "\r\nContent-Type: " + type + "\r\nContent-Length: " + QByteArray::number(body.size()) +

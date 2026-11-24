@@ -9,6 +9,7 @@
 #include "external-output.hpp"
 #include "main-window.hpp"
 #include "perf.hpp"
+#include "vmix-keys.hpp"
 #include "playlist.hpp"
 #include "ptz.hpp"
 #include "filters-window.hpp"
@@ -219,6 +220,29 @@ int main(int argc, char *argv[])
 			});
 			QTimer::singleShot(qMax(7500, qEnvironmentVariableIntValue("RDS_SELFTEST_HOLD") * 1000), [&w] {
 				w.grab().save(QDir::temp().filePath("rds-trans.png"));
+				w.close();
+			});
+		}
+		if (qEnvironmentVariableIsSet("RDS_SELFTEST_APPVMIX")) {
+			/* app externo feito para o vMix: um título PLACAR e as chaves importadas da config do app */
+			QTimer::singleShot(600, [] {
+				Engine &e = Engine::get();
+				while (!e.inputs().isEmpty())
+					e.removeInput(e.inputs().first()->id);
+				OBSDataAutoRelease b = obs_data_create();
+				obs_data_set_int(b, "color", 0xFF2E7D32);
+				Input *cam = e.addInput("color_source_v3", "CAMERA", b);
+				e.cutTo(cam->id);
+				OBSSourceAutoRelease gt = gtLibraryAdd(qEnvironmentVariable("RDS_SELFTEST_APPVMIX"));
+				e.renameInput(e.inputs().last()->id, "PLACAR");
+				QStringList done, missing;
+				QString err;
+				applyVmixKeysFromFile(qEnvironmentVariable("RDS_SELFTEST_APPVMIX_CFG"), &done, &missing, &err);
+				blog(LOG_INFO, "[appvmix] chaves: %s %s", done.join("; ").toUtf8().constData(), err.toUtf8().constData());
+				blog(LOG_INFO, "[appvmix] pronto");
+			});
+			QTimer::singleShot(qMax(8000, qEnvironmentVariableIntValue("RDS_SELFTEST_HOLD") * 1000), [&w] {
+				w.grab().save(QDir::temp().filePath("rds-appvmix.png"));
 				w.close();
 			});
 		}

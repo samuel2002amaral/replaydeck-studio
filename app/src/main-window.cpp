@@ -2,6 +2,7 @@
 #include "multicorder.hpp"
 #include "playlist.hpp"
 #include "ptz.hpp"
+#include "vmix-keys.hpp"
 #include "scripts.hpp"
 #include "plugins.hpp"
 #include <QPointer>
@@ -585,6 +586,9 @@ void MainWindow::buildMenus()
 		if (e.previewId())
 			openInput(e.previewId());
 	});
+	inputs->addSeparator();
+	inputs->addAction("Importar chaves do vMix (.vmix, api.xml ou config do APPVMIX)…", this,
+			  [this] { importVmixKeys(this); });
 
 	QMenu *replay = menuBar()->addMenu("Replay");
 	replay->addAction("Gravar / parar gravação do replay", this, [] { replayhost::toggleRecording(); });

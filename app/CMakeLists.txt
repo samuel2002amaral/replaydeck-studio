@@ -44,6 +44,7 @@ add_executable(replaydeck-studio WIN32
   src/plugins.cpp src/plugins.hpp
   src/playlist.cpp src/playlist.hpp
   src/ptz.cpp src/ptz.hpp
+  src/vmix-keys.cpp src/vmix-keys.hpp
   src/vmix-api.cpp src/vmix-api.hpp
   src/transitions-panel.cpp src/transitions-panel.hpp
   # replay (veio do plugin ReplayDeck; roda dentro do programa)

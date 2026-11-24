@@ -1,6 +1,7 @@
 #include "input-tile.hpp"
 #include "interact-window.hpp"
 #include "filters-window.hpp"
+#include "vmix-keys.hpp"
 #include "engine.hpp"
 #include "video-display.hpp"
 
@@ -279,6 +280,7 @@ void InputTile::optionsMenu(const QPoint &globalPos)
 	QMenu menu(this);
 	menu.addAction("Abrir (ver ao vivo e ajustar)…", this, [this] { emit openRequested(id); });
 	menu.addAction("Mandar para a Prévia", this, [this] { Engine::get().setPreview(id); });
+	menu.addAction("Chave do vMix (para apps externos)…", this, [this] { editVmixKey(window(), id); });
 	menu.addAction("Filtros (chroma key, cor, LUT, ruído do microfone…)…", this, [this] {
 		if (Input *in = Engine::get().input(id))
 			FiltersWindow::open(in->source, in->name, window());

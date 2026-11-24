@@ -21,6 +21,10 @@ public:
 	static void fillMenu(QMenu *menu, QWidget *parent);
 	static void closeAll();
 	static int openCount();
+	/* API (StartStopExternal / Fullscreen): o Programa na outra tela (ou numa janela, se só há uma) */
+	static bool programOpen();
+	static void openProgram();
+	static void closeProgram();
 
 protected:
 	void keyPressEvent(QKeyEvent *e) override;

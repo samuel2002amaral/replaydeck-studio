@@ -1,4 +1,5 @@
 #include "external-output.hpp"
+#include <QApplication>
 #include "engine.hpp"
 #include "outputs.hpp"
 #include "vertical-canvas.hpp"
@@ -127,6 +128,36 @@ void ExternalOutput::closeAll()
 	const auto copy = g_outputs;
 	for (ExternalOutput *o : copy)
 		o->close();
+}
+
+bool ExternalOutput::programOpen()
+{
+	for (ExternalOutput *o : g_outputs)
+		if (o->what == What::Program)
+			return true;
+	return false;
+}
+
+void ExternalOutput::openProgram()
+{
+	if (programOpen())
+		return;
+	QScreen *own = QGuiApplication::primaryScreen();
+	if (QWidget *w = QApplication::activeWindow())
+		own = w->screen();
+	QScreen *target = nullptr;
+	for (QScreen *s : QGuiApplication::screens())
+		if (s != own)
+			target = s;
+	new ExternalOutput(What::Program, 0, target); /* sem outra tela: abre numa janela */
+}
+
+void ExternalOutput::closeProgram()
+{
+	const auto copy = g_outputs;
+	for (ExternalOutput *o : copy)
+		if (o->what == What::Program)
+			o->close();
 }
 
 int ExternalOutput::openCount()
