@@ -1,5 +1,10 @@
 ## ReplayDeck Studio — fase 3 (áudio, gravar, transmitir, saída externa)
 
+> 2.3.1:
+> - **Botão direito minimiza na hora** (como no vMix); na barra, botão direito (ou duplo clique) expande.
+> - **Arrastar para mudar a ordem**: segure no cabeçalho (ou na barra) e solte onde quiser; a linha azul mostra onde ela entra.
+> - As opções (abrir, cor, renomear, remover) ficam na engrenagem ⚙. "Desativar" saiu do menu: fica na janela da entrada.
+>
 > 2.3.0: visual mais claro e com um pouco de cor:
 > - **Minimizar em barra** (botão direito → Minimizar): a entrada vira uma barra estreita com o nome na vertical, como no vMix. Clique = Prévia; duplo clique = expandir.
 > - **Cor da entrada** (botão direito → Cor): azul, laranja, roxo, ciano, amarelo, rosa, marrom, cinza — para separar câmeras, gráficos, celulares.

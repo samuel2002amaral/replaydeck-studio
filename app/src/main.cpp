@@ -135,6 +135,30 @@ int main(int argc, char *argv[])
 			runSelfTest(w);
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST_REPLAY"))
 			replayhost::selfTest(&w);
+		if (qEnvironmentVariableIsSet("RDS_SELFTEST_UI")) {
+			/* teste de mouse (xdotool): 4 entradas A-D; registra a ordem e quem está minimizada */
+			QTimer::singleShot(300, [] {
+				Engine &e = Engine::get();
+				while (!e.inputs().isEmpty())
+					e.removeInput(e.inputs().first()->id);
+				const uint32_t colors[] = {0xFF2020E0, 0xFF20C020, 0xFFE02020, 0xFF20C0E0};
+				for (int i = 0; i < 4; i++) {
+					OBSDataAutoRelease c = obs_data_create();
+					obs_data_set_int(c, "color", colors[i]);
+					e.addInput("color_source_v3", QString(QChar('A' + i)), c);
+				}
+				auto report = [] {
+					QStringList o;
+					for (Input *in : Engine::get().inputs())
+						o << in->name + (in->collapsed ? "(barra)" : "");
+					blog(LOG_INFO, "[ui] ordem: %s", o.join(",").toUtf8().constData());
+				};
+				QObject::connect(&e, &Engine::inputsChanged, report);
+				QObject::connect(&e, &Engine::inputChanged, report);
+				report();
+			});
+			QTimer::singleShot(qEnvironmentVariableIntValue("RDS_SELFTEST_UI") * 1000, [&w] { w.close(); });
+		}
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST_SETTINGS")) {
 			/* teste visual: Configurações na aba RDS_SELFTEST_TAB */
 			QTimer::singleShot(500, [&w] {

@@ -2,7 +2,10 @@
 #include "engine.hpp"
 #include "video-display.hpp"
 
+#include <QApplication>
 #include <QContextMenuEvent>
+#include <QDrag>
+#include <QMimeData>
 #include <QMouseEvent>
 #include <QPainter>
 #include <functional>
@@ -108,9 +111,9 @@ InputTile::InputTile(int inputId, QWidget *parent) : QFrame(parent), id(inputId)
 	auto *gear = new QToolButton;
 	gear->setObjectName("tileGear");
 	gear->setText("⚙");
-	gear->setToolTip("Abrir esta entrada (ver ao vivo e ajustar)");
+	gear->setToolTip("Opções desta entrada (abrir, cor, renomear, remover)");
 	gear->setAutoRaise(true);
-	connect(gear, &QToolButton::clicked, this, [this] { emit openRequested(id); });
+	connect(gear, &QToolButton::clicked, this, [this, gear] { optionsMenu(gear->mapToGlobal(QPoint(0, gear->height()))); });
 	h->addWidget(num);
 	h->addWidget(name, 1);
 	h->addWidget(gear);
@@ -164,9 +167,43 @@ InputTile::InputTile(int inputId, QWidget *parent) : QFrame(parent), id(inputId)
 		if (changed == id)
 			refresh();
 	});
+	header->installEventFilter(this);
+	bar->installEventFilter(this);
+	header->setCursor(Qt::OpenHandCursor);
+	header->setToolTip("Arraste para mudar a ordem");
 	fullHeight = expanded->sizeHint().height() + 2;
 	setFixedHeight(fullHeight);
 	refresh();
+}
+
+bool InputTile::eventFilter(QObject *o, QEvent *ev)
+{
+	if (o != header && o != bar)
+		return QFrame::eventFilter(o, ev);
+	if (ev->type() == QEvent::MouseButtonPress) {
+		auto *me = static_cast<QMouseEvent *>(ev);
+		if (me->button() == Qt::LeftButton)
+			dragStart = me->globalPosition().toPoint();
+	} else if (ev->type() == QEvent::MouseMove) {
+		auto *me = static_cast<QMouseEvent *>(ev);
+		if ((me->buttons() & Qt::LeftButton) && !dragStart.isNull() &&
+		    (me->globalPosition().toPoint() - dragStart).manhattanLength() >= QApplication::startDragDistance()) {
+			dragStart = QPoint();
+			auto *drag = new QDrag(this);
+			auto *mime = new QMimeData;
+			mime->setData(INPUT_MIME, QByteArray::number(id));
+			drag->setMimeData(mime);
+			/* o que segue o mouse: o cabeçalho (ou a barra) */
+			QWidget *src = static_cast<QWidget *>(o);
+			drag->setPixmap(src->grab());
+			drag->setHotSpot(src->mapFromGlobal(QCursor::pos()));
+			drag->exec(Qt::MoveAction);
+			return true;
+		}
+	} else if (ev->type() == QEvent::MouseButtonRelease) {
+		dragStart = QPoint();
+	}
+	return QFrame::eventFilter(o, ev);
 }
 
 void InputTile::refresh()
@@ -229,11 +266,19 @@ void InputTile::refresh()
 
 void InputTile::contextMenuEvent(QContextMenuEvent *e)
 {
+	/* como no vMix: botão direito minimiza (e na barra, expande) */
+	if (Input *in = Engine::get().input(id))
+		Engine::get().setInputCollapsed(id, !in->collapsed);
+	e->accept();
+}
+
+void InputTile::optionsMenu(const QPoint &globalPos)
+{
 	QMenu menu(this);
-	menu.addAction("Abrir…", this, [this] { emit openRequested(id); });
+	menu.addAction("Abrir (ver ao vivo e ajustar)…", this, [this] { emit openRequested(id); });
 	menu.addAction("Mandar para a Prévia", this, [this] { Engine::get().setPreview(id); });
 	if (Input *cur = Engine::get().input(id)) {
-		menu.addAction(cur->collapsed ? "Expandir" : "Minimizar (barra)", this,
+		menu.addAction(cur->collapsed ? "Expandir" : "Minimizar (ou botão direito)", this,
 			       [this, on = !cur->collapsed] { Engine::get().setInputCollapsed(id, on); });
 		QMenu *colors = menu.addMenu("Cor");
 		for (const InputColor &c : inputColors()) {
@@ -245,9 +290,6 @@ void InputTile::contextMenuEvent(QContextMenuEvent *e)
 			a->setChecked(cur->color == QLatin1String(c.key));
 		}
 	}
-	if (Input *cur = Engine::get().input(id))
-		menu.addAction(cur->enabled ? "Desativar entrada" : "Ativar entrada", this,
-			       [this, on = !cur->enabled] { Engine::get().setInputEnabled(id, on); });
 	menu.addSeparator();
 	menu.addAction("Renomear…", this, [this] {
 		Input *in = Engine::get().input(id);
@@ -258,13 +300,11 @@ void InputTile::contextMenuEvent(QContextMenuEvent *e)
 		if (ok && !n.trimmed().isEmpty())
 			Engine::get().renameInput(id, n.trimmed());
 	});
-	menu.addAction("Mover para a esquerda", this, [this] { Engine::get().moveInput(id, Engine::get().indexOf(id) - 1); });
-	menu.addAction("Mover para a direita", this, [this] { Engine::get().moveInput(id, Engine::get().indexOf(id) + 1); });
 	menu.addSeparator();
 	menu.addAction("Remover", this, [this] {
 		Input *in = Engine::get().input(id);
 		if (in && QMessageBox::question(this, "Remover entrada", "Remover \"" + in->name + "\"?") == QMessageBox::Yes)
 			Engine::get().removeInput(id);
 	});
-	menu.exec(e->globalPos());
+	menu.exec(globalPos);
 }

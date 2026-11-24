@@ -74,6 +74,7 @@ QSplitter::handle { background: #161a21; }
 QSplitter::handle:horizontal { width: 6px; }
 QSplitter::handle:vertical { height: 6px; }
 QScrollArea { background: transparent; border: 0; }
+#dropMark { background: #3b82f6; border-radius: 1px; }
 #tilesHost { background: #1c212a; }
 QScrollBar:vertical { background: transparent; width: 10px; margin: 2px; }
 QScrollBar::handle:vertical { background: #3a4252; border-radius: 3px; min-height: 24px; }

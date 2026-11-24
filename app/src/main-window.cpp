@@ -6,6 +6,9 @@
 #include "outputs.hpp"
 #include "settings-dialog.hpp"
 #include <QMenu>
+#include <QDropEvent>
+#include <QMimeData>
+#include <climits>
 #include <QStyle>
 #include "dialogs.hpp"
 #include "engine.hpp"
@@ -250,7 +253,7 @@ QWidget *MainWindow::buildInputsArea()
 	title->setObjectName("panelTitle");
 	h->addWidget(title);
 	h->addStretch(1);
-	auto *hint = new QLabel("clique = prévia · ⚙ ou duplo clique = abrir · botão direito = mais opções");
+	auto *hint = new QLabel("clique = prévia · duplo clique = abrir · botão direito = minimizar · ⚙ = opções · arraste para mudar a ordem");
 	hint->setObjectName("muted");
 	h->addWidget(hint);
 	v->addWidget(bar);
@@ -264,6 +267,13 @@ QWidget *MainWindow::buildInputsArea()
 	tilesHost = new QWidget;
 	tilesHost->setObjectName("tilesHost");
 	tilesGrid = new FlowLayout(tilesHost, 6, 6); /* quadros e barras lado a lado, quebrando a linha */
+	/* arrastar uma entrada pelo cabeçalho muda a ordem; a linha azul mostra onde ela entra */
+	tilesHost->setAcceptDrops(true);
+	tilesHost->installEventFilter(this);
+	dropMark = new QWidget(tilesHost);
+	dropMark->setObjectName("dropMark");
+	dropMark->setAttribute(Qt::WA_StyledBackground);
+	dropMark->hide();
 	emptyHint = new QLabel("Nenhuma entrada ainda.\nClique em \"Adicionar entrada\" lá embaixo para colocar uma câmera, vídeo ou imagem.");
 	emptyHint->setObjectName("muted");
 	emptyHint->setAlignment(Qt::AlignCenter);
@@ -296,6 +306,75 @@ void MainWindow::rebuildTiles()
 		t->show();
 	}
 	updateBus();
+}
+
+/* posição de soltar: antes de qual entrada (índice na lista) e onde desenhar a linha */
+int MainWindow::dropIndex(const QPoint &pos, QRect *mark) const
+{
+	int best = -1;
+	int bestDist = INT_MAX;
+	for (int i = 0; i < tiles.size(); i++) {
+		const QRect g = tiles[i]->geometry();
+		const int dy = pos.y() < g.top() ? g.top() - pos.y() : pos.y() > g.bottom() ? pos.y() - g.bottom() : 0;
+		const int dx = pos.x() < g.left() ? g.left() - pos.x() : pos.x() > g.right() ? pos.x() - g.right() : 0;
+		const int d = dy * 4 + dx; /* a linha (altura) pesa mais */
+		if (d < bestDist) {
+			bestDist = d;
+			best = i;
+		}
+	}
+	if (best < 0)
+		return 0;
+	const QRect g = tiles[best]->geometry();
+	const bool after = pos.x() > g.center().x();
+	if (mark)
+		*mark = QRect(after ? g.right() + 2 : g.left() - 5, g.top(), 3, g.height());
+	return after ? best + 1 : best;
+}
+
+bool MainWindow::eventFilter(QObject *o, QEvent *ev)
+{
+	if (o == tilesHost) {
+		switch (ev->type()) {
+		case QEvent::DragEnter:
+		case QEvent::DragMove: {
+			auto *de = static_cast<QDropEvent *>(ev);
+			if (!de->mimeData()->hasFormat(InputTile::INPUT_MIME))
+				return false;
+			QRect r;
+			dropIndex(de->position().toPoint(), &r);
+			dropMark->setGeometry(r);
+			dropMark->show();
+			dropMark->raise();
+			de->acceptProposedAction();
+			return true;
+		}
+		case QEvent::DragLeave:
+			dropMark->hide();
+			return true;
+		case QEvent::Drop: {
+			auto *de = static_cast<QDropEvent *>(ev);
+			dropMark->hide();
+			if (!de->mimeData()->hasFormat(InputTile::INPUT_MIME))
+				return false;
+			const int id = de->mimeData()->data(InputTile::INPUT_MIME).toInt();
+			int to = dropIndex(de->position().toPoint(), nullptr);
+			const int from = Engine::get().indexOf(id);
+			if (from < 0)
+				return true;
+			if (to > from)
+				to--; /* ela sai do lugar antigo antes de entrar no novo */
+			to = qBound(0, to, (int)Engine::get().inputs().size() - 1);
+			if (to != from)
+				Engine::get().moveInput(id, to);
+			de->acceptProposedAction();
+			return true;
+		}
+		default:
+			break;
+		}
+	}
+	return QMainWindow::eventFilter(o, ev);
 }
 
 void MainWindow::layoutTiles()

@@ -26,6 +26,7 @@ public:
 protected:
 	void closeEvent(QCloseEvent *e) override;
 	void resizeEvent(QResizeEvent *e) override;
+	bool eventFilter(QObject *o, QEvent *ev) override; /* soltar entrada arrastada na lista */
 
 private:
 	QWidget *buildVideoArea();
@@ -65,5 +66,6 @@ private:
 	QPushButton *streamBtn = nullptr;
 	QLabel *outStatus = nullptr;
 	os_cpu_usage_info_t *cpu = nullptr;
-	int lastCols = 0;
+	int dropIndex(const QPoint &pos, QRect *mark) const;
+	QWidget *dropMark = nullptr;
 };

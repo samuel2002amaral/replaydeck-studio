@@ -19,7 +19,15 @@ signals:
 	void openRequested(int id);
 
 protected:
-	void contextMenuEvent(QContextMenuEvent *e) override;
+	void contextMenuEvent(QContextMenuEvent *e) override; /* botão direito: minimiza / expande */
+	bool eventFilter(QObject *o, QEvent *ev) override;   /* arrastar pelo cabeçalho ou pela barra */
+
+public:
+	void optionsMenu(const QPoint &globalPos); /* menu da engrenagem */
+	static constexpr const char *INPUT_MIME = "application/x-replaydeck-input";
+
+private:
+	QPoint dragStart;
 
 private:
 	int id;
