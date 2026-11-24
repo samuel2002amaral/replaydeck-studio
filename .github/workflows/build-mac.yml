@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   macos:
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 300
     defaults:
       run:
@@ -33,7 +33,12 @@ jobs:
         run: |
           grep -E '^\s*[A-Z_]+=' studio/versions.env | sed 's/^\s*//' >> "$GITHUB_ENV"
           echo "STUDIO_VERSION=$(tr -d '[:space:]' < studio/VERSION)" >> "$GITHUB_ENV"
+          # o OBS 33 pede o Xcode 26.5 ou mais novo: usa o mais novo instalado
+          ls -d /Applications/Xcode*.app || true
+          x=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          [ -n "$x" ] && sudo xcode-select -s "$x/Contents/Developer"
           xcodebuild -version
+          xcrun --sdk macosx --show-sdk-platform-version
           sw_vers
 
       - name: Motor guardado
