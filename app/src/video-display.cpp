@@ -3,6 +3,7 @@
 #include <graphics/matrix4.h>
 
 #include <QMouseEvent>
+#include <QTimer>
 
 #include <algorithm>
 #include <QWindow>
@@ -72,6 +73,17 @@ void VideoDisplay::createDisplay()
 void VideoDisplay::paintEvent(QPaintEvent *)
 {
 	createDisplay();
+}
+
+bool VideoDisplay::event(QEvent *e)
+{
+	/* a janela nativa foi recriada (mudou de tela cheia para janela, bordas, outro pai):
+	 * o vídeo estava preso à janela antiga; liga de novo na nova */
+	if (e->type() == QEvent::WinIdChange) {
+		destroyDisplay();
+		QTimer::singleShot(0, this, [this] { createDisplay(); });
+	}
+	return QWidget::event(e);
 }
 
 void VideoDisplay::showEvent(QShowEvent *e)

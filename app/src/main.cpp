@@ -212,8 +212,20 @@ int main(int argc, char *argv[])
 			QObject::connect(beat, &QTimer::timeout, [] { blog(LOG_INFO, "[ext] interface viva"); });
 			beat->start(500);
 			QTimer::singleShot(1000, [] {
+				Engine &e = Engine::get();
+				OBSDataAutoRelease c = obs_data_create();
+				obs_data_set_int(c, "color", 0xFF20C0E0);
+				if (Input *in = e.addInput("color_source_v3", "AMARELO", c))
+					e.cutTo(in->id);
 				blog(LOG_INFO, "[ext] abrindo janela");
-				new ExternalOutput(ExternalOutput::What::Program, 0, nullptr);
+				auto *x = new ExternalOutput(ExternalOutput::What::Program, 0, nullptr);
+				/* recria a janela nativa depois de aberta (o que o Windows faz ao mudar bordas):
+				 * o vídeo tem que voltar sozinho */
+				QTimer::singleShot(800, x, [x] {
+					x->setWindowFlags(Qt::Window | Qt::FramelessWindowHint);
+					x->show();
+					blog(LOG_INFO, "[ext] janela recriada");
+				});
 				blog(LOG_INFO, "[ext] janela aberta");
 			});
 			QTimer::singleShot(3000, [] { QProcess::execute("import", {"-window", "root", qEnvironmentVariable("RDS_SELFTEST_EXT")}); });

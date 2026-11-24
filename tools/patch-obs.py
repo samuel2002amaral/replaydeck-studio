@@ -103,3 +103,15 @@ if vcam.exists():
     t = t.replace('L"OBS Virtual Camera"', 'L"ReplayDeck Studio"')
     vcam.write_text(t, encoding="utf-8")
     print("patch-obs: câmera virtual com o nome ReplayDeck Studio")
+
+# A saída da câmera virtual só era criada se ela JÁ estivesse instalada no Windows quando o motor
+# abre. O programa instala na primeira vez que o operador liga a câmera; então a saída existe sempre.
+plug = obs / "plugins" / "win-dshow" / "dshow-plugin.cpp"
+if plug.exists():
+    t = plug.read_text(encoding="utf-8")
+    old = "\tif (vcam_installed(false)) {\n\t\tobs_register_output(&virtualcam_info);\n\t}\n"
+    if t.count(old) != 1:
+        sys.exit("patch-obs: dshow-plugin mudou (registro da câmera virtual)")
+    t = t.replace(old, "\t(void)vcam_installed;\n\tobs_register_output(&virtualcam_info); /* ReplayDeck Studio */\n")
+    plug.write_text(t, encoding="utf-8")
+    print("patch-obs: câmera virtual sempre disponível")

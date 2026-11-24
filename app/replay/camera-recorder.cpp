@@ -237,7 +237,10 @@ bool CameraRecorder::start(std::string &err)
 void CameraRecorder::stop()
 {
 	if (output) {
-		obs_output_force_stop(output);
+		/* Studio: só para se ligou de verdade; parar uma saída que não ligou deixa o motor
+		 * esperando um fim que nunca vem e soltar a saída trava o programa */
+		if (obs_output_active(output))
+			obs_output_force_stop(output);
 		obs_output_release(output);
 		output = nullptr;
 	}

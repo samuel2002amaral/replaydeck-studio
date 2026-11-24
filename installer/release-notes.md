@@ -1,5 +1,10 @@
 ## ReplayDeck Studio — fase 3 (áudio, gravar, transmitir, saída externa)
 
+> 2.4.1:
+> - **Câmera virtual**: o motor só criava a câmera se ela já estivesse instalada no Windows quando o programa abre, então aparecia "não tem câmera virtual". Agora ela existe sempre, e na primeira vez que você liga, o programa instala (64 e 32 bits, um pedido de permissão só).
+> - **Externo do Programa no Windows**: a tela de vídeo agora se religa sozinha quando o Windows recria a janela (ao abrir, ao trocar entre janela e tela cheia).
+> - Replay: parar a gravação depois de uma câmera falhar ao ligar podia travar o programa.
+>
 > 2.4.0:
 > - **Câmera virtual** (botão "Câmera virtual ▾"): compartilha o Programa ou **uma entrada** como webcam para Zoom, navegador, WhatsApp, Teams. Aparece como **"ReplayDeck Studio"**. Na primeira vez o Windows pede permissão de administrador para instalar a câmera (uma vez só). Dá para trocar a entrada sem desligar.
 > - **Externo em janela** agora abre numa janela normal (com título: mover, mudar o tamanho, fechar). Antes abria sem bordas e sem cursor e parecia que a tela tinha travado. Na tela cheia: Esc, duplo clique ou botão direito → Fechar; e o programa avisa antes de cobrir a própria tela.

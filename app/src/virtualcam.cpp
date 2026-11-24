@@ -85,13 +85,21 @@ bool VirtualCam::ensureInstalled(QWidget *parent, QString &error)
 		error = "Câmera virtual não instalada.";
 		return false;
 	}
-	/* regsvr32 com permissão de administrador (registra para todos os programas do PC) */
-	const std::wstring params = L"/s \"" + module.toStdWString() + L"\"";
+	/* regsvr32 com permissão de administrador (registra para todos os programas do PC):
+	 * a versão de 64 bits (Zoom, navegador, Teams) e a de 32 bits (programas antigos), num pedido só */
+	QString cmd = QString("/c \"\"%1\\System32\\regsvr32.exe\" /s \"%2\"")
+			      .arg(QString::fromLocal8Bit(qgetenv("SystemRoot")), module);
+	const QString module32 = QFileInfo(module).absolutePath() + "/obs-virtualcam-module32.dll";
+	if (QFileInfo::exists(module32))
+		cmd += QString(" & \"%1\\SysWOW64\\regsvr32.exe\" /s \"%2\"")
+			       .arg(QString::fromLocal8Bit(qgetenv("SystemRoot")), QDir::toNativeSeparators(module32));
+	cmd += "\"";
+	const std::wstring params = cmd.toStdWString();
 	SHELLEXECUTEINFOW sei = {};
 	sei.cbSize = sizeof(sei);
 	sei.fMask = SEE_MASK_NOCLOSEPROCESS;
 	sei.lpVerb = L"runas";
-	sei.lpFile = L"regsvr32.exe";
+	sei.lpFile = L"cmd.exe";
 	sei.lpParameters = params.c_str();
 	sei.nShow = SW_HIDE;
 	if (!ShellExecuteExW(&sei)) {

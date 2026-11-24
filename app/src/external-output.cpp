@@ -15,6 +15,8 @@ static QList<ExternalOutput *> g_outputs;
 ExternalOutput::ExternalOutput(What w, int inputId, QScreen *screen) : QWidget(nullptr), what(w), id(inputId)
 {
 	setAttribute(Qt::WA_DeleteOnClose);
+	/* bordas definidas ANTES da tela de vídeo existir (no Windows mudar depois recria a janela) */
+	setWindowFlags(screen ? Qt::Window | Qt::FramelessWindowHint : Qt::Window);
 	setStyleSheet("background: #000000;");
 	auto *v = new QVBoxLayout(this);
 	v->setContentsMargins(0, 0, 0, 0);
@@ -26,13 +28,11 @@ ExternalOutput::ExternalOutput(What w, int inputId, QScreen *screen) : QWidget(n
 
 	if (screen) {
 		/* tela cheia: sem bordas, ocupando o monitor escolhido */
-		setWindowFlags(Qt::Window | Qt::FramelessWindowHint);
 		setGeometry(screen->geometry());
 		setScreen(screen);
 		showFullScreen();
 	} else {
 		/* janela normal (com título): dá para mover, mudar o tamanho e fechar */
-		setWindowFlags(Qt::Window);
 		setMinimumSize(320, 180);
 		resize(960, 540);
 		show();
