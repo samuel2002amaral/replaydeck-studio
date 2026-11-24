@@ -235,6 +235,10 @@ int main(int argc, char *argv[])
 				e.cutTo(cam->id);
 				OBSSourceAutoRelease gt = gtLibraryAdd(qEnvironmentVariable("RDS_SELFTEST_APPVMIX"));
 				e.renameInput(e.inputs().last()->id, "PLACAR");
+				for (const QString &extra : qEnvironmentVariable("RDS_SELFTEST_APPVMIX_EXTRA").split(',', Qt::SkipEmptyParts)) {
+					OBSSourceAutoRelease g2 = gtLibraryAdd(qEnvironmentVariable("RDS_SELFTEST_APPVMIX"));
+					e.renameInput(e.inputs().last()->id, extra.trimmed());
+				}
 				QStringList done, missing;
 				QString err;
 				applyVmixKeysFromFile(qEnvironmentVariable("RDS_SELFTEST_APPVMIX_CFG"), &done, &missing, &err);

@@ -615,12 +615,17 @@ bool runFunction(const QString &name, const QString &inputSpec, const QString &v
 		const QString spec = inputSpec.trimmed();
 		/* chave do vMix desconhecida, mas o nome dela no vMix existe aqui: adota a chave */
 		const QString vmixTitle = in ? QString() : vmixTitleOfKey(spec);
+		Input *sameName = nullptr; /* existe com o nome, mas já ligada a outra entrada do vMix */
 		if (!in && !vmixTitle.isEmpty()) {
-			if (Input *byName = e.inputByName(vmixTitle)) {
-				e.setInputKey(byName->id, spec);
-				blog(LOG_INFO, "chave do vMix %s dada à entrada \"%s\" (mesmo nome)", spec.toUtf8().constData(),
-				     vmixTitle.toUtf8().constData());
-				in = byName;
+			if (Input *byName = inputForVmixTitle(vmixTitle)) {
+				if (vmixTitleOfKey(byName->key).isEmpty()) {
+					e.setInputKey(byName->id, spec);
+					blog(LOG_INFO, "chave do vMix %s dada à entrada \"%s\" (mesmo nome)", spec.toUtf8().constData(),
+					     vmixTitle.toUtf8().constData());
+					in = byName;
+				} else {
+					sameName = byName;
+				}
 			}
 		}
 		/* StartStopVirtualCam sem entrada = Programa */
@@ -629,6 +634,12 @@ bool runFunction(const QString &name, const QString &inputSpec, const QString &v
 			const QString field = g_params.value("SelectedName");
 			if (spec.isEmpty())
 				return fail(QString("%1: não há entrada na Prévia").arg(def->name));
+			if (sameName) {
+				noteMissing(spec, vmixTitle, def->name, field, "nome repetido no vMix");
+				return fail(QString("%1: no vMix há mais de uma entrada \"%2\". A \"%3\" do Studio já é a outra. "
+						    "Crie mais uma entrada (ex.: \"%2 2\") e cole a chave %4 em ⚙ da entrada → Chave do vMix.")
+						    .arg(def->name, vmixTitle, sameName->name, spec));
+			}
 			if (!vmixTitle.isEmpty()) {
 				noteMissing(spec, vmixTitle, def->name, field, "entrada");
 				return fail(QString("%1: falta a entrada \"%2\" no Studio. Crie ou importe um título com o nome \"%2\" "

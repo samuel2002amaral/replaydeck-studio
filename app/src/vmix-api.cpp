@@ -4,6 +4,7 @@
 #include "outputs.hpp"
 #include "virtualcam.hpp"
 #include "shortcuts.hpp"
+#include "vmix-keys.hpp"
 
 #include <QCryptographicHash>
 #include "multicorder.hpp"
@@ -168,6 +169,10 @@ void VmixApi::apply(bool enabled, int httpPort, int tcpPort)
 		connect(&e, &Engine::busChanged, this, &VmixApi::pushState);
 		connect(&e, &Engine::inputsChanged, this, &VmixApi::pushState);
 		connect(&Outputs::get(), &Outputs::stateChanged, this, &VmixApi::pushState);
+		/* entrada nova/renomeada com o nome de uma entrada do vMix: ganha a chave dela */
+		connect(&e, &Engine::inputsChanged, this, [] { adoptKnownKeys(); }, Qt::QueuedConnection);
+		connect(&e, &Engine::inputRenamed, this, [] { adoptKnownKeys(); }, Qt::QueuedConnection);
+		adoptKnownKeys();
 	}
 	if (!enabled) {
 		statusText = "desligada";
@@ -224,6 +229,8 @@ void VmixApi::onHttp()
 
 void VmixApi::handleHttp(QTcpSocket *s)
 {
+	/* quem manda comandos pode ser o APPVMIX: aprende os nomes do vMix das chaves dele */
+	learnFromApp(s->peerAddress().toString().remove("::ffff:"));
 	QByteArray req = s->property("req").toByteArray() + s->readAll();
 	if (!req.contains("\r\n\r\n") && req.size() < 16384) {
 		s->setProperty("req", req);
@@ -356,6 +363,7 @@ static QStringList actsLines()
 
 void VmixApi::handleTcpLine(QTcpSocket *s, const QString &line)
 {
+	learnFromApp(s->peerAddress().toString().remove("::ffff:"));
 	const QString cmd = line.section(' ', 0, 0).toUpper();
 	const QString rest = line.section(' ', 1);
 	auto send = [s](const QString &t) { s->write((t + "\r\n").toUtf8()); };

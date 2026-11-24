@@ -13,6 +13,10 @@ void editVmixKey(QWidget *parent, int inputId);
 
 /* nome que a chave tinha no vMix (das importações), ou vazio */
 QString vmixTitleOfKey(const QString &key);
+struct Input;
+Input *inputForVmixTitle(const QString &title); /* "PRÉ-JOGO" = "PRE JOGO.gtzip" */
+int adoptKnownKeys();                           /* dá as chaves conhecidas às entradas com o mesmo nome */
+void learnFromApp(const QString &host);         /* lê os nomes do vMix na config do APPVMIX (porta 3000) */
 /* o app pediu algo que não existe aqui: guarda para a janela "O que o app pediu e não achou" */
 void noteMissing(const QString &key, const QString &title, const QString &function, const QString &field,
 		 const QString &reason);

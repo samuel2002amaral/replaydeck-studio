@@ -15,6 +15,10 @@
 #include <QMessageBox>
 #include <QRegularExpression>
 #include <QUuid>
+#include <QCoreApplication>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QUrl>
 #include <QDateTime>
 #include <QDialog>
 #include <QDir>
@@ -100,6 +104,45 @@ static void loadTitles()
 	if (g_titlesLoaded)
 		return;
 	g_titlesLoaded = true;
+	/* projeto padrão do APPVMIX (FUTSALV2.vmix): funciona sem importar nada */
+	static const struct {
+		const char *key, *title;
+	} defaults[] = {
+		{"76a9fe91-6343-4f68-8324-9cbc732ffdea", "Offline - FEELWORLD USB3.0 Capture"},
+		{"7cd17f30-1bc4-44b1-aede-0411a34143a0", "CELULAR"},
+		{"8928a63f-d867-453b-87c3-886fa950aa10", "CELULAR 2"},
+		{"0055c80d-9b55-4e0c-9713-cf7cde222063", "Browser vdo.ninja"},
+		{"6c5149c4-35c8-4f36-ac0e-e6081c024aca", "PLACAR"},
+		{"aa47b020-7924-4ff7-bee1-2465fd21b032", "GOL CASA"},
+		{"59083fbc-c678-4f94-86e8-41cd5d0c8d9a", "GOL FORA"},
+		{"b34b9585-6eac-4a9a-9224-d078c5fe0273", "PRÉ-JOGO"},
+		{"1e3a390b-8c0f-4f72-b844-d8ee388f73ad", "NARRADOR"},
+		{"74f76cde-0253-4df6-8ffc-7da4836760e9", "ARBITRAGEM"},
+		{"afe738ad-8844-4e01-9f60-142f0a8186c2", "ESCALAÇÃO CASA"},
+		{"8cdaccfc-d80c-4a02-9134-3c77f7fbaf1c", "ESCALACAO FORA"},
+		{"fbb7b20d-4bfb-40cc-bb99-9662a015047b", "RESUMO PARTIDA"},
+		{"7d3fe6d0-7dc4-489e-a451-18782f773734", "TEXTO RODAPE"},
+		{"addd3219-97a6-4f39-9b02-369db9aaefe0", "BANNERYOUTUBE.png"},
+		{"6f97d805-de72-4348-a040-ac6470b0249b", "TRANSIÇÃO - STINGER"},
+		{"549e4e2b-aec3-4f66-9693-634d142e27bd", "ANUNCIO"},
+		{"de625c8f-d86e-4c19-91d9-bb0ca0de792d", "List - ANUNCIANTES - NUTRI POWER.jpg"},
+		{"15f96ffc-0eb2-46ab-a40c-8b75b05a5a0d", "LOGO IURY FILMS.png"},
+		{"86ce7869-f993-4624-9a90-58306cc18c9c", "VAR"},
+		{"850aa080-ea08-47f8-a4a3-7bd67cff0740", "REPLAY - A"},
+		{"e2980cea-7f51-40ca-a746-0634a96678cd", "GOL CASA"},
+		{"67542331-42ce-4987-a753-a9f9f7b47a2e", "GOL FORA"},
+		{"d566889f-6db8-40d0-b555-09110d3e29ba", "AMARELO.gtzip"},
+		{"778ea944-c2b4-4588-b595-53646b4eedb2", "AMARELO FORA"},
+		{"49b11037-d9de-4fe7-8328-37ad56e43b84", "VERMELHO CASA"},
+		{"a7fe658f-70d1-4857-8051-141912568a3e", "VERMELHO FORA"},
+		{"c16d1173-6d70-42c0-95fb-865f01138b5f", "VAR.png"},
+		{"47d59e5e-e5f9-42de-90c7-43f9c22bdb63", "CARDS PATROCINADORES - CARDS PATROCINADORES NUTRI POWER.jpg"},
+		{"766c1a2a-b4f3-432d-b993-d092cc95da67", "Patrocinadores.mp4"},
+		{"0c792abf-9289-40ca-9a72-2b948d789e16", "PENAL"},
+		{"1e438fd3-a0bb-4990-a4d3-ab8aed7dee31", "REPLAY - B"},
+	};
+	for (const auto &d : defaults)
+		g_titles.insert(QString::fromLatin1(d.key), QString::fromUtf8(d.title));
 	QFile f(titlesFile());
 	if (!f.open(QIODevice::ReadOnly))
 		return;
@@ -130,6 +173,76 @@ QString vmixTitleOfKey(const QString &key)
 	if (k.startsWith('{') && k.endsWith('}'))
 		k = k.mid(1, k.size() - 2);
 	return g_titles.value(k);
+}
+
+/* nome "igual" ao do vMix: sem acento, espaço, pontuação, maiúsculas e extensão (.gtzip, .png...) */
+static QString normTitle(QString s)
+{
+	static const QRegularExpression ext(R"re(\.(gtzip|gtxml|png|jpe?g|mp4|mov|webm|mkv|avi|gif|xaml)$)re",
+					    QRegularExpression::CaseInsensitiveOption);
+	s.remove(ext);
+	return norm(s);
+}
+
+Input *inputForVmixTitle(const QString &title)
+{
+	const QString t = normTitle(title);
+	if (t.isEmpty())
+		return nullptr;
+	for (Input *in : Engine::get().inputs())
+		if (normTitle(in->name) == t)
+			return in;
+	return nullptr;
+}
+
+int adoptKnownKeys()
+{
+	loadTitles();
+	Engine &e = Engine::get();
+	int n = 0;
+	for (auto it = g_titles.begin(); it != g_titles.end(); ++it) {
+		if (e.inputByKey(it.key()))
+			continue; /* alguém já tem essa chave */
+		Input *in = inputForVmixTitle(it.value());
+		if (!in || g_titles.contains(in->key.toLower()))
+			continue; /* não achou, ou a entrada já tem outra chave do vMix */
+		if (e.setInputKey(in->id, it.key())) {
+			n++;
+			blog(LOG_INFO, "chave do vMix %s -> entrada \"%s\" (nome %s no vMix)", it.key().toUtf8().constData(),
+			     in->name.toUtf8().constData(), it.value().toUtf8().constData());
+		}
+	}
+	return n;
+}
+
+/* o APPVMIX que está mandando comandos: lê a config dele (nomes do vMix de cada chave) */
+void learnFromApp(const QString &host)
+{
+	/* tenta de novo a cada 10 s enquanto não achar o app; achou: relê a cada minuto */
+	static QMap<QString, qint64> next;
+	const qint64 now = QDateTime::currentMSecsSinceEpoch();
+	if (host.isEmpty() || now < next.value(host, 0))
+		return;
+	next[host] = now + 10000;
+	static QNetworkAccessManager *net = new QNetworkAccessManager(QCoreApplication::instance());
+	const QString h = host.contains(':') ? "[" + host + "]" : host;
+	QNetworkRequest req(QUrl(QString("http://%1:3000/app-api/backup").arg(h)));
+	req.setTransferTimeout(3000);
+	QNetworkReply *r = net->get(req);
+	QObject::connect(r, &QNetworkReply::finished, r, [r, host] {
+		r->deleteLater();
+		if (r->error() != QNetworkReply::NoError)
+			return; /* não é o APPVMIX (ou tem PIN): fica com o que já sabe */
+		QList<QPair<QString, QString>> pairs;
+		fromJson(QJsonDocument::fromJson(r->readAll()).object().value("config"), pairs);
+		if (pairs.isEmpty())
+			return;
+		next[host] = QDateTime::currentMSecsSinceEpoch() + 60000;
+		rememberTitles(pairs);
+		const int n = adoptKnownKeys();
+		blog(LOG_INFO, "APPVMIX em %s: %d nomes do vMix aprendidos, %d entradas ligadas", host.toUtf8().constData(),
+		     (int)pairs.size(), n);
+	});
 }
 
 struct Missing {
