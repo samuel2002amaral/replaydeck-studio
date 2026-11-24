@@ -54,6 +54,8 @@ private:
 	QLabel *pgmTitle = nullptr;
 	QLabel *pgmFooter = nullptr;
 	QPushButton *ftbBtn = nullptr;
+	class QVBoxLayout *userTrBox = nullptr; /* botões das transições da aba Transições */
+	void rebuildUserTransitions();
 	QPushButton *ovBtn[5] = {};
 	QSlider *tbar = nullptr;
 	QSpinBox *duration = nullptr;

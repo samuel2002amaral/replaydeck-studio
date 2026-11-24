@@ -1,5 +1,6 @@
 #include "main-window.hpp"
 #include "gt/gt-dock.hpp"
+#include "transitions-panel.hpp"
 #include "replay-host.hpp"
 #include "flow-layout.hpp"
 #include "audio-mixer.hpp"
@@ -170,6 +171,35 @@ static QPushButton *transButton(const QString &text, const QString &tip)
 	return b;
 }
 
+void MainWindow::rebuildUserTransitions()
+{
+	while (QLayoutItem *it = userTrBox->takeAt(0)) {
+		delete it->widget();
+		delete it;
+	}
+	const auto &list = Engine::get().userTransitions();
+	if (list.isEmpty()) {
+		auto *add = transButton("＋ Stinger", "Adicionar um stinger ou outra transição (aba Transições)");
+		add->setObjectName("transAddButton");
+		connect(add, &QPushButton::clicked, this, [this] {
+			rightTabs->setCurrentIndex(3);
+			if (auto *p = qobject_cast<TransitionsPanel *>(rightTabs->widget(3)))
+				p->addStinger();
+		});
+		userTrBox->addWidget(add);
+		return;
+	}
+	for (StudioTransition *t : list) {
+		const int id = t->id;
+		auto *b = transButton(t->name, QString("Prévia para o Programa com \"%1\" (%2)")
+							   .arg(t->name, Engine::transitionTypeName(obs_source_get_unversioned_id(t->source))));
+		if (t->isStinger())
+			b->setProperty("stinger", true);
+		connect(b, &QPushButton::clicked, this, [id] { Engine::get().transitionWith(id); });
+		userTrBox->addWidget(b);
+	}
+}
+
 QWidget *MainWindow::buildTransitions()
 {
 	auto *w = new QWidget;
@@ -185,14 +215,18 @@ QWidget *MainWindow::buildTransitions()
 	connect(cut, &QPushButton::clicked, this, [&e] { e.transition(TransitionKind::Cut); });
 	auto *fade = transButton("Fade", "Prévia para o programa com fade");
 	connect(fade, &QPushButton::clicked, this, [&e] { e.transition(TransitionKind::Fade); });
-	auto *stinger = transButton("Stinger 1", "Escolha o vídeo do stinger em Configurações (próxima versão)");
-	stinger->setEnabled(false);
-	auto *merge = transButton("Merge", "Chega numa próxima versão");
-	merge->setEnabled(false);
 	ftbBtn = transButton("FTB", "Fade para o preto (e volta)");
 	connect(ftbBtn, &QPushButton::clicked, this, [&e] { e.transition(TransitionKind::FadeToBlack); });
-	for (QPushButton *b : {quick, cut, fade, stinger, merge, ftbBtn})
+	for (QPushButton *b : {quick, cut, fade})
 		v->addWidget(b);
+	/* stingers e outras transições criadas na aba Transições */
+	userTrBox = new QVBoxLayout;
+	userTrBox->setContentsMargins(0, 0, 0, 0);
+	userTrBox->setSpacing(4);
+	v->addLayout(userTrBox);
+	v->addWidget(ftbBtn);
+	connect(&e, &Engine::transitionsChanged, this, &MainWindow::rebuildUserTransitions, Qt::QueuedConnection);
+	rebuildUserTransitions();
 
 	auto *ovRow = new QHBoxLayout;
 	ovRow->setSpacing(3);
@@ -423,6 +457,7 @@ QWidget *MainWindow::buildRightPanel()
 	rightTabs->addTab(replayhost::start(this), "Replay instantâneo");
 	rightTabs->addTab(new AudioMixer, "Mixer de áudio");
 	rightTabs->addTab(new GtDock, "Títulos GT");
+	rightTabs->addTab(new TransitionsPanel, "Transições");
 	rightTabs->addTab(comingSoon("PTZ", "Chega na fase 6."), "PTZ");
 	rightTabs->addTab(comingSoon("Lista", "Lista de vídeos: chega na fase 6."), "Lista");
 	return rightTabs;

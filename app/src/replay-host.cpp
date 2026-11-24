@@ -123,7 +123,10 @@ bool obs_frontend_preview_program_mode_active(void)
 
 void obs_frontend_get_transitions(struct obs_frontend_source_list *sources)
 {
-	for (obs_source_t *t : {Engine::get().cutTransition(), Engine::get().fadeTransition()}) {
+	std::vector<obs_source_t *> all = {Engine::get().cutTransition(), Engine::get().fadeTransition()};
+	for (StudioTransition *t : Engine::get().userTransitions())
+		all.push_back(t->source);
+	for (obs_source_t *t : all) {
 		if (!t)
 			continue;
 		obs_source_t *r = obs_source_get_ref(t);
@@ -300,6 +303,8 @@ QWidget *start(QMainWindow *window)
 		}
 	});
 	QObject::connect(&e, &Engine::inputsChanged, window, [] { emitEvent(OBS_FRONTEND_EVENT_SCENE_LIST_CHANGED); });
+	QObject::connect(&e, &Engine::transitionsChanged, window,
+			 [] { emitEvent(OBS_FRONTEND_EVENT_TRANSITION_LIST_CHANGED); });
 	QObject::connect(&e, &Engine::transitionMsChanged, window,
 			 [] { emitEvent(OBS_FRONTEND_EVENT_TRANSITION_DURATION_CHANGED); });
 	/* câmera do replay renomeada junto com a entrada */

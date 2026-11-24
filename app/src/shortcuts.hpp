@@ -80,10 +80,12 @@ public:
 
 protected:
 	void keyPressEvent(QKeyEvent *e) override;
+	void keyReleaseEvent(QKeyEvent *e) override;
 	void focusOutEvent(QFocusEvent *e) override;
+	bool event(QEvent *e) override; /* Ctrl+N etc. viram atalho, não o comando do menu */
 
 private:
-	void paint();
+	void paint(int heldMods = 0);
 	Shortcut sc;
 	bool capturing = false;
 };

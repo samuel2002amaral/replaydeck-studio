@@ -35,6 +35,7 @@ add_executable(replaydeck-studio WIN32
   src/shortcuts.cpp src/shortcuts.hpp
   src/style.hpp
   src/gt-host.cpp src/gt-host.hpp
+  src/transitions-panel.cpp src/transitions-panel.hpp
   # replay (veio do plugin ReplayDeck; roda dentro do programa)
   replay/engine.cpp replay/engine.hpp
   replay/recording.cpp replay/recording.hpp

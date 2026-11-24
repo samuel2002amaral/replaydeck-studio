@@ -500,10 +500,37 @@ void KeyCapture::startCapture()
 	paint();
 }
 
-void KeyCapture::paint()
+/* o modificador da própria tecla (no Linux ele ainda não aparece em modifiers() ao apertar) */
+static int modOfKey(int key)
 {
+	switch (key) {
+	case Qt::Key_Control:
+		return Qt::ControlModifier;
+	case Qt::Key_Shift:
+		return Qt::ShiftModifier;
+	case Qt::Key_Alt:
+		return Qt::AltModifier;
+	case Qt::Key_Meta:
+		return Qt::MetaModifier;
+	default:
+		return 0;
+	}
+}
+
+void KeyCapture::paint(int heldMods)
+{
+	/* mostra a combinação se formando: segurando Ctrl aparece "Ctrl + …" */
+	QString held;
+	if (heldMods & Qt::ControlModifier)
+		held += "Ctrl + ";
+	if (heldMods & Qt::AltModifier)
+		held += "Alt + ";
+	if (heldMods & Qt::ShiftModifier)
+		held += "Shift + ";
+	if (heldMods & Qt::MetaModifier)
+		held += "Win + ";
 	if (capturing)
-		setText("aperte a tecla…");
+		setText(held.isEmpty() ? QString("aperte a tecla…") : held + QString::fromUtf8("…"));
 	else
 		setText(isEmpty() ? QString("clique e aperte") : sc.display());
 	setProperty("on", capturing);
@@ -520,7 +547,12 @@ void KeyCapture::keyPressEvent(QKeyEvent *e)
 	const int key = e->key();
 	if (key == Qt::Key_Control || key == Qt::Key_Shift || key == Qt::Key_Alt || key == Qt::Key_Meta ||
 	    key == Qt::Key_NumLock || key == Qt::Key_CapsLock || key == Qt::Key_ScrollLock || e->isAutoRepeat())
-		return; /* espera a tecla de verdade (travas e Ctrl/Shift/Alt sozinhos não contam) */
+	{
+		/* espera a tecla de verdade (travas e Ctrl/Shift/Alt sozinhos não contam) */
+		if (!e->isAutoRepeat())
+			paint((int(e->modifiers()) | modOfKey(key)) & MOD_MASK);
+		return;
+	}
 	if (key == Qt::Key_Escape && !(e->modifiers() & MOD_MASK)) {
 		capturing = false;
 		paint();
@@ -534,6 +566,25 @@ void KeyCapture::keyPressEvent(QKeyEvent *e)
 	sc.key = keypad ? QKeySequence() : QKeySequence(QKeyCombination(Qt::KeyboardModifiers(mods), Qt::Key(key)));
 	capturing = false;
 	paint();
+}
+
+void KeyCapture::keyReleaseEvent(QKeyEvent *e)
+{
+	if (capturing) {
+		paint(int(e->modifiers()) & ~modOfKey(e->key()) & MOD_MASK);
+		return;
+	}
+	QPushButton::keyReleaseEvent(e);
+}
+
+bool KeyCapture::event(QEvent *e)
+{
+	/* capturando: qualquer combinação (até Ctrl+N, que é do menu) vem para cá */
+	if (capturing && e->type() == QEvent::ShortcutOverride) {
+		e->accept();
+		return true;
+	}
+	return QPushButton::event(e);
 }
 
 void KeyCapture::focusOutEvent(QFocusEvent *e)

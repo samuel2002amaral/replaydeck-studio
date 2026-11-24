@@ -208,9 +208,9 @@ void Engine::stop()
 	for (int ch = 0; ch < 64; ch++)
 		obs_set_output_source(ch, nullptr);
 	clearAll();
+	clearTransitions();
 	cutTr = nullptr;
 	fadeTr = nullptr;
-	stingerTr = nullptr;
 	blackScene = nullptr;
 	audioBed = nullptr;
 	activeTr = nullptr;
@@ -718,8 +718,10 @@ obs_source_t *Engine::transitionFor(TransitionKind kind)
 	switch (kind) {
 	case TransitionKind::Cut:
 		return cutTr;
-	case TransitionKind::Stinger:
-		return stingerTr ? stingerTr.Get() : fadeTr.Get();
+	case TransitionKind::Stinger: {
+		StudioTransition *st = nthTransition(1, true);
+		return st ? st->source.Get() : fadeTr.Get();
+	}
 	default:
 		return fadeTr;
 	}
@@ -791,6 +793,151 @@ void Engine::transition(TransitionKind kind)
 	pvw = old ? old : pvw; /* como no vMix: o que saiu do ar volta para a prévia */
 	setProgramScene(next->scene, kind);
 	emit busChanged();
+}
+
+/* ---------- transições do operador ---------- */
+
+bool StudioTransition::isStinger() const
+{
+	return source && strcmp(obs_source_get_unversioned_id(source), "obs_stinger_transition") == 0;
+}
+
+bool StudioTransition::fixedDuration() const
+{
+	return source && obs_transition_fixed(source);
+}
+
+QString Engine::transitionTypeName(const char *type)
+{
+	static const struct {
+		const char *id, *label;
+	} names[] = {{"obs_stinger_transition", "Stinger"}, {"fade_transition", "Fade"},
+		     {"slide_transition", "Deslizar"},        {"swipe_transition", "Varrer"},
+		     {"wipe_transition", "Luma wipe"},         {"fade_to_color_transition", "Fade para cor"},
+		     {"cut_transition", "Corte"}};
+	for (auto &n : names)
+		if (type && strcmp(type, n.id) == 0)
+			return QString::fromUtf8(n.label);
+	const char *d = type ? obs_source_get_display_name(type) : nullptr;
+	return QString::fromUtf8(d ? d : (type ? type : "?"));
+}
+
+StudioTransition *Engine::userTransition(int id) const
+{
+	for (StudioTransition *t : trList)
+		if (t->id == id)
+			return t;
+	return nullptr;
+}
+
+StudioTransition *Engine::nthTransition(int n, bool stingerOnly) const
+{
+	int k = 0;
+	for (StudioTransition *t : trList)
+		if ((!stingerOnly || t->isStinger()) && ++k == n)
+			return t;
+	return nullptr;
+}
+
+StudioTransition *Engine::addTransition(const QString &type, const QString &name, obs_data_t *settings, int ms)
+{
+	const QByteArray tp = type.toUtf8();
+	const int id = nextTrId++;
+	/* o nome da fonte é o nome mostrado: o replay escolhe a transição por ele */
+	const QByteArray nm = name.toUtf8();
+	obs_source_t *src = obs_source_create_private(tp.constData(), nm.constData(), settings);
+	if (!src) {
+		blog(LOG_ERROR, "não foi possível criar a transição do tipo %s", tp.constData());
+		return nullptr;
+	}
+	auto *t = new StudioTransition;
+	t->id = id;
+	t->name = name;
+	t->source = src;
+	t->durationMs = qBound(50, ms, 20000);
+	trList.append(t);
+	blog(LOG_INFO, "transição %d criada: %s (%s)", id, name.toUtf8().constData(), tp.constData());
+	emit transitionsChanged();
+	return t;
+}
+
+void Engine::removeTransition(int id)
+{
+	StudioTransition *t = userTransition(id);
+	if (!t)
+		return;
+	if (activeTr == t->source.Get()) {
+		/* está no programa: o fade assume, com a mesma imagem */
+		obs_transition_swap_begin(fadeTr, activeTr);
+		obs_set_output_source(0, fadeTr);
+		obs_transition_swap_end(fadeTr, activeTr);
+		activeTr = fadeTr;
+	}
+	trList.removeOne(t);
+	delete t;
+	emit transitionsChanged();
+}
+
+void Engine::renameTransition(int id, const QString &name)
+{
+	StudioTransition *t = userTransition(id);
+	if (!t || name.trimmed().isEmpty() || name == t->name)
+		return;
+	t->name = name.trimmed();
+	obs_source_set_name(t->source, t->name.toUtf8().constData());
+	emit transitionsChanged();
+}
+
+void Engine::setUserTransitionMs(int id, int ms)
+{
+	if (StudioTransition *t = userTransition(id)) {
+		t->durationMs = qBound(50, ms, 20000);
+		emit transitionsChanged();
+	}
+}
+
+void Engine::moveTransition(int id, int delta)
+{
+	StudioTransition *t = userTransition(id);
+	if (!t)
+		return;
+	const int i = trList.indexOf(t);
+	const int j = qBound(0, i + delta, (int)trList.size() - 1);
+	if (i == j)
+		return;
+	trList.move(i, j);
+	emit transitionsChanged();
+}
+
+void Engine::transitionWith(int id)
+{
+	StudioTransition *t = userTransition(id);
+	if (!t) {
+		transition(TransitionKind::Fade);
+		return;
+	}
+	Input *next = input(pvw);
+	if (!next)
+		return;
+	ftb = false;
+	const int old = pgm;
+	pgm = pvw;
+	pvw = old ? old : pvw;
+	setProgramSceneWith(next->scene, t->source, t->durationMs);
+	emit busChanged();
+}
+
+void Engine::clearTransitions()
+{
+	if (activeTr && activeTr != cutTr.Get() && activeTr != fadeTr.Get() && fadeTr) {
+		obs_transition_swap_begin(fadeTr, activeTr);
+		obs_set_output_source(0, fadeTr);
+		obs_transition_swap_end(fadeTr, activeTr);
+		activeTr = fadeTr;
+	}
+	qDeleteAll(trList);
+	trList.clear();
+	nextTrId = 1;
 }
 
 void Engine::quickPlay(int id)
@@ -941,6 +1088,17 @@ bool Engine::saveProject(const QString &path)
 	obs_data_set_int(root, "previa", pvw);
 	obs_data_set_int(root, "programa", pgm);
 	obs_data_set_int(root, "transicao_ms", durationMs);
+	OBSDataArrayAutoRelease trs = obs_data_array_create();
+	for (StudioTransition *t : trList) {
+		OBSDataAutoRelease o = obs_data_create();
+		obs_data_set_string(o, "tipo", obs_source_get_id(t->source));
+		obs_data_set_string(o, "nome", t->name.toUtf8().constData());
+		obs_data_set_int(o, "ms", t->durationMs);
+		OBSDataAutoRelease st = obs_source_get_settings(t->source);
+		obs_data_set_obj(o, "opcoes", st);
+		obs_data_array_push_back(trs, o);
+	}
+	obs_data_set_array(root, "transicoes", trs);
 	obs_data_set_double(root, "volume_geral", master);
 	const QByteArray p = QFile::encodeName(path);
 	const bool ok = obs_data_save_json_safe(root, p.constData(), "tmp", "bak");
@@ -1004,6 +1162,19 @@ bool Engine::loadProject(const QString &path)
 		setMasterVolume((float)obs_data_get_double(root, "volume_geral"));
 	if (obs_data_has_user_value(root, "transicao_ms"))
 		setTransitionMs((int)obs_data_get_int(root, "transicao_ms"));
+	clearTransitions();
+	{
+		OBSDataArrayAutoRelease trs = obs_data_get_array(root, "transicoes");
+		const size_t nt = obs_data_array_count(trs);
+		for (size_t i = 0; i < nt; i++) {
+			OBSDataAutoRelease o = obs_data_array_item(trs, i);
+			OBSDataAutoRelease st = obs_data_get_obj(o, "opcoes");
+			addTransition(QString::fromUtf8(obs_data_get_string(o, "tipo")),
+				      QString::fromUtf8(obs_data_get_string(o, "nome")), st,
+				      (int)obs_data_get_int(o, "ms"));
+		}
+		emit transitionsChanged();
+	}
 	projPath = path;
 	mergeSameDevice();
 	for (Input *in : list)

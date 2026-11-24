@@ -1,5 +1,8 @@
-## ReplayDeck Studio — fase 5 (títulos GT)
+## ReplayDeck Studio — fase 5 (títulos GT e transições)
 
+> 2.9.0: **aba Transições, com stinger**. ＋ Stinger: escolha o vídeo da vinheta (.webm/.mov com transparência, ou com máscara/track matte); o ponto de troca já vem no meio do vídeo e se ajusta no cartão ("Troca em"). Também: Deslizar, Varrer, Luma wipe, Fade para cor e Fade com outra duração. Cada transição vira um **botão no meio da tela**, abaixo do Fade, e pode ir para atalhos e scripts (Stinger1…4, Transition1…4). O stinger passa **por cima dos overlays** (placar, títulos GT) — dá para desligar na aba. O replay também enxerga essas transições (entrar/sair do replay com stinger). Tudo fica salvo no projeto.
+> **Atalhos de duas teclas**: segure Ctrl, Shift ou Alt e aperte a outra (Ctrl+7, Shift+F1, Ctrl+Num 7). Enquanto segura, o campo mostra "Ctrl + …". Ctrl+7 e o 7 sozinho são atalhos diferentes.
+>
 > 2.8.0: **títulos GT do vMix (.gtzip) dentro do programa**. Aba **Títulos GT** (ou Títulos → Importar): cada título importado vira uma **entrada**, salva no projeto. ▶ ENTRADA põe o título no overlay escolhido (O1 a O4, por cima do programa) com a animação de entrada; ■ SAÍDA (ou o botão do overlay, o atalho, a função) faz a **animação de saída** e só depois tira da tela. Com "Ent." o título só anima e você usa a entrada na Prévia/Programa como qualquer outra. Menu ⋮: editar o título (textos, imagens, cores, layout, listas CSV/TXT/JSON), renomear, duplicar com outros dados (ex.: escalação casa e fora), propriedades e páginas. Também em Adicionar entrada → "Título GT".
 >
 > 2.7.1: o instalador não pede mais para fechar o Chrome, o Claude, o Zoom etc. Eles deixam o arquivo da câmera virtual aberto (listam as câmeras do Windows); agora o instalador só olha o próprio programa e só troca o arquivo da câmera quando ele mudar de versão.

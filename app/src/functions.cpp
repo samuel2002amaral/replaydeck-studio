@@ -21,6 +21,14 @@ const QList<FunctionDef> &functionList()
 		{"CutDirect", "Transição", "Entrada direto para o Programa, corte seco", true, false},
 		{"FadeToBlack", "Transição", "Fade para o preto (liga/desliga)", false, false},
 		{"SetTransitionDuration", "Transição", "Duração das transições (Value = ms)", false, true},
+		{"Stinger1", "Transição", "Stinger 1 (1º stinger da aba Transições)", false, false},
+		{"Stinger2", "Transição", "Stinger 2", false, false},
+		{"Stinger3", "Transição", "Stinger 3", false, false},
+		{"Stinger4", "Transição", "Stinger 4", false, false},
+		{"Transition1", "Transição", "Transição 1 (1ª da aba Transições)", false, false},
+		{"Transition2", "Transição", "Transição 2", false, false},
+		{"Transition3", "Transição", "Transição 3", false, false},
+		{"Transition4", "Transição", "Transição 4", false, false},
 		/* prévia */
 		{"PreviewInput", "Prévia", "Entrada para a Prévia", true, false},
 		{"PreviewInputNext", "Prévia", "Próxima entrada na Prévia", false, false},
@@ -167,6 +175,14 @@ bool runFunction(const QString &name, const QString &inputSpec, const QString &v
 		e.transition(TransitionKind::FadeToBlack);
 	else if (n == "SetTransitionDuration")
 		e.setTransitionMs((int)v);
+	else if (n.startsWith("Stinger") || n.startsWith("Transition")) {
+		const bool st = n.startsWith("Stinger");
+		const int k = n.right(1).toInt();
+		StudioTransition *t = e.nthTransition(k, st);
+		if (!t)
+			return fail(QString("%1: não existe — crie na aba Transições").arg(n));
+		e.transitionWith(t->id);
+	}
 	else if (n == "PreviewInput")
 		e.setPreview(in->id);
 	else if (n == "PreviewInputNext" || n == "PreviewInputPrevious") {

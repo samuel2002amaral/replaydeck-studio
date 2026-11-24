@@ -54,6 +54,13 @@ QPushButton:checked { background: #2563eb; border-color: #3b74f0; color: #ffffff
 #redButton { background: #7d1d17; border-color: #a52a21; color: #ffffff; }
 #redButton:hover { background: #8d231c; }
 #transButton { min-height: 22px; }
+#transButton[stinger="true"] { border-left: 3px solid #c27414; }
+#transAddButton { min-height: 22px; background: transparent; border: 1px dashed #4b5568; color: #9aa4b5; }
+#transAddButton:hover { color: #eef1f5; border-color: #6b7588; }
+#trCard { background: #222833; border: 1px solid #363e4c; border-radius: 4px; }
+#trName { font-weight: 700; font-size: 13px; }
+#trBadge, #trBadgeStinger { border-radius: 3px; padding: 1px 6px; font-size: 11px; font-weight: 700; color: #ffffff; background: #3a4a66; }
+#trBadgeStinger { background: #c27414; }
 #ovButton[on="true"] { background: #c27414; border-color: #e08a1e; color: #ffffff; }
 #transButton[on="true"] { background: #a52a21; border-color: #c3362b; color: #ffffff; }
 

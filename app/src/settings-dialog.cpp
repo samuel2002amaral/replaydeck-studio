@@ -236,7 +236,9 @@ SettingsDialog::SettingsDialog(QWidget *parent, int startTab) : QDialog(parent)
 		v->setContentsMargins(14, 12, 14, 12);
 		auto *h = new QLabel("Clique na tecla e aperte a do teclado: vale a TECLA FÍSICA (o 7 do teclado numérico é "
 				     "diferente do 7 de cima, e funciona com Num Lock ligado ou não). Função com os nomes do vMix. "
-				     "Entrada: número ou nome; vazio = a da Prévia.");
+				     "Entrada: número ou nome; vazio = a da Prévia.\n"
+				     "Combinação de duas teclas: segure Ctrl, Shift ou Alt e aperte a outra (ex.: Ctrl+7, Shift+F1, "
+				     "Ctrl+Num 7). Ctrl+7 e o 7 sozinho são atalhos diferentes.");
 		h->setObjectName("muted");
 		h->setWordWrap(true);
 		v->addWidget(h);

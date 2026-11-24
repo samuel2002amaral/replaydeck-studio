@@ -8,6 +8,8 @@
 #include "settings-dialog.hpp"
 #include "external-output.hpp"
 #include "main-window.hpp"
+#include "transitions-panel.hpp"
+#include "functions.hpp"
 #include "gt/gt-source.hpp"
 #include "overlay-channels.hpp"
 #include "dialogs.hpp"
@@ -145,6 +147,60 @@ int main(int argc, char *argv[])
 			runSelfTest(w);
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST_REPLAY"))
 			replayhost::selfTest(&w);
+		if (qEnvironmentVariableIsSet("RDS_SELFTEST_TRANS")) {
+			/* transições: stinger da aba Transições leva a Prévia (azul) ao Programa (vermelho → azul);
+			 * a função Stinger1 e o projeto salvo/reaberto mantêm a lista */
+			QTimer::singleShot(800, [] {
+				Engine &e = Engine::get();
+				while (!e.inputs().isEmpty())
+					e.removeInput(e.inputs().first()->id);
+				OBSDataAutoRelease r = obs_data_create();
+				obs_data_set_int(r, "color", 0xFF2020C0);
+				Input *red = e.addInput("color_source_v3", "VERMELHO", r);
+				OBSDataAutoRelease b = obs_data_create();
+				obs_data_set_int(b, "color", 0xFFC05020);
+				Input *blue = e.addInput("color_source_v3", "AZUL", b);
+				e.cutTo(red->id);
+				e.setPreview(blue->id);
+				const QString file = qEnvironmentVariable("RDS_SELFTEST_TRANS");
+				OBSDataAutoRelease st = obs_data_create();
+				obs_data_set_string(st, "path", file.toUtf8().constData());
+				obs_data_set_int(st, "tp_type", 0);
+				obs_data_set_int(st, "transition_point", videoDurationMs(file) / 2);
+				obs_data_set_bool(st, "preload", true);
+				StudioTransition *t = e.addTransition("obs_stinger_transition", "Stinger 1", st);
+				OBSDataAutoRelease sl = obs_data_create();
+				e.addTransition("slide_transition", "Deslizar", sl, 700);
+				blog(LOG_INFO, "[trans] criadas=%d stinger=%d video=%dms", (int)e.userTransitions().size(),
+				     t && t->isStinger(), videoDurationMs(file));
+			});
+			QTimer::singleShot(2500, [] {
+				QString err;
+				const bool ok = runFunction("Stinger1", QString(), QString(), &err);
+				blog(LOG_INFO, "[trans] Stinger1 ok=%d %s fixa=%d", ok, err.toUtf8().constData(),
+				     obs_transition_fixed(Engine::get().nthTransition(1, true)->source));
+			});
+			QTimer::singleShot(5000, [] {
+				Engine &e = Engine::get();
+				Input *p = e.input(e.programId());
+				blog(LOG_INFO, "[trans] programa=%s", p ? p->name.toUtf8().constData() : "-");
+				const QString proj = QDir::temp().filePath("rds-trans-teste.rdsproj");
+				e.saveProject(proj);
+				e.loadProject(proj);
+				QStringList names;
+				for (StudioTransition *t : e.userTransitions())
+					names << QString("%1(%2,%3ms)").arg(t->name).arg(obs_source_get_id(t->source)).arg(t->durationMs);
+				blog(LOG_INFO, "[trans] projeto reaberto: %s", names.join(" ").toUtf8().constData());
+			});
+			QTimer::singleShot(6000, [&w] {
+				if (auto *tabs = w.findChild<QTabWidget *>("rightTabs"))
+					tabs->setCurrentIndex(3);
+			});
+			QTimer::singleShot(qMax(7500, qEnvironmentVariableIntValue("RDS_SELFTEST_HOLD") * 1000), [&w] {
+				w.grab().save(QDir::temp().filePath("rds-trans.png"));
+				w.close();
+			});
+		}
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST_GT")) {
 			/* título GT: importar (vira entrada), overlay 1 liga, desliga com a saída animada
 			 * (fica na tela até a animação acabar), e volta ao abrir o projeto */

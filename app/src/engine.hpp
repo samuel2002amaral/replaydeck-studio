@@ -45,6 +45,16 @@ QString inputColorHex(const QString &key); /* cor do cabeçalho (padrão se vazi
 
 enum class TransitionKind { Cut, Fade, Stinger, FadeToBlack };
 
+/* transição criada pelo operador (aba Transições): stinger, deslizar, varrer, luma... */
+struct StudioTransition {
+	int id = 0;
+	QString name;
+	OBSSourceAutoRelease source;
+	int durationMs = 1000; /* ignorada nas de duração fixa (stinger: a duração do vídeo) */
+	bool isStinger() const;
+	bool fixedDuration() const;
+};
+
 class Engine : public QObject {
 	Q_OBJECT
 
@@ -117,6 +127,18 @@ public:
 	void tbarMove(float t);
 	void tbarRelease(float t);
 
+	/* transições do operador (aba Transições) */
+	const QVector<StudioTransition *> &userTransitions() const { return trList; }
+	StudioTransition *userTransition(int id) const;
+	StudioTransition *addTransition(const QString &type, const QString &name, obs_data_t *settings, int ms = 1000);
+	void removeTransition(int id);
+	void renameTransition(int id, const QString &name);
+	void setUserTransitionMs(int id, int ms);
+	void moveTransition(int id, int delta); /* sobe/desce na lista (Transition1, Stinger1... seguem a ordem) */
+	void transitionWith(int id); /* prévia para o programa com esta transição */
+	StudioTransition *nthTransition(int n, bool stingerOnly) const; /* n a partir de 1 */
+	static QString transitionTypeName(const char *type);
+
 	/* overlays 1..4 (por cima do programa) */
 	int overlay(int channel) const;
 	void toggleOverlay(int channel, int id);
@@ -143,6 +165,7 @@ signals:
 	void transitionMsChanged();
 	void audioChanged(); /* volume geral */
 	void videoChanged(); /* resolução / fps */
+	void transitionsChanged(); /* lista da aba Transições */
 
 private:
 	Engine() = default;
@@ -151,6 +174,7 @@ private:
 	void applyVolume(Input *in);
 	void syncAudioBed();
 	void clearAll();
+	void clearTransitions();
 	obs_source_t *transitionFor(TransitionKind kind);
 
 	uint32_t baseW = 1920, baseH = 1080;
@@ -167,7 +191,9 @@ private:
 	bool started = false;
 	bool manual = false;
 
-	OBSSourceAutoRelease cutTr, fadeTr, stingerTr;
+	OBSSourceAutoRelease cutTr, fadeTr;
+	QVector<StudioTransition *> trList;
+	int nextTrId = 1;
 	OBSSourceAutoRelease blackScene;
 	OBSSourceAutoRelease audioBed; /* canal 5: áudio das entradas "sempre" que não estão no ar */
 	float master = 1.0f;
