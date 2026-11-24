@@ -24,6 +24,7 @@ public:
 
 protected:
 	void keyPressEvent(QKeyEvent *e) override;
+	void contextMenuEvent(QContextMenuEvent *e) override;
 	void mouseDoubleClickEvent(QMouseEvent *e) override;
 
 private:

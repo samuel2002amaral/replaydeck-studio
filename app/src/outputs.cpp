@@ -260,9 +260,11 @@ bool Outputs::startRecording(QString &error)
 	return false;
 }
 
+/* só para o que está ligado: parar uma saída que não ligou deixa o motor esperando
+ * um fim que nunca vem, e soltar essa saída trava o programa */
 void Outputs::stopRecording()
 {
-	if (recOut)
+	if (recOut && obs_output_active(recOut))
 		obs_output_stop(recOut);
 }
 
@@ -352,7 +354,7 @@ bool Outputs::startStreaming(QString &error)
 
 void Outputs::stopStreaming()
 {
-	if (streamOut)
+	if (streamOut && obs_output_active(streamOut))
 		obs_output_stop(streamOut);
 }
 
@@ -400,11 +402,13 @@ void Outputs::onStreamReconnected(void *data, calldata_t *)
 void Outputs::shutdown()
 {
 	if (recOut) {
-		obs_output_stop(recOut);
+		if (obs_output_active(recOut))
+			obs_output_stop(recOut);
 		signal_handler_disconnect(obs_output_get_signal_handler(recOut), "stop", onRecStop, this);
 	}
 	if (streamOut) {
-		obs_output_force_stop(streamOut);
+		if (obs_output_active(streamOut))
+			obs_output_force_stop(streamOut);
 		signal_handler_t *sh = obs_output_get_signal_handler(streamOut);
 		signal_handler_disconnect(sh, "stop", onStreamStop, this);
 		signal_handler_disconnect(sh, "reconnect", onStreamReconnect, this);

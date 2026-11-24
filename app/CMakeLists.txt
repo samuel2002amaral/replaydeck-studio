@@ -29,6 +29,7 @@ add_executable(replaydeck-studio WIN32
   src/outputs.cpp src/outputs.hpp
   src/settings-dialog.cpp src/settings-dialog.hpp
   src/external-output.cpp src/external-output.hpp
+  src/virtualcam.cpp src/virtualcam.hpp
   src/style.hpp
   # replay (veio do plugin ReplayDeck; roda dentro do programa)
   replay/engine.cpp replay/engine.hpp

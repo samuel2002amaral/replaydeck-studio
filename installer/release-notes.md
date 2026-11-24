@@ -1,5 +1,10 @@
 ## ReplayDeck Studio — fase 3 (áudio, gravar, transmitir, saída externa)
 
+> 2.4.0:
+> - **Câmera virtual** (botão "Câmera virtual ▾"): compartilha o Programa ou **uma entrada** como webcam para Zoom, navegador, WhatsApp, Teams. Aparece como **"ReplayDeck Studio"**. Na primeira vez o Windows pede permissão de administrador para instalar a câmera (uma vez só). Dá para trocar a entrada sem desligar.
+> - **Externo em janela** agora abre numa janela normal (com título: mover, mudar o tamanho, fechar). Antes abria sem bordas e sem cursor e parecia que a tela tinha travado. Na tela cheia: Esc, duplo clique ou botão direito → Fechar; e o programa avisa antes de cobrir a própria tela.
+> - Corrigido um travamento ao fechar o programa depois de encerrar uma transmissão.
+>
 > 2.3.1:
 > - **Botão direito minimiza na hora** (como no vMix); na barra, botão direito (ou duplo clique) expande.
 > - **Arrastar para mudar a ordem**: segure no cabeçalho (ou na barra) e solte onde quiser; a linha azul mostra onde ela entra.

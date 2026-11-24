@@ -64,6 +64,7 @@ private:
 	QTimer *statusTimer = nullptr;
 	QPushButton *recBtn = nullptr;
 	QPushButton *streamBtn = nullptr;
+	QPushButton *vcamBtn = nullptr;
 	QLabel *outStatus = nullptr;
 	os_cpu_usage_info_t *cpu = nullptr;
 	int dropIndex(const QPoint &pos, QRect *mark) const;

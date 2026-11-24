@@ -3,7 +3,9 @@
 #include "video-display.hpp"
 
 #include <QGuiApplication>
+#include <QContextMenuEvent>
 #include <QKeyEvent>
+#include <QMessageBox>
 #include <QMenu>
 #include <QScreen>
 #include <QVBoxLayout>
@@ -13,9 +15,7 @@ static QList<ExternalOutput *> g_outputs;
 ExternalOutput::ExternalOutput(What w, int inputId, QScreen *screen) : QWidget(nullptr), what(w), id(inputId)
 {
 	setAttribute(Qt::WA_DeleteOnClose);
-	setWindowFlags(Qt::Window | Qt::FramelessWindowHint);
 	setStyleSheet("background: #000000;");
-	setCursor(Qt::BlankCursor);
 	auto *v = new QVBoxLayout(this);
 	v->setContentsMargins(0, 0, 0, 0);
 	video = new VideoDisplay;
@@ -25,10 +25,15 @@ ExternalOutput::ExternalOutput(What w, int inputId, QScreen *screen) : QWidget(n
 	setWindowTitle("ReplayDeck Studio — " + description());
 
 	if (screen) {
+		/* tela cheia: sem bordas, ocupando o monitor escolhido */
+		setWindowFlags(Qt::Window | Qt::FramelessWindowHint);
 		setGeometry(screen->geometry());
 		setScreen(screen);
 		showFullScreen();
 	} else {
+		/* janela normal (com título): dá para mover, mudar o tamanho e fechar */
+		setWindowFlags(Qt::Window);
+		setMinimumSize(320, 180);
 		resize(960, 540);
 		show();
 	}
@@ -72,6 +77,25 @@ void ExternalOutput::refresh()
 		else
 			video->clear();
 	}
+}
+
+void ExternalOutput::contextMenuEvent(QContextMenuEvent *e)
+{
+	QMenu menu(this);
+	if (isFullScreen())
+		menu.addAction("Em janela", this, [this] {
+			setWindowFlags(Qt::Window);
+			showNormal();
+			resize(960, 540);
+		});
+	else
+		menu.addAction("Tela cheia aqui", this, [this] {
+			setWindowFlags(Qt::Window | Qt::FramelessWindowHint);
+			showFullScreen();
+		});
+	menu.addSeparator();
+	menu.addAction("Fechar (Esc)", this, &QWidget::close);
+	menu.exec(e->globalPos());
 }
 
 void ExternalOutput::keyPressEvent(QKeyEvent *e)
@@ -120,7 +144,16 @@ void ExternalOutput::fillMenu(QMenu *menu, QWidget *parent)
 	auto addTarget = [&](QMenu *m, What w, int inputId) {
 		for (int i = 0; i < screens.size(); i++) {
 			QScreen *s = screens[i];
-			m->addAction(screenLabel(s, i), parent, [w, inputId, s] { new ExternalOutput(w, inputId, s); });
+			m->addAction(screenLabel(s, i), parent, [w, inputId, s, parent] {
+				/* a mesma tela do programa fica coberta: avisa como sair */
+				if (parent && parent->screen() == s &&
+				    QMessageBox::question(parent, "Externo",
+							  "Essa é a tela onde o programa está: ela vai ficar coberta.\n\n"
+							  "Para sair: Esc, duplo clique ou botão direito → Fechar.\n\nContinuar?") !=
+					    QMessageBox::Yes)
+					return;
+				new ExternalOutput(w, inputId, s);
+			});
 		}
 		m->addSeparator();
 		m->addAction("Numa janela (para testar)", parent, [w, inputId] { new ExternalOutput(w, inputId, nullptr); });

@@ -2,7 +2,9 @@
 #include "engine.hpp"
 #include "replay-host.hpp"
 #include "outputs.hpp"
+#include "virtualcam.hpp"
 #include "settings-dialog.hpp"
+#include "external-output.hpp"
 #include "main-window.hpp"
 #include "dialogs.hpp"
 #include "style.hpp"
@@ -135,6 +137,88 @@ int main(int argc, char *argv[])
 			runSelfTest(w);
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST_REPLAY"))
 			replayhost::selfTest(&w);
+		if (qEnvironmentVariableIsSet("RDS_SELFTEST_VCAM")) {
+			/* câmera virtual: ligar com uma entrada, trocar, desligar (sem travar nem cair) */
+			QTimer::singleShot(800, [&w] {
+				Engine &e = Engine::get();
+				OBSDataAutoRelease c = obs_data_create();
+				obs_data_set_int(c, "color", 0xFF2050C0);
+				Input *in = e.addInput("color_source_v3", "CAM 1", c);
+				QString err;
+				blog(LOG_INFO, "[vcam] disponível=%d", VirtualCam::get().available());
+				const bool ok = VirtualCam::get().start(in ? in->id : 0, &w, err);
+				blog(LOG_INFO, "[vcam] entrada: ok=%d ativa=%d %s", ok, VirtualCam::get().active(), err.toUtf8().constData());
+				err.clear();
+				const bool ok2 = VirtualCam::get().start(0, &w, err);
+				blog(LOG_INFO, "[vcam] programa: ok=%d %s", ok2, err.toUtf8().constData());
+				VirtualCam::get().stop();
+				blog(LOG_INFO, "[vcam] desligada, ativa=%d", VirtualCam::get().active());
+			});
+			QTimer::singleShot(2500, [&w] { w.close(); });
+		}
+		if (qEnvironmentVariableIsSet("RDS_SELFTEST_VIEW")) {
+			/* a "visão" de uma entrada só (a mesma da câmera virtual), gravada num arquivo:
+			 * Programa = vermelho, entrada compartilhada = azul; o arquivo tem que sair azul */
+			static obs_view_t *view = nullptr;
+			static obs_output_t *out = nullptr;
+			QTimer::singleShot(800, [] {
+				Engine &e = Engine::get();
+				while (!e.inputs().isEmpty())
+					e.removeInput(e.inputs().first()->id);
+				OBSDataAutoRelease r = obs_data_create();
+				obs_data_set_int(r, "color", 0xFF0000FF);
+				Input *red = e.addInput("color_source_v3", "VERMELHO", r);
+				OBSDataAutoRelease b = obs_data_create();
+				obs_data_set_int(b, "color", 0xFFFF0000);
+				Input *blue = e.addInput("color_source_v3", "AZUL", b);
+				e.cutTo(red->id);
+				view = obs_view_create();
+				obs_view_set_source(view, 0, blue->scene);
+				obs_video_info ovi;
+				obs_get_video_info(&ovi);
+				video_t *v = obs_view_add2(view, &ovi);
+				OBSDataAutoRelease es = obs_data_create();
+				obs_encoder_t *enc = obs_video_encoder_create("obs_x264", "visao", es, nullptr);
+				obs_encoder_set_video(enc, v);
+				OBSDataAutoRelease os = obs_data_create();
+				obs_data_set_string(os, "path", qgetenv("RDS_SELFTEST_VIEW").constData());
+				out = obs_output_create("ffmpeg_muxer", "visao", os, nullptr);
+				obs_output_set_video_encoder(out, enc); /* o codificador já lê da visão (fica vivo até o fim) */
+				OBSDataAutoRelease as = obs_data_create();
+				obs_encoder_t *aenc = obs_audio_encoder_create("ffmpeg_aac", "visao-audio", as, 0, nullptr);
+				obs_encoder_set_audio(aenc, obs_get_audio());
+				obs_output_set_audio_encoder(out, aenc, 0);
+				blog(LOG_INFO, "[visao] gravando=%d", obs_output_start(out));
+			});
+			QTimer::singleShot(3000, [] {
+				blog(LOG_INFO, "[visao] 1 parar saída");
+				if (obs_output_active(out))
+					obs_output_force_stop(out);
+				blog(LOG_INFO, "[visao] 2 soltar saída");
+				obs_output_release(out);
+				blog(LOG_INFO, "[visao] 3 tirar visão");
+				obs_view_remove(view);
+				blog(LOG_INFO, "[visao] 4 limpar fonte");
+				obs_view_set_source(view, 0, nullptr);
+				blog(LOG_INFO, "[visao] 5 destruir visão");
+				obs_view_destroy(view);
+				blog(LOG_INFO, "[visao] parada");
+			});
+			QTimer::singleShot(3500, [&w] { w.close(); });
+		}
+		if (qEnvironmentVariableIsSet("RDS_SELFTEST_EXT")) {
+			/* Externo numa janela: a interface tem que continuar respondendo */
+			auto *beat = new QTimer(&w);
+			QObject::connect(beat, &QTimer::timeout, [] { blog(LOG_INFO, "[ext] interface viva"); });
+			beat->start(500);
+			QTimer::singleShot(1000, [] {
+				blog(LOG_INFO, "[ext] abrindo janela");
+				new ExternalOutput(ExternalOutput::What::Program, 0, nullptr);
+				blog(LOG_INFO, "[ext] janela aberta");
+			});
+			QTimer::singleShot(3000, [] { QProcess::execute("import", {"-window", "root", qEnvironmentVariable("RDS_SELFTEST_EXT")}); });
+			QTimer::singleShot(5000, [&w] { w.close(); });
+		}
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST_UI")) {
 			/* teste de mouse (xdotool): 4 entradas A-D; registra a ordem e quem está minimizada */
 			QTimer::singleShot(300, [] {
@@ -256,6 +340,7 @@ int main(int argc, char *argv[])
 			QTimer::singleShot(3000, [&w] { w.close(); });
 		}
 		ret = app.exec();
+		VirtualCam::get().shutdown();
 		Outputs::get().shutdown(); /* fecha o arquivo da gravação e a transmissão */
 		replayhost::shutdown(); /* para a gravação do replay antes de fechar a janela */
 	}

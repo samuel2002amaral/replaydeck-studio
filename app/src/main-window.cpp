@@ -5,6 +5,7 @@
 #include "external-output.hpp"
 #include "outputs.hpp"
 #include "settings-dialog.hpp"
+#include "virtualcam.hpp"
 #include <QMenu>
 #include <QDropEvent>
 #include <QMimeData>
@@ -446,11 +447,19 @@ QWidget *MainWindow::buildBottomBar()
 	connect(extMenu, &QMenu::aboutToShow, this, [this, extMenu] { ExternalOutput::fillMenu(extMenu, this); });
 	ext->setMenu(extMenu);
 	h->addWidget(ext);
+	vcamBtn = new QPushButton("Câmera virtual ▾");
+	vcamBtn->setObjectName("outButton");
+	vcamBtn->setToolTip("Compartilha o Programa ou uma entrada como webcam (Zoom, navegador, WhatsApp)");
+	auto *vcamMenu = new QMenu(vcamBtn);
+	connect(vcamMenu, &QMenu::aboutToShow, this, [this, vcamMenu] { VirtualCam::get().fillMenu(vcamMenu, this); });
+	vcamBtn->setMenu(vcamMenu);
+	connect(&VirtualCam::get(), &VirtualCam::stateChanged, this, &MainWindow::updateOutputs);
 	streamBtn = new QPushButton("Transmitir");
 	streamBtn->setObjectName("outButton");
 	streamBtn->setToolTip("Transmite o Programa ao vivo (Configurações → Transmissão)");
 	connect(streamBtn, &QPushButton::clicked, this, &MainWindow::toggleStreaming);
 	h->addWidget(streamBtn);
+	h->addWidget(vcamBtn);
 	const QList<QPair<QString, QString>> later = {{"MultiCorder", "fase 6"}, {"Playlist", "fase 6"}};
 	for (const auto &p : later) {
 		auto *b = new QPushButton(p.first);
@@ -599,6 +608,8 @@ void MainWindow::updateOutputs()
 	if (o.streaming())
 		st = (o.streamReconnecting() ? "↻ Reconectando " : "● Ao vivo ") + hms(o.streamingMs());
 	paint(streamBtn, o.streaming(), st);
+	VirtualCam &vc = VirtualCam::get();
+	paint(vcamBtn, vc.active(), vc.active() ? "● Câmera virtual: " + vc.description() + " ▾" : "Câmera virtual ▾");
 	if (o.streaming()) {
 		const int total = o.streamTotalFrames(), lost = o.streamDroppedFrames();
 		outStatus->setText(QString("Transmissão: %1 quadros perdidos (%2%)")

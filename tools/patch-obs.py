@@ -90,3 +90,16 @@ static void RdsEnumVideoDevicesCached(std::vector<VideoDevice> &out)
         t = t.replace(old, new)
     dshow.write_text(t, encoding="utf-8")
     print("patch-obs: win-dshow com procura de dispositivos reaproveitada")
+
+
+# Câmera virtual: aparece nos outros programas (Zoom, navegador, WhatsApp) como "ReplayDeck Studio".
+# O identificador (GUID) também é próprio (RDS_VIRTUALCAM_GUID no workflow): não briga com a câmera
+# virtual do OBS, se ele estiver instalado no mesmo PC.
+vcam = obs / "plugins" / "win-dshow" / "virtualcam-module" / "virtualcam-module.cpp"
+if vcam.exists():
+    t = vcam.read_text(encoding="utf-8")
+    if t.count('L"OBS Virtual Camera"') != 2:
+        sys.exit("patch-obs: virtualcam-module mudou (nome da câmera)")
+    t = t.replace('L"OBS Virtual Camera"', 'L"ReplayDeck Studio"')
+    vcam.write_text(t, encoding="utf-8")
+    print("patch-obs: câmera virtual com o nome ReplayDeck Studio")

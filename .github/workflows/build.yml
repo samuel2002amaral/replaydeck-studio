@@ -61,7 +61,8 @@ jobs:
       - name: "Motor: configurar"
         if: steps.engine.outputs.cache-hit != 'true'
         working-directory: obs
-        run: cmake --preset windows-x64 -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF "-DOBS_VERSION_OVERRIDE=$env:OBS_VERSION"
+        # GUID próprio da câmera virtual (o mesmo de app/src/virtualcam.cpp)
+        run: cmake --preset windows-x64 -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF "-DOBS_VERSION_OVERRIDE=$env:OBS_VERSION" "-DVIRTUALCAM_GUID=80797F4E-1E09-4520-9573-CAC17D1569CF"
 
       - name: "Motor: compilar"
         if: steps.engine.outputs.cache-hit != 'true'
@@ -140,6 +141,9 @@ jobs:
             if (-not (Get-ChildItem "$pkg/bin/64bit" -Filter $lib)) { throw "faltando no pacote: $lib (o replay usa o FFmpeg do motor)" }
           }
           if (-not (Test-Path "$pkg/data/replaydeck-studio/replay/lang/en.json")) { throw "faltando no pacote: idiomas do replay" }
+          $vcam = Get-ChildItem $pkg -Recurse -Filter obs-virtualcam-module64.dll | Select-Object -First 1
+          if (-not $vcam) { throw "faltando no pacote: câmera virtual (obs-virtualcam-module64.dll)" }
+          Write-Host "câmera virtual: $($vcam.FullName)"
           foreach ($m in @('aja-output-ui', 'frontend-tools', 'decklink-output-ui', 'obs-websocket')) {
             if (-not (Test-Path "$pkg/core/$m")) { throw "módulo core $m sumiu do pacote (o motor pararia de carregar os outros)" }
           }
