@@ -3,7 +3,6 @@
 Programa de transmissão ao vivo para esportes, com **interface própria no estilo vMix** e o **motor de vídeo do OBS (libobs)** por baixo.
 Uma tela só; replay, títulos GT, áudio e saídas ficam dentro dela.
 
-Desenho aprovado das telas: https://claude.ai/artifact/FEu9oqLV7BL5HjBqKL7Deo
 
 ## Fases
 
