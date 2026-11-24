@@ -32,11 +32,14 @@ public:
 	uint64_t droppedFrames() const { return dropped.load(); }
 	const std::string &encoderName() const { return encName; }
 	void rawFrame(struct video_data *frame) { onRawFrame(frame); }
+	void encodedPacket(struct encoder_packet *pkt); /* Studio: caminho da placa de vídeo */
 
 private:
 	void onRawFrame(struct video_data *frame);
 	void encodeLoop();
 	bool openEncoder(const char *name, std::string &err, bool withSlices = true, bool withCq = true);
+	/* Studio: codificador do motor (NVENC) direto da textura, sem copiar o quadro para a memória */
+	bool startGpu(const char *obsEncoderId, std::string &err);
 	void drainPackets();
 	AVFrame *getFrame();
 
@@ -51,6 +54,7 @@ private:
 	obs_view_t *view = nullptr;
 	video_t *video = nullptr;
 	obs_output_t *output = nullptr;
+	obs_encoder_t *obsEnc = nullptr; /* caminho da placa de vídeo (senão FFmpeg) */
 	struct video_scale_info conv = {};
 
 	uint32_t width = 0, height = 0;

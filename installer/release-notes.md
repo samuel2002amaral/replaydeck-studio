@@ -1,5 +1,7 @@
 ## ReplayDeck Studio — fase 3 (áudio, gravar, transmitir, saída externa)
 
+> 2.6.0: **replay muito mais leve**. No seu PC o replay não conseguia abrir a NVIDIA pelo FFmpeg e caía para MJPEG no processador (CPU alta e disco a 50 MB/s). Agora cada câmera do replay é comprimida pelo codificador NVIDIA do próprio motor, direto na placa de vídeo, sem copiar os quadros para a memória — o mesmo que a transmissão já usava. Se não der, tenta a NVIDIA pela memória e só depois o caminho antigo. Os erros do FFmpeg agora aparecem no log.
+>
 > 2.5.1: Ajuda → **Abrir pasta de logs** não fazia nada em alguns PCs (a associação de pastas do Windows quebrada). Agora abre o Explorer direto, já com o log mais novo selecionado. Novos: **Abrir o log atual** (Bloco de Notas) e **Copiar o log atual para a Área de Trabalho**.
 >
 > 2.5.0:

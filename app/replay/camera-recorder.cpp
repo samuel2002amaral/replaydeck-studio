@@ -2,11 +2,16 @@
 #include "camera-recorder.hpp"
 #include <util/platform.h>
 #include <util/threading.h>
+#include <cstring>
+#include <cstdlib>
+#include <cstdarg>
+#include <cstdio>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/opt.h>
+#include <libavutil/log.h>
 }
 
 #define MAX_QUEUE 30
@@ -26,8 +31,27 @@ CameraRecorder::~CameraRecorder()
 	obs_source_release(source);
 }
 
+/* Studio: os erros do FFmpeg vão para o log (antes só aparecia "Unknown error occurred") */
+static void ffmpegLog(void *, int level, const char *fmt, va_list args)
+{
+	if (level > AV_LOG_WARNING)
+		return;
+	char buf[512];
+	vsnprintf(buf, sizeof(buf), fmt, args);
+	size_t n = strlen(buf);
+	while (n && (buf[n - 1] == '\n' || buf[n - 1] == '\r'))
+		buf[--n] = 0;
+	if (n)
+		blog(LOG_WARNING, "[ReplayDeck] FFmpeg: %s", buf);
+}
+
 bool CameraRecorder::openEncoder(const char *name, std::string &err, bool withSlices, bool withCq)
 {
+	static bool logHooked = false;
+	if (!logHooked) {
+		logHooked = true;
+		av_log_set_callback(ffmpegLog);
+	}
 	const AVCodec *codec = avcodec_find_encoder_by_name(name);
 	if (!codec) {
 		err = std::string("encoder indisponível: ") + name;
@@ -154,6 +178,29 @@ bool CameraRecorder::start(std::string &err)
 	fpsDen = ovi.fps_den;
 	frameIntervalNs = 1000000000ULL * fpsDen / fpsNum;
 
+	/* --- Studio: primeiro o codificador do motor na placa de vídeo (zero cópia) --- */
+	{
+		std::string gerr;
+		const char *forced = getenv("RDS_REPLAY_OBS_ENCODER"); /* testes: obs_x264 */
+		const bool wantNv = cfg.encoder == "auto" || cfg.encoder.find("nvenc") != std::string::npos;
+		const char *id = forced ? forced
+				 : cfg.encoder.find("hevc") != std::string::npos ? "obs_nvenc_hevc_tex"
+										  : "obs_nvenc_h264_tex";
+		if ((forced || wantNv) && startGpu(id, gerr))
+			return true;
+		if (!gerr.empty())
+			rlog(LOG_INFO, "cam %d: %s", index + 1, gerr.c_str());
+		/* NVENC recebendo o quadro pela memória: ainda comprime na placa */
+		if (!forced && wantNv) {
+			std::string serr;
+			const char *soft = strstr(id, "hevc") ? "obs_nvenc_hevc_soft" : "obs_nvenc_h264_soft";
+			if (startGpu(soft, serr))
+				return true;
+			if (!serr.empty())
+				rlog(LOG_INFO, "cam %d: %s — usando o caminho antigo (FFmpeg)", index + 1, serr.c_str());
+		}
+	}
+
 	/* --- encoder --- */
 	bool ok = false;
 	std::string lastErr;
@@ -243,6 +290,10 @@ void CameraRecorder::stop()
 			obs_output_force_stop(output);
 		obs_output_release(output);
 		output = nullptr;
+	}
+	if (obsEnc) {
+		obs_encoder_release(obsEnc);
+		obsEnc = nullptr;
 	}
 	if (thread.joinable()) {
 		{
@@ -339,8 +390,152 @@ static void co_raw_video(void *data, struct video_data *frame)
 		co->owner->rawFrame(frame);
 }
 
+/* ---- Studio: saída que recebe os pacotes já comprimidos pelo codificador do motor ---- */
+
+static bool coe_start(void *data)
+{
+	auto *co = static_cast<CaptureOutput *>(data);
+	if (!obs_output_can_begin_data_capture(co->output, 0))
+		return false;
+	if (!obs_output_initialize_encoders(co->output, 0))
+		return false;
+	return obs_output_begin_data_capture(co->output, 0);
+}
+
+static void coe_packet(void *data, struct encoder_packet *pkt)
+{
+	auto *co = static_cast<CaptureOutput *>(data);
+	if (co->owner && pkt && pkt->type == OBS_ENCODER_VIDEO)
+		co->owner->encodedPacket(pkt);
+}
+
+static bool encoderRegistered(const char *id)
+{
+	const char *t = nullptr;
+	for (size_t i = 0; obs_enum_encoder_types(i, &t); i++)
+		if (strcmp(t, id) == 0)
+			return true;
+	return false;
+}
+
+bool CameraRecorder::startGpu(const char *id, std::string &err)
+{
+	if (!encoderRegistered(id)) {
+		err = std::string(id) + " indisponível";
+		return false;
+	}
+	const bool hevc = strstr(id, "hevc") != nullptr;
+	const bool x264 = strcmp(id, "obs_x264") == 0;
+	const int q = cfg.cq > 0 ? cfg.cq : 18;
+
+	/* só quadros-chave (cada quadro abre sozinho: ré, quadro a quadro), qualidade constante,
+	 * cabeçalho em todo quadro, sem atraso */
+	obs_data_t *s = obs_data_create();
+	if (x264) {
+		obs_data_set_string(s, "rate_control", "CRF");
+		obs_data_set_int(s, "crf", q);
+		obs_data_set_string(s, "preset", "veryfast");
+		obs_data_set_string(s, "tune", "zerolatency");
+		obs_data_set_string(s, "x264opts", "keyint=1:min-keyint=1:scenecut=0:bframes=0");
+		obs_data_set_bool(s, "repeat_headers", true);
+	} else {
+		if (cfg.cq > 0) {
+			obs_data_set_string(s, "rate_control", "CQP");
+			obs_data_set_int(s, "cqp", q);
+		} else {
+			obs_data_set_string(s, "rate_control", "CBR");
+			obs_data_set_int(s, "bitrate", cfg.bitrateMbps * 1000);
+			obs_data_set_int(s, "max_bitrate", cfg.bitrateMbps * 1000);
+		}
+		obs_data_set_string(s, "preset", "p4");
+		obs_data_set_string(s, "tune", "ll");
+		obs_data_set_string(s, "multipass", "disabled");
+		obs_data_set_int(s, "bf", 0);
+		obs_data_set_bool(s, "lookahead", false);
+		obs_data_set_bool(s, "repeat_headers", true);
+		obs_data_set_string(s, "opts", "keyint=1");
+	}
+	char name[48];
+	snprintf(name, sizeof(name), "replay-cam%d", index + 1);
+	obsEnc = obs_video_encoder_create(id, name, s, nullptr);
+	obs_data_release(s);
+	if (!obsEnc) {
+		err = std::string(id) + ": não criou";
+		return false;
+	}
+
+	/* visão própria desta câmera, já convertida na placa (NV12) */
+	struct obs_video_info ovi;
+	obs_get_video_info(&ovi);
+	ovi.gpu_conversion = true;
+	ovi.base_width = ovi.output_width = width;
+	ovi.base_height = ovi.output_height = height;
+	view = obs_view_create();
+	obs_view_set_source(view, 0, source);
+	video = obs_view_add2(view, &ovi);
+	if (!video) {
+		err = "obs_view_add2 falhou";
+		stop();
+		return false;
+	}
+	obs_encoder_set_video(obsEnc, video);
+
+	const char *ext = hevc ? ".h265" : ".h264";
+	rec->codecId = hevc ? AV_CODEC_ID_HEVC : AV_CODEC_ID_H264;
+	rec->width = (int)width;
+	rec->height = (int)height;
+	if (!rec->open(basePath + ext, basePath + ".idx")) {
+		err = "não foi possível criar " + basePath + ext;
+		stop();
+		return false;
+	}
+
+	obs_data_t *settings = obs_data_create();
+	obs_data_set_int(settings, "owner", (long long)(intptr_t)this);
+	snprintf(name, sizeof(name), "instant-replay-cam%d", index + 1);
+	output = obs_output_create("instant_replay_capture_enc", name, settings, nullptr);
+	obs_data_release(settings);
+	if (!output) {
+		err = "não foi possível criar a saída de captura";
+		stop();
+		return false;
+	}
+	obs_output_set_video_encoder(output, obsEnc);
+	if (!obs_output_start(output)) {
+		const char *e = obs_output_get_last_error(output);
+		err = std::string(id) + " não ligou" + (e ? std::string(": ") + e : std::string());
+		stop();
+		return false;
+	}
+	encName = id;
+	rlog(LOG_INFO, "cam %d: gravando '%s' %ux%u @ %u/%u com %s na placa de vídeo (sem cópia) -> %s", index + 1,
+	     obs_source_get_name(source), width, height, fpsNum, fpsDen, id, rec->path.c_str());
+	return true;
+}
+
+void CameraRecorder::encodedPacket(struct encoder_packet *pkt)
+{
+	/* mesmo relógio das outras câmeras: horário do quadro (dts = pts, tudo quadro-chave) */
+	const int64_t tsNs = pkt->dts_usec * 1000;
+	if (tsNs < (int64_t)startTs)
+		return;
+	const int64_t frameNo = (tsNs - (int64_t)startTs + (int64_t)frameIntervalNs / 2) / (int64_t)frameIntervalNs;
+	rec->append(frameNo, pkt->data, pkt->size);
+}
+
 void registerReplayCaptureOutput()
 {
+	struct obs_output_info enc = {};
+	enc.id = "instant_replay_capture_enc";
+	enc.flags = OBS_OUTPUT_VIDEO | OBS_OUTPUT_ENCODED;
+	enc.get_name = co_name;
+	enc.create = co_create;
+	enc.destroy = co_destroy;
+	enc.start = coe_start;
+	enc.stop = co_stop;
+	enc.encoded_packet = coe_packet;
+	obs_register_output(&enc);
+
 	struct obs_output_info info = {};
 	info.id = "instant_replay_capture";
 	info.flags = OBS_OUTPUT_VIDEO;
