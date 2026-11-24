@@ -25,6 +25,10 @@ add_executable(replaydeck-studio WIN32
   src/dialogs.cpp src/dialogs.hpp
   src/main-window.cpp src/main-window.hpp
   src/replay-host.cpp src/replay-host.hpp
+  src/audio-mixer.cpp src/audio-mixer.hpp
+  src/outputs.cpp src/outputs.hpp
+  src/settings-dialog.cpp src/settings-dialog.hpp
+  src/external-output.cpp src/external-output.hpp
   src/style.hpp
   # replay (veio do plugin ReplayDeck; roda dentro do programa)
   replay/engine.cpp replay/engine.hpp
@@ -99,4 +103,8 @@ if(RDS_BUILD_TESTS)
   target_link_libraries(engine-enable-test PRIVATE OBS::libobs Qt6::Core Qt6::Gui Qt6::Widgets)
   target_compile_definitions(engine-enable-test PRIVATE RDS_VERSION="teste")
   set_target_properties(engine-enable-test PROPERTIES CXX_STANDARD 17 AUTOMOC ON)
+  add_executable(engine-audio-test tests/engine-audio-test.cpp src/engine.cpp src/engine.hpp src/props-cache.cpp)
+  target_link_libraries(engine-audio-test PRIVATE OBS::libobs Qt6::Core Qt6::Gui Qt6::Widgets)
+  target_compile_definitions(engine-audio-test PRIVATE RDS_VERSION="teste")
+  set_target_properties(engine-audio-test PROPERTIES CXX_STANDARD 17 AUTOMOC ON)
 endif()

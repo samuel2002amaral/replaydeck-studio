@@ -10,12 +10,16 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QSet>
 
 #include <algorithm>
 #include <cstring>
 #include <cstdarg>
 #include <cstdio>
 #include <mutex>
+
+/* canal de saída do áudio "sempre ligado" (0 = programa, 1-4 = overlays) */
+static const int AUDIO_BED_CHANNEL = 5;
 
 /* ---------- log em arquivo: config/ReplayDeckStudio/logs/AAAA-MM-DD hh-mm-ss.txt ---------- */
 
@@ -88,14 +92,29 @@ bool Engine::start(QString &error)
 		return false;
 	}
 
+	{
+		/* resolução e fps escolhidos em Configurações (configuracoes.json) */
+		OBSDataAutoRelease st = obs_data_create_from_json_file_safe(
+			QFile::encodeName(cfgDir + "/configuracoes.json").constData(), "bak");
+		if (st && obs_data_has_user_value(st, "largura")) {
+			const int w = (int)obs_data_get_int(st, "largura"), h = (int)obs_data_get_int(st, "altura");
+			const int n = (int)obs_data_get_int(st, "fps_num"), d = (int)obs_data_get_int(st, "fps_den");
+			if (w >= 320 && h >= 240 && n > 0 && d > 0) {
+				baseW = (uint32_t)w;
+				baseH = (uint32_t)h;
+				fpsNum = (uint32_t)n;
+				fpsDen = (uint32_t)d;
+			}
+		}
+	}
 	obs_video_info ovi = {};
 #ifdef _WIN32
 	ovi.graphics_module = "libobs-d3d11";
 #else
 	ovi.graphics_module = "libobs-opengl";
 #endif
-	ovi.fps_num = 30;
-	ovi.fps_den = 1;
+	ovi.fps_num = fpsNum;
+	ovi.fps_den = fpsDen;
 	ovi.base_width = baseW;
 	ovi.base_height = baseH;
 	ovi.output_width = baseW;
@@ -143,6 +162,16 @@ bool Engine::start(QString &error)
 
 	activeTr = fadeTr;
 	obs_set_output_source(0, fadeTr);
+
+	/* áudio "sempre ligado" (microfones): uma cena só de áudio no canal 5, sem imagem */
+	obs_scene_t *bed = obs_scene_create_private("Áudio sempre ligado");
+	audioBed = obs_scene_get_source(bed);
+	obs_source_get_ref(audioBed);
+	obs_scene_release(bed);
+	obs_set_output_source(AUDIO_BED_CHANNEL, audioBed);
+	connect(this, &Engine::busChanged, this, &Engine::syncAudioBed);
+	connect(this, &Engine::inputsChanged, this, &Engine::syncAudioBed);
+	connect(this, &Engine::inputChanged, this, &Engine::syncAudioBed);
 	started = true;
 
 	/* prepara em segundo plano as opções dos tipos lentos (câmera, placas, áudio, capturas):
@@ -181,6 +210,7 @@ void Engine::stop()
 	fadeTr = nullptr;
 	stingerTr = nullptr;
 	blackScene = nullptr;
+	audioBed = nullptr;
 	activeTr = nullptr;
 	started = false;
 	obs_shutdown();
@@ -250,6 +280,8 @@ static Input *wrapSource(int id, const QString &name, obs_source_t *src, uint32_
 	in->scene = obs_scene_get_source(scene);
 	obs_source_get_ref(in->scene);
 	obs_scene_release(scene);
+	/* áudio: com imagem segue o vídeo (Auto); só áudio (microfone) fica sempre na mistura */
+	in->audioAuto = (obs_source_get_output_flags(src) & OBS_SOURCE_VIDEO) != 0;
 	/* como no vMix: toda entrada fica ativa (imagem ao vivo na miniatura) */
 	obs_source_inc_showing(in->scene);
 	return in;
@@ -291,6 +323,9 @@ Input *Engine::addSharedInput(int fromId, const QString &name)
 	const int id = nextId++;
 	Input *in = wrapSource(id, name, obs_source_get_ref(from->source), baseW, baseH);
 	in->audioOn = from->audioOn;
+	in->volume = from->volume;
+	in->audioAuto = from->audioAuto;
+	in->monitor = from->monitor;
 	list.append(in);
 	blog(LOG_INFO, "entrada %d criada usando a mesma fonte da entrada %d", id, fromId);
 	emit inputsChanged();
@@ -482,6 +517,138 @@ void Engine::setInputAudio(int id, bool on)
 		obs_source_set_muted(in->source, !on);
 		emit inputChanged(id);
 	}
+}
+
+bool Engine::hasAudio(const Input *in)
+{
+	return in && (obs_source_get_output_flags(in->source) & OBS_SOURCE_AUDIO);
+}
+
+void Engine::applyVolume(Input *in)
+{
+	obs_source_set_volume(in->source, in->volume * master);
+}
+
+void Engine::setInputVolume(int id, float mul)
+{
+	if (Input *in = input(id)) {
+		in->volume = std::clamp(mul, 0.0f, 4.0f);
+		for (Input *o : list) /* mesma fonte (mesma câmera) em outra entrada: o volume é um só */
+			if (o->source.Get() == in->source.Get())
+				o->volume = in->volume;
+		applyVolume(in);
+		emit inputChanged(id);
+	}
+}
+
+void Engine::setInputAudioAuto(int id, bool on)
+{
+	if (Input *in = input(id)) {
+		in->audioAuto = on;
+		emit inputChanged(id);
+	}
+}
+
+void Engine::setInputMonitor(int id, bool on)
+{
+	if (Input *in = input(id)) {
+		in->monitor = on;
+		obs_source_set_monitoring_type(in->source, on ? OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT
+							      : OBS_MONITORING_TYPE_NONE);
+		emit inputChanged(id);
+	}
+}
+
+void Engine::setMasterVolume(float mul)
+{
+	master = std::clamp(mul, 0.0f, 4.0f);
+	for (Input *in : list)
+		applyVolume(in);
+	emit audioChanged();
+}
+
+/* Entradas "sempre" (sem Auto) que não estão no ar tocam pela cena de áudio do canal 5;
+ * as que estão no ar tocam pelo próprio programa/overlay (sem dobrar o som). */
+void Engine::syncAudioBed()
+{
+	if (!audioBed)
+		return;
+	QSet<obs_source_t *> onAir;
+	if (Input *p = input(pgm); p && !ftb)
+		onAir << p->source.Get();
+	for (int ch = 1; ch <= 4; ch++)
+		if (Input *o = input(ov[ch]))
+			onAir << o->source.Get();
+	QSet<obs_source_t *> want;
+	for (Input *in : list)
+		if (in->audioOn && !in->audioAuto && hasAudio(in) && !onAir.contains(in->source.Get()))
+			want << in->source.Get();
+
+	obs_scene_t *bed = obs_scene_from_source(audioBed);
+	QList<obs_sceneitem_t *> items;
+	obs_scene_enum_items(
+		bed,
+		[](obs_scene_t *, obs_sceneitem_t *item, void *p) {
+			static_cast<QList<obs_sceneitem_t *> *>(p)->append(item);
+			return true;
+		},
+		&items);
+	QSet<obs_source_t *> have;
+	for (obs_sceneitem_t *item : items) {
+		obs_source_t *src = obs_sceneitem_get_source(item);
+		if (want.contains(src))
+			have << src;
+		else
+			obs_sceneitem_remove(item);
+	}
+	for (obs_source_t *src : want) {
+		if (have.contains(src))
+			continue;
+		obs_sceneitem_t *item = obs_scene_add(bed, src);
+		vec2 zero;
+		vec2_zero(&zero);
+		obs_sceneitem_set_scale(item, &zero); /* só o som: a imagem não aparece */
+	}
+}
+
+bool Engine::resetVideo(uint32_t w, uint32_t h, uint32_t num, uint32_t den, QString &error)
+{
+	if (w == baseW && h == baseH && num == fpsNum && den == fpsDen)
+		return true;
+	obs_video_info ovi = {};
+	if (!obs_get_video_info(&ovi)) {
+		error = "O vídeo não está ligado.";
+		return false;
+	}
+	ovi.base_width = ovi.output_width = w;
+	ovi.base_height = ovi.output_height = h;
+	ovi.fps_num = num;
+	ovi.fps_den = den;
+	const int rv = obs_reset_video(&ovi);
+	if (rv != OBS_VIDEO_SUCCESS) {
+		error = rv == OBS_VIDEO_CURRENTLY_ACTIVE
+				? "Pare a gravação, a transmissão e a gravação do replay antes de mudar o vídeo."
+				: QString("O vídeo não aceitou essa configuração (código %1).").arg(rv);
+		return false;
+	}
+	baseW = w;
+	baseH = h;
+	fpsNum = num;
+	fpsDen = den;
+	/* as entradas continuam ocupando a tela inteira no tamanho novo */
+	for (Input *in : list) {
+		obs_scene_enum_items(
+			obs_scene_from_source(in->scene),
+			[](obs_scene_t *, obs_sceneitem_t *item, void *p) {
+				auto *e = static_cast<Engine *>(p);
+				fitToCanvas(item, e->baseWidth(), e->baseHeight());
+				return true;
+			},
+			this);
+	}
+	blog(LOG_INFO, "vídeo: %ux%u, %u/%u fps", w, h, num, den);
+	emit videoChanged();
+	return true;
 }
 
 void Engine::setInputLoop(int id, bool on)
@@ -708,6 +875,9 @@ bool Engine::saveProject(const QString &path)
 		obs_data_set_bool(o, "loop", in->loop);
 		obs_data_set_bool(o, "audio", in->audioOn);
 		obs_data_set_bool(o, "desativada", !in->enabled);
+		obs_data_set_double(o, "volume", in->volume);
+		obs_data_set_bool(o, "audio_auto", in->audioAuto);
+		obs_data_set_bool(o, "fone", in->monitor);
 		if (const int from = sharedFrom(in->id)) {
 			obs_data_set_int(o, "mesma_fonte_de", from);
 		} else {
@@ -720,6 +890,7 @@ bool Engine::saveProject(const QString &path)
 	obs_data_set_int(root, "previa", pvw);
 	obs_data_set_int(root, "programa", pgm);
 	obs_data_set_int(root, "transicao_ms", durationMs);
+	obs_data_set_double(root, "volume_geral", master);
 	const QByteArray p = QFile::encodeName(path);
 	const bool ok = obs_data_save_json_safe(root, p.constData(), "tmp", "bak");
 	if (ok)
@@ -759,6 +930,14 @@ bool Engine::loadProject(const QString &path)
 		Input *in = wrapSource(id, QString::fromUtf8(obs_data_get_string(o, "nome")), src, baseW, baseH);
 		in->loop = obs_data_get_bool(o, "loop");
 		in->audioOn = !obs_data_has_user_value(o, "audio") || obs_data_get_bool(o, "audio");
+		if (obs_data_has_user_value(o, "volume"))
+			in->volume = (float)obs_data_get_double(o, "volume");
+		if (obs_data_has_user_value(o, "audio_auto"))
+			in->audioAuto = obs_data_get_bool(o, "audio_auto");
+		in->monitor = obs_data_get_bool(o, "fone");
+		if (in->monitor)
+			obs_source_set_monitoring_type(src, OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT);
+		applyVolume(in);
 		if (obs_data_has_user_value(o, "desativada"))
 			in->enabled = !obs_data_get_bool(o, "desativada");
 		else
@@ -768,6 +947,8 @@ bool Engine::loadProject(const QString &path)
 		list.append(in);
 		nextId = std::max(nextId, id + 1);
 	}
+	if (obs_data_has_user_value(root, "volume_geral"))
+		setMasterVolume((float)obs_data_get_double(root, "volume_geral"));
 	if (obs_data_has_user_value(root, "transicao_ms"))
 		setTransitionMs((int)obs_data_get_int(root, "transicao_ms"));
 	projPath = path;

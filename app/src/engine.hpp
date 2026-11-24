@@ -25,6 +25,11 @@ struct Input {
 	bool audioOn = true;
 	/* desativada: só ESTA entrada fica preta; a câmera só desliga quando todas que a usam estão desativadas */
 	bool enabled = true;
+	/* áudio (como no vMix): On = entra na mistura; Auto = só quando a entrada está no ar
+	 * (padrão das entradas com imagem); sem Auto = sempre (microfone) */
+	float volume = 1.0f; /* multiplicador (1 = 0 dB) */
+	bool audioAuto = true;
+	bool monitor = false; /* ouvir no fone (saída de monitoramento) */
 };
 
 enum class TransitionKind { Cut, Fade, Stinger, FadeToBlack };
@@ -41,6 +46,10 @@ public:
 
 	uint32_t baseWidth() const { return baseW; }
 	uint32_t baseHeight() const { return baseH; }
+	uint32_t fpsNumerator() const { return fpsNum; }
+	uint32_t fpsDenominator() const { return fpsDen; }
+	/* resolução e quadros por segundo (só sem nada gravando/transmitindo) */
+	bool resetVideo(uint32_t w, uint32_t h, uint32_t num, uint32_t den, QString &error);
 	QString configDir() const { return cfgDir; }
 
 	/* entradas */
@@ -65,6 +74,12 @@ public:
 	void setInputAudio(int id, bool on);
 	void setInputLoop(int id, bool on);
 	void setInputEnabled(int id, bool on);
+	void setInputVolume(int id, float mul);
+	void setInputAudioAuto(int id, bool on);
+	void setInputMonitor(int id, bool on);
+	float masterVolume() const { return master; }
+	void setMasterVolume(float mul);
+	static bool hasAudio(const Input *in);
 	/* liga/desliga o aparelho conforme as entradas que o usam (ligado se alguma estiver ativa) */
 	void syncDevice(obs_source_t *source);
 	static bool deviceActive(obs_source_t *source); /* câmera ligada? (true para o que não é câmera) */
@@ -110,15 +125,20 @@ signals:
 	void busChanged(); /* prévia, programa ou overlays mudaram */
 	void inputRenamed(int id, const QString &oldName, const QString &newName);
 	void transitionMsChanged();
+	void audioChanged(); /* volume geral */
+	void videoChanged(); /* resolução / fps */
 
 private:
 	Engine() = default;
 	void setProgramScene(obs_source_t *scene, TransitionKind kind);
 	void setProgramSceneWith(obs_source_t *scene, obs_source_t *transition, int ms);
+	void applyVolume(Input *in);
+	void syncAudioBed();
 	void clearAll();
 	obs_source_t *transitionFor(TransitionKind kind);
 
 	uint32_t baseW = 1920, baseH = 1080;
+	uint32_t fpsNum = 30, fpsDen = 1;
 	QString cfgDir;
 	QString projPath;
 	QVector<Input *> list;
@@ -132,5 +152,7 @@ private:
 
 	OBSSourceAutoRelease cutTr, fadeTr, stingerTr;
 	OBSSourceAutoRelease blackScene;
+	OBSSourceAutoRelease audioBed; /* canal 5: áudio das entradas "sempre" que não estão no ar */
+	float master = 1.0f;
 	obs_source_t *activeTr = nullptr;
 };

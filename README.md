@@ -10,9 +10,9 @@ Desenho aprovado das telas: https://claude.ai/artifact/FEu9oqLV7BL5HjBqKL7Deo
 | Fase | Conteúdo | Situação |
 |---|---|---|
 | 2 | Base: entradas, prévia/programa, transições, overlays, janela da entrada, projeto | v2.0.11 |
-| 3 | Mixer de áudio, transmissão, gravação, configurações, saída externa | próxima |
-| 4 | Replay instantâneo (código do ReplayDeck) dentro do programa | **v2.1.0** |
-| 5 | Títulos GT e overlays | |
+| 3 | Mixer de áudio, transmissão, gravação, configurações, saída externa | **v2.2.0** (falta o fone com o árbitro) |
+| 4 | Replay instantâneo (código do ReplayDeck) dentro do programa | v2.1.0 |
+| 5 | Títulos GT e overlays | próxima |
 | 6 | MultiCorder, PTZ, lista, fone com o árbitro, atalhos, API vMix | |
 
 ## Código
@@ -26,7 +26,8 @@ Desenho aprovado das telas: https://claude.ai/artifact/FEu9oqLV7BL5HjBqKL7Deo
 
 Teste local (Linux, contra o libobs instalado): `cmake -S app -B build && cmake --build build`;
 `RDS_SELFTEST=/tmp/tela.png ./build/ReplayDeckStudio` roda um teste automático (cria entradas, transições, salva/abre projeto);
-`RDS_SELFTEST_REPLAY=/tmp/replay.png` grava duas entradas, marca um evento, põe o replay no ar e confere a volta.
+`RDS_SELFTEST_REPLAY=/tmp/replay.png` grava duas entradas, marca um evento, põe o replay no ar e confere a volta;
+`RDS_SELFTEST_OUTPUTS=<pasta> RDS_SELFTEST_RTMP=rtmp://… RDS_SELFTEST_TONE=<wav>` grava, transmite e muda para 720p.
 
 ## Licença
 

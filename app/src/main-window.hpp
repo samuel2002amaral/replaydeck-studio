@@ -41,6 +41,9 @@ private:
 	void openInput(int id);
 	void addInput();
 	void notYet(const QString &what, const QString &phase);
+	void toggleRecording();
+	void toggleStreaming();
+	void updateOutputs();
 
 	VideoDisplay *preview = nullptr;
 	VideoDisplay *program = nullptr;
@@ -58,6 +61,9 @@ private:
 	QTabWidget *rightTabs = nullptr;
 	QLabel *status[5] = {};
 	QTimer *statusTimer = nullptr;
+	QPushButton *recBtn = nullptr;
+	QPushButton *streamBtn = nullptr;
+	QLabel *outStatus = nullptr;
 	os_cpu_usage_info_t *cpu = nullptr;
 	int lastCols = 0;
 };

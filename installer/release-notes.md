@@ -1,6 +1,12 @@
-## ReplayDeck Studio — fase 4 (replay dentro do programa)
+## ReplayDeck Studio — fase 3 (áudio, gravar, transmitir, saída externa)
 
-> 2.1.0: **replay dentro do programa** — o painel do ReplayDeck fica na aba "Replay instantâneo" (canto inferior direito), sem plugin e sem OBS. As câmeras do replay são as suas entradas; "Replay A" e "Replay B" viram entradas (vão para Prévia, Programa, GO, overlays). Tocar um evento põe o Replay A no ar e volta sozinho para a entrada de antes. Na primeira vez abre a configuração rápida (câmeras, pasta, qualidade). Menu Replay: gravar/parar, configuração rápida, configurações. Inclui a 2.0.11 (Desativar vale só para a entrada).
+> 2.2.0:
+> - **Mixer de áudio** (aba ao lado do replay): uma faixa por entrada com som — medidor, volume em dB, **On**, **Auto** (só toca quando a entrada está no ar; padrão das câmeras e vídeos) e **Fone**. Microfone e áudio do computador tocam sempre, mesmo fora do Programa. Faixa **MASTER** com o medidor do que sai.
+> - **Gravar**: grava o Programa em MP4 (não corrompe se cair a energia), MKV ou MOV; usa a placa de vídeo (NVIDIA/AMD/Intel) e cai para o processador se precisar.
+> - **Transmitir**: YouTube, Facebook, Twitch, Kick ou servidor próprio; reconecta sozinho se a internet cair; quadros perdidos na barra de baixo.
+> - **Externo**: Programa, Prévia, Replay A/B (monitor do VAR) ou qualquer entrada em tela cheia noutro monitor/TV. Esc ou duplo clique fecha.
+> - **Configurações**: resolução (1080p, 720p, 4K, vertical) e quadros por segundo, gravação, transmissão e o fone.
+> - Inclui a 2.1.0: replay dentro do programa.
 
 Programa próprio, com a tela aprovada (estilo vMix). Do OBS fica só o motor de vídeo por baixo.
 

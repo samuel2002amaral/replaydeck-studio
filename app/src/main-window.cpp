@@ -1,5 +1,11 @@
 #include "main-window.hpp"
 #include "replay-host.hpp"
+#include "audio-mixer.hpp"
+#include "external-output.hpp"
+#include "outputs.hpp"
+#include "settings-dialog.hpp"
+#include <QMenu>
+#include <QStyle>
 #include "dialogs.hpp"
 #include "engine.hpp"
 #include "input-tile.hpp"
@@ -68,6 +74,13 @@ MainWindow::MainWindow()
 		l->setObjectName("statusText");
 		sb->addWidget(l);
 	}
+	outStatus = new QLabel;
+	outStatus->setObjectName("statusText");
+	sb->addPermanentWidget(outStatus);
+	connect(&Outputs::get(), &Outputs::stateChanged, this, &MainWindow::updateOutputs);
+	connect(&Outputs::get(), &Outputs::failed, this, [this](const QString &what, const QString &msg) {
+		QMessageBox::warning(this, what, what + " parou.\n\n" + msg);
+	});
 
 	buildMenus();
 
@@ -332,7 +345,7 @@ QWidget *MainWindow::buildRightPanel()
 	rightTabs->setObjectName("rightTabs");
 	rightTabs->setMinimumWidth(560);
 	rightTabs->addTab(replayhost::start(this), "Replay instantâneo");
-	rightTabs->addTab(comingSoon("Mixer de áudio", "Chega na fase 3, junto com transmissão e gravação."), "Mixer de áudio");
+	rightTabs->addTab(new AudioMixer, "Mixer de áudio");
 	rightTabs->addTab(comingSoon("Títulos GT", "Chega na fase 5."), "Títulos GT");
 	rightTabs->addTab(comingSoon("PTZ", "Chega na fase 6."), "PTZ");
 	rightTabs->addTab(comingSoon("Lista", "Lista de vídeos: chega na fase 6."), "Lista");
@@ -353,8 +366,23 @@ QWidget *MainWindow::buildBottomBar()
 	connect(add, &QPushButton::clicked, this, &MainWindow::addInput);
 	h->addWidget(add);
 	h->addSpacing(10);
-	const QList<QPair<QString, QString>> later = {{"Gravar", "fase 3"}, {"Externo", "fase 3"}, {"Transmitir", "fase 3"},
-						      {"MultiCorder", "fase 6"}, {"Playlist", "fase 6"}};
+	recBtn = new QPushButton("Gravar");
+	recBtn->setObjectName("outButton");
+	recBtn->setToolTip("Grava o Programa num arquivo (Configurações → Gravação)");
+	connect(recBtn, &QPushButton::clicked, this, &MainWindow::toggleRecording);
+	h->addWidget(recBtn);
+	auto *ext = new QPushButton("Externo ▾");
+	ext->setToolTip("Programa, Prévia ou Replay em tela cheia noutro monitor ou TV (telão, VAR)");
+	auto *extMenu = new QMenu(ext);
+	connect(extMenu, &QMenu::aboutToShow, this, [this, extMenu] { ExternalOutput::fillMenu(extMenu, this); });
+	ext->setMenu(extMenu);
+	h->addWidget(ext);
+	streamBtn = new QPushButton("Transmitir");
+	streamBtn->setObjectName("outButton");
+	streamBtn->setToolTip("Transmite o Programa ao vivo (Configurações → Transmissão)");
+	connect(streamBtn, &QPushButton::clicked, this, &MainWindow::toggleStreaming);
+	h->addWidget(streamBtn);
+	const QList<QPair<QString, QString>> later = {{"MultiCorder", "fase 6"}, {"Playlist", "fase 6"}};
 	for (const auto &p : later) {
 		auto *b = new QPushButton(p.first);
 		b->setToolTip("Chega na " + p.second);
@@ -363,14 +391,14 @@ QWidget *MainWindow::buildBottomBar()
 	}
 	h->addStretch(1);
 	auto *cfg = new QPushButton("⚙ Configurações");
-	connect(cfg, &QPushButton::clicked, this, [this] { notYet("Configurações", "fase 3"); });
+	connect(cfg, &QPushButton::clicked, this, [this] { SettingsDialog(this).exec(); });
 	h->addWidget(cfg);
 	return w;
 }
 
 void MainWindow::notYet(const QString &what, const QString &phase)
 {
-	QMessageBox::information(this, what, QString("\"%1\" chega na %2.\nEsta versão é a base: entradas, prévia, programa, transições e overlays.").arg(what, phase));
+	QMessageBox::information(this, what, QString("\"%1\" chega na %2.").arg(what, phase));
 }
 
 /* ---------- menus ---------- */
@@ -427,7 +455,10 @@ void MainWindow::buildMenus()
 	QMenu *titles = menuBar()->addMenu("Títulos");
 	titles->addAction("Títulos GT…", this, [this] { notYet("Títulos GT", "fase 5"); });
 	QMenu *cfg = menuBar()->addMenu("Configurações");
-	cfg->addAction("Configurações…", this, [this] { notYet("Configurações", "fase 3"); });
+	cfg->addAction("Configurações…", this, [this] { SettingsDialog(this).exec(); });
+	cfg->addAction("Vídeo (resolução e fps)…", this, [this] { SettingsDialog(this, SettingsDialog::Video).exec(); });
+	cfg->addAction("Gravação…", this, [this] { SettingsDialog(this, SettingsDialog::Recording).exec(); });
+	cfg->addAction("Transmissão…", this, [this] { SettingsDialog(this, SettingsDialog::Streaming).exec(); });
 
 	QMenu *help = menuBar()->addMenu("Ajuda");
 	help->addAction("Abrir pasta de logs", this, [&e] { QDesktopServices::openUrl(QUrl::fromLocalFile(e.configDir() + "/logs")); });
@@ -474,6 +505,72 @@ void MainWindow::updateStatus()
 	status[2]->setText(QString("CPU %1%").arg(os_cpu_usage_info_query(cpu), 0, 'f', 0));
 	status[3]->setText(QString("Atrasados %1 de %2 quadros").arg(skipped).arg(total));
 	status[4]->setText(QString("%1 entradas").arg(Engine::get().inputs().size()));
+	updateOutputs();
+}
+
+static QString hms(qint64 ms)
+{
+	const qint64 s = ms / 1000;
+	return QString("%1:%2:%3").arg(s / 3600, 2, 10, QChar('0')).arg((s / 60) % 60, 2, 10, QChar('0')).arg(s % 60, 2, 10, QChar('0'));
+}
+
+void MainWindow::updateOutputs()
+{
+	Outputs &o = Outputs::get();
+	auto paint = [](QPushButton *b, bool on, const QString &text) {
+		b->setText(text);
+		if (b->property("on").toBool() != on) {
+			b->setProperty("on", on);
+			b->style()->unpolish(b);
+			b->style()->polish(b);
+		}
+	};
+	paint(recBtn, o.recording(), o.recording() ? "● Gravando " + hms(o.recordingMs()) : "Gravar");
+	QString st = "Transmitir";
+	if (o.streaming())
+		st = (o.streamReconnecting() ? "↻ Reconectando " : "● Ao vivo ") + hms(o.streamingMs());
+	paint(streamBtn, o.streaming(), st);
+	if (o.streaming()) {
+		const int total = o.streamTotalFrames(), lost = o.streamDroppedFrames();
+		outStatus->setText(QString("Transmissão: %1 quadros perdidos (%2%)")
+					   .arg(lost)
+					   .arg(total ? 100.0 * lost / total : 0.0, 0, 'f', 1));
+	} else {
+		outStatus->setText(o.recording() ? "Gravando em " + o.recordingFile() : QString());
+	}
+}
+
+void MainWindow::toggleRecording()
+{
+	Outputs &o = Outputs::get();
+	if (o.recording()) {
+		o.stopRecording();
+	} else {
+		QString err;
+		if (!o.startRecording(err))
+			QMessageBox::warning(this, "Gravar", "A gravação não começou.\n\n" + err);
+	}
+	updateOutputs();
+}
+
+void MainWindow::toggleStreaming()
+{
+	Outputs &o = Outputs::get();
+	if (o.streaming()) {
+		if (QMessageBox::question(this, "Transmitir", "Encerrar a transmissão ao vivo?") != QMessageBox::Yes)
+			return;
+		o.stopStreaming();
+	} else {
+		if (o.settings().streamKey.trimmed().isEmpty()) {
+			SettingsDialog d(this, SettingsDialog::Streaming);
+			if (d.exec() != QDialog::Accepted || o.settings().streamKey.trimmed().isEmpty())
+				return;
+		}
+		QString err;
+		if (!o.startStreaming(err))
+			QMessageBox::warning(this, "Transmitir", "A transmissão não começou.\n\n" + err);
+	}
+	updateOutputs();
 }
 
 /* ---------- janelas ---------- */
@@ -492,7 +589,15 @@ void MainWindow::addInput()
 
 void MainWindow::closeEvent(QCloseEvent *e)
 {
+	Outputs &o = Outputs::get();
+	if ((o.recording() || o.streaming()) &&
+	    QMessageBox::question(this, "Fechar", QString("%1 ainda está ligada. Parar e fechar o programa?")
+							  .arg(o.streaming() ? "A transmissão" : "A gravação")) != QMessageBox::Yes) {
+		e->ignore();
+		return;
+	}
 	statusTimer->stop();
+	ExternalOutput::closeAll();
 	/* fecha as telas de vídeo antes de desligar o motor */
 	for (InputTile *t : tiles)
 		delete t;

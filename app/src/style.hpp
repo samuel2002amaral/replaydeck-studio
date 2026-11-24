@@ -103,6 +103,18 @@ QScrollBar::add-line, QScrollBar::sub-line, QScrollBar::add-page, QScrollBar::su
 #tileButton:hover { background: #232b3c; }
 #tileButton:checked { background: #1f3f7a; color: #ffffff; }
 #tileButton[on="true"] { background: #a52a21; color: #ffffff; }
+#outButton[on="true"] { background: #a52a21; border-color: #c3362b; color: #ffffff; }
+#outButton[on="true"]:hover { background: #b3302a; }
+#mixerStrip, #masterStrip { background: #161b26; border: 1px solid #2a3140; border-radius: 4px; }
+#masterStrip { border-color: #2563eb; }
+#mixerTitle { background: #1b2130; color: #e6eaf0; font-weight: 600; font-size: 8pt; border-radius: 3px; }
+#mixerTitle[bus="preview"] { background: #1d5e36; }
+#mixerTitle[bus="program"] { background: #7d1d17; }
+#mixerDb { color: #aab3c2; font-family: Consolas, monospace; font-size: 8pt; }
+QSlider#mixerFader { width: 22px; }
+QSlider#mixerFader::groove:vertical { background: #0b0e13; width: 4px; border-radius: 2px; }
+QSlider#mixerFader::handle:vertical { background: #d7dce4; height: 12px; margin: 0 -8px; border-radius: 2px; }
+QSlider#mixerFader::handle:vertical:hover { background: #ffffff; }
 
 QTabWidget::pane { border: 1px solid #262c38; background: #12161e; top: -1px; }
 QTabBar::tab { background: #151a24; color: #8b95a7; padding: 6px 14px; border: 1px solid #262c38; border-bottom: 0; margin-right: 2px; border-top-left-radius: 4px; border-top-right-radius: 4px; font-weight: 600; }

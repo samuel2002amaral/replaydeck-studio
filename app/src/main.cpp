@@ -1,6 +1,8 @@
 /* ReplayDeck Studio — programa de transmissão ao vivo com replay, sobre o motor libobs. */
 #include "engine.hpp"
 #include "replay-host.hpp"
+#include "outputs.hpp"
+#include "settings-dialog.hpp"
 #include "main-window.hpp"
 #include "dialogs.hpp"
 #include "style.hpp"
@@ -14,6 +16,7 @@
 #include <QMessageBox>
 #include <QTimer>
 #include <QProcess>
+#include <QTabWidget>
 
 #include <obs.h>
 
@@ -106,6 +109,7 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
+	Outputs::get().load();
 	int ret;
 	{
 		MainWindow w;
@@ -114,6 +118,82 @@ int main(int argc, char *argv[])
 			runSelfTest(w);
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST_REPLAY"))
 			replayhost::selfTest(&w);
+		if (qEnvironmentVariableIsSet("RDS_SELFTEST_SETTINGS")) {
+			/* teste visual: Configurações na aba RDS_SELFTEST_TAB */
+			QTimer::singleShot(500, [&w] {
+				auto *d = new SettingsDialog(&w, qEnvironmentVariableIntValue("RDS_SELFTEST_TAB"));
+				d->show();
+			});
+			QTimer::singleShot(1500, [] { QProcess::execute("import", {"-window", "root", qEnvironmentVariable("RDS_SELFTEST_SETTINGS")}); });
+			QTimer::singleShot(2000, [&w] { QApplication::closeAllWindows(); w.close(); });
+		}
+		if (qEnvironmentVariableIsSet("RDS_SELFTEST_OUTPUTS")) {
+			/* teste das saídas: grava 3 s, transmite 4 s para RDS_SELFTEST_RTMP, muda para 720p */
+			QTimer::singleShot(300, [] {
+				Engine &e = Engine::get();
+				OBSDataAutoRelease c = obs_data_create();
+				obs_data_set_int(c, "color", 0xFF2050C0);
+				if (Input *in = e.addInput("color_source_v3", "CAM 1", c))
+					e.cutTo(in->id);
+				OBSDataAutoRelease st = obs_data_create();
+				obs_data_set_string(st, "local_file", qgetenv("RDS_SELFTEST_TONE").constData());
+				obs_data_set_bool(st, "looping", true);
+				if (Input *in = e.addInput("ffmpeg_source", "Microfone", st))
+					e.setInputAudioAuto(in->id, false);
+				StudioSettings s = Outputs::get().settings();
+				s.recFolder = qEnvironmentVariable("RDS_SELFTEST_OUTPUTS");
+				s.streamServer = qEnvironmentVariable("RDS_SELFTEST_RTMP");
+				s.streamKey = "teste";
+				QString err;
+				Outputs::get().setSettings(s, err);
+				const bool ok = Outputs::get().startRecording(err);
+				blog(LOG_INFO, "[teste-saidas] gravar=%d %s", ok, err.toUtf8().constData());
+			});
+			QTimer::singleShot(3500, [] {
+				blog(LOG_INFO, "[teste-saidas] gravando=%d arquivo=%s", Outputs::get().recording(),
+				     Outputs::get().recordingFile().toUtf8().constData());
+				Outputs::get().stopRecording();
+				QString err;
+				const bool ok = Outputs::get().startStreaming(err);
+				blog(LOG_INFO, "[teste-saidas] transmitir=%d %s", ok, err.toUtf8().constData());
+			});
+			QTimer::singleShot(8000, [] {
+				blog(LOG_INFO, "[teste-saidas] transmitindo=%d quadros=%d perdidos=%d", Outputs::get().streaming(),
+				     Outputs::get().streamTotalFrames(), Outputs::get().streamDroppedFrames());
+				Outputs::get().stopStreaming();
+			});
+			QTimer::singleShot(9500, [] {
+				StudioSettings s = Outputs::get().settings();
+				s.width = 1280;
+				s.height = 720;
+				s.fpsNum = 60;
+				QString err;
+				const bool ok = Outputs::get().setSettings(s, err);
+				obs_video_info ovi;
+				obs_get_video_info(&ovi);
+				blog(LOG_INFO, "[teste-saidas] 720p=%d %s -> %ux%u %u fps", ok, err.toUtf8().constData(), ovi.base_width,
+				     ovi.base_height, ovi.fps_num / ovi.fps_den);
+			});
+			QTimer::singleShot(11000, [&w] { w.close(); });
+		}
+		if (qEnvironmentVariableIsSet("RDS_SELFTEST_MIXER")) {
+			/* teste visual do mixer: um som (RDS_SELFTEST_TONE) "sempre" e uma cor; abre a aba do mixer */
+			QTimer::singleShot(300, [&w] {
+				Engine &e = Engine::get();
+				OBSDataAutoRelease st = obs_data_create();
+				obs_data_set_string(st, "local_file", qgetenv("RDS_SELFTEST_TONE").constData());
+				obs_data_set_bool(st, "looping", true);
+				if (Input *in = e.addInput("ffmpeg_source", "Microfone", st))
+					e.setInputAudioAuto(in->id, false);
+				OBSDataAutoRelease c = obs_data_create();
+				obs_data_set_int(c, "color", 0xFF805020);
+				e.addInput("color_source_v3", "CAM 1", c);
+				if (auto *tabs = w.findChild<QTabWidget *>("rightTabs"))
+					tabs->setCurrentIndex(1);
+			});
+			QTimer::singleShot(2500, [] { QProcess::execute("import", {"-window", "root", qEnvironmentVariable("RDS_SELFTEST_MIXER")}); });
+			QTimer::singleShot(3000, [&w] { w.close(); });
+		}
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST_NEW")) {
 			/* teste visual da janela Nova entrada (RDS_SELFTEST_NEW=tipo, RDS_SELFTEST_SHOT=arquivo) */
 			QTimer::singleShot(2000, [&w] {
@@ -135,6 +215,7 @@ int main(int argc, char *argv[])
 			QTimer::singleShot(3000, [&w] { w.close(); });
 		}
 		ret = app.exec();
+		Outputs::get().shutdown(); /* fecha o arquivo da gravação e a transmissão */
 		replayhost::shutdown(); /* para a gravação do replay antes de fechar a janela */
 	}
 	replayhost::finish();
