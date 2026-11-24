@@ -84,6 +84,20 @@ const QList<FunctionDef> &functionList()
 		{"ReplayRestart", "Replay", "Replay: volta ao início do clipe", false, false},
 		{"ReplayLoop", "Replay", "Replay: loop liga/desliga", false, false},
 		{"ReplayZoomReset", "Replay", "Replay: zoom na imagem inteira", false, false},
+		{"ReplaySpeedUp", "Replay", "Replay: mais rápido (Value = passo em %, padrão 10)", false, true},
+		{"ReplaySpeedDown", "Replay", "Replay: mais lento (Value = passo em %, padrão 10)", false, true},
+		/* de segurar: enquanto a tecla está apertada */
+		{"ReplayHoldPlay", "Replay (segurar)", "Segure: toca para frente (na velocidade escolhida); soltou, pausa", false, false, true},
+		{"ReplayHoldReverse", "Replay (segurar)", "Segure: toca de ré; soltou, pausa", false, false, true},
+		{"ReplayHoldFastForward", "Replay (segurar)", "Segure: avanço rápido (Value = vezes, padrão 4); soltou, pausa", false, true, true},
+		{"ReplayHoldFastRewind", "Replay (segurar)", "Segure: ré rápida (Value = vezes, padrão 4); soltou, pausa", false, true, true},
+		{"ReplayHoldJog", "Replay (segurar)", "Quadro a quadro: toque anda 1; segurando vai andando (Value = +1 ou -1)", false, true, true},
+		{"ReplayHoldZoomIn", "Replay (segurar)", "Segure: aproxima o zoom", false, false, true},
+		{"ReplayHoldZoomOut", "Replay (segurar)", "Segure: afasta o zoom", false, false, true},
+		{"ReplayHoldPanLeft", "Replay (segurar)", "Segure: move o zoom para a esquerda", false, false, true},
+		{"ReplayHoldPanRight", "Replay (segurar)", "Segure: move o zoom para a direita", false, false, true},
+		{"ReplayHoldPanUp", "Replay (segurar)", "Segure: move o zoom para cima", false, false, true},
+		{"ReplayHoldPanDown", "Replay (segurar)", "Segure: move o zoom para baixo", false, false, true},
 	};
 	return list;
 }
@@ -300,6 +314,14 @@ bool runFunction(const QString &name, const QString &inputSpec, const QString &v
 			r.setLoop(!r.loopOn());
 		else if (n == "ReplayZoomReset")
 			r.zoomReset();
+		else if (n == "ReplaySpeedUp" || n == "ReplaySpeedDown") {
+			const int stepPct = v > 0 ? (int)v : 10;
+			r.setSpeedPercent(r.speedPercent() + (n == "ReplaySpeedUp" ? stepPct : -stepPct));
+		} else if (def->hold) {
+			/* função de segurar chamada sem tecla (script, API): um toque = aperta e solta */
+			runHoldFunction(n, value, true);
+			runHoldFunction(n, value, false);
+		}
 	}
 	blog(LOG_INFO, "função %s%s%s", def->name, in ? (" Input=" + in->name).toUtf8().constData() : "",
 	     value.isEmpty() ? "" : (" Value=" + value).toUtf8().constData());
@@ -334,4 +356,44 @@ bool runFunctionLine(const QString &line, QString *error, QWidget *parent)
 			value = val;
 	}
 	return runFunction(m.captured(1), input, value, error, parent);
+}
+
+bool runHoldFunction(const QString &name, const QString &value, bool pressed)
+{
+	const FunctionDef *def = findFunction(name);
+	if (!def || !def->hold || !engineAlive())
+		return false;
+	ReplayEngine &r = engine();
+	const QString n = QString::fromLatin1(def->name);
+	const double v = value.trimmed().toDouble();
+	if (n == "ReplayHoldPlay" || n == "ReplayHoldReverse") {
+		if (pressed)
+			r.shuttle(n == "ReplayHoldPlay" ? 1 : -1, 1.0);
+		else
+			r.pause();
+	} else if (n == "ReplayHoldFastForward" || n == "ReplayHoldFastRewind") {
+		if (pressed)
+			r.shuttle(n == "ReplayHoldFastForward" ? 1 : -1, v > 1 ? v : 4.0);
+		else
+			r.pause();
+	} else if (n == "ReplayHoldJog") {
+		if (pressed) /* a repetição enquanto segura fica com o atalho (Shortcuts) */
+			r.step(v < 0 ? -1 : 1);
+	} else {
+		/* zoom: eixo 0 = esquerda/direita, 1 = cima/baixo, 2 = aproximar/afastar */
+		int axis = 2, dir = 1;
+		if (n == "ReplayHoldZoomOut")
+			dir = -1;
+		else if (n == "ReplayHoldPanLeft")
+			axis = 0, dir = -1;
+		else if (n == "ReplayHoldPanRight")
+			axis = 0, dir = 1;
+		else if (n == "ReplayHoldPanUp")
+			axis = 1, dir = -1;
+		else if (n == "ReplayHoldPanDown")
+			axis = 1, dir = 1;
+		r.zoomMove(axis, pressed ? dir : 0);
+	}
+	blog(LOG_INFO, "função %s %s", def->name, pressed ? "apertada" : "solta");
+	return true;
 }

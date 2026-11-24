@@ -284,9 +284,25 @@ SettingsDialog::SettingsDialog(QWidget *parent, int startTab) : QDialog(parent)
 					addShortcutRow(s);
 			}
 		});
+		auto *sugReplay = new QPushButton("Atalhos do replay (teclado numérico)");
+		sugReplay->setToolTip("Num 7 Mark In · Num 9 Mark Out · Num 4 ré (segure) · Num 6 play (segure) · Num 5 play/pausa\n"
+				      "Num 1 / Num 3 quadro a quadro (segure para ir andando) · Num 8 / Num 2 zoom (segure)\n"
+				      "Num 0 último lance no ar · Num Enter põe no ar · Num , ao vivo · Num + / Num - velocidade\n"
+				      "Num * evento de 10 s · Num / zoom inteiro · Shift+setas move o zoom (segure)");
+		connect(sugReplay, &QPushButton::clicked, this, [this] {
+			for (const Shortcut &s : Shortcuts::suggestedReplay()) {
+				bool exists = false;
+				for (int r = 0; r < keys->rowCount(); r++)
+					if (auto *ed = qobject_cast<KeyCapture *>(keys->cellWidget(r, 0)); ed && ed->sameKey(s))
+						exists = true;
+				if (!exists)
+					addShortcutRow(s);
+			}
+		});
 		row->addWidget(add);
 		row->addWidget(del);
 		row->addStretch(1);
+		row->addWidget(sugReplay);
 		row->addWidget(sug);
 		v->addLayout(row);
 		tabs->addTab(w, "Atalhos");
@@ -364,7 +380,7 @@ void SettingsDialog::addShortcutRow(const Shortcut &s)
 			if (auto *m = qobject_cast<QStandardItemModel *>(fn->model()))
 				m->item(sep)->setEnabled(false);
 		}
-		fn->addItem(QString("%1  ·  %2").arg(QString::fromLatin1(f.name), QString::fromUtf8(f.label)),
+		fn->addItem(QString("%1%2  ·  %3").arg(f.hold ? "⏺ " : "", QString::fromLatin1(f.name), QString::fromUtf8(f.label)),
 			    QString::fromLatin1(f.name));
 	}
 	fn->setCurrentIndex(qMax(0, fn->findData(s.function)));

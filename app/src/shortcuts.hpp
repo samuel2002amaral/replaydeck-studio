@@ -12,6 +12,7 @@
 #include <QList>
 #include <QObject>
 #include <QPushButton>
+#include <QSet>
 #include <QString>
 
 struct Shortcut {
@@ -37,10 +38,14 @@ public:
 	bool global() const { return globalOn; }
 	void setGlobal(bool on); /* Windows: funcionam com outro programa na frente */
 	static QList<Shortcut> suggested();
+	static QList<Shortcut> suggestedReplay(); /* teclado numérico para o replay (com os de segurar) */
 	void install(); /* passa a ouvir o teclado do programa todo */
 
 	/* uma tecla apertada (programa ou gancho global): roda os atalhos dela */
 	bool trigger(quint32 scan, int mods, int qtKey, bool keypad);
+	/* a tecla subiu: para as funções de segurar dela */
+	void release(quint32 scan);
+	void releaseAll();
 	/* nome legível de uma tecla física ("Num 7", "F1", "Ctrl+Espaço") */
 	static QString keyName(quint32 scan, int mods, int qtKey, bool keypad);
 
@@ -52,6 +57,15 @@ private:
 	void applyGlobalHook();
 	QList<Shortcut> items;
 	bool globalOn = false;
+	struct Held {
+		quint32 scan;
+		QString function, value;
+		class QTimer *repeat = nullptr; /* quadro a quadro: vai andando enquanto segura */
+	};
+	QList<Held> held;
+	QSet<quint32> pendingRelease; /* soltou há instantes: se apertar de novo já, era a repetição da tecla */
+	void finishRelease(quint32 scan);
+	class QTimer *watchdog = nullptr; /* Windows: confere no teclado se a tecla de segurar ainda está apertada */
 };
 
 /* botão que grava a tecla física: clique e aperte a tecla (com ou sem Ctrl/Shift/Alt) */

@@ -124,6 +124,8 @@ public:
 	void step(int frames);
 	void jumpSeconds(double sec);
 	void fastForward();
+	/* Studio: toca numa direção (1 frente, -1 ré) com um multiplicador, enquanto um atalho está apertado */
+	void shuttle(int dir, double mult);
 	void goLive();
 	void setAngle(int cam);
 	/* gravações no disco */

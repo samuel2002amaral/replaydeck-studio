@@ -1,5 +1,7 @@
 ## ReplayDeck Studio — fase 3 (áudio, gravar, transmitir, saída externa)
 
+> 2.7.0: **atalhos de segurar** para o replay (como num controlador): enquanto a tecla está apertada a ação continua e para ao soltar — ré, play, avanço/ré rápidos, zoom e mover o zoom; **quadro a quadro**: um toque anda 1 quadro, segurando vai andando. Botão novo **"Atalhos do replay (teclado numérico)"**: Num 7 Mark In · Num 9 Mark Out · Num 4 ré (segure) · Num 6 play (segure) · Num 5 play/pausa · Num 1/Num 3 quadro a quadro · Num 8/Num 2 zoom (segure) · Num 0 último lance no ar · Num Enter põe no ar · Num , ao vivo · Num +/− velocidade · Num * evento de 10 s · Num / zoom inteiro · Shift+setas move o zoom.
+>
 > 2.6.1: **atalhos pela tecla física**. Clique na tecla e aperte a do teclado: vale a tecla em si, não o caractere — o 7 do teclado numérico (Num 7) é diferente do 7 de cima, e funciona com o Num Lock ligado ou desligado e em qualquer layout. Nova opção: **atalhos funcionando com outro programa na frente** (Configurações → Atalhos).
 >
 > 2.6.0: **replay muito mais leve**. No seu PC o replay não conseguia abrir a NVIDIA pelo FFmpeg e caía para MJPEG no processador (CPU alta e disco a 50 MB/s). Agora cada câmera do replay é comprimida pelo codificador NVIDIA do próprio motor, direto na placa de vídeo, sem copiar os quadros para a memória — o mesmo que a transmissão já usava. Se não der, tenta a NVIDIA pela memória e só depois o caminho antigo. Os erros do FFmpeg agora aparecem no log.

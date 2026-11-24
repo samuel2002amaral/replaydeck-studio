@@ -471,6 +471,15 @@ void ReplayEngine::fastForward()
 	});
 }
 
+void ReplayEngine::shuttle(int dir, double mult)
+{
+	ffMult = mult;
+	forSelected([dir, mult](PlaybackChannel &c) {
+		c.setMultiplier(mult);
+		c.play(dir < 0 ? -1 : 1);
+	});
+}
+
 void ReplayEngine::goLive()
 {
 	ffMult = 1.0;

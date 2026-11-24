@@ -15,6 +15,7 @@
 #include <QSet>
 #include <QStyle>
 #include <QTextEdit>
+#include <QTimer>
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -182,6 +183,57 @@ QList<Shortcut> Shortcuts::suggested()
 	return l;
 }
 
+/* teclado numérico para o replay, como um controlador:
+ *   7 Mark In   8 zoom +     9 Mark Out
+ *   4 ré (segure) 5 play/pausa 6 play (segure)
+ *   1 ◀ quadro  2 zoom −     3 quadro ▶
+ *   0 último lance no ar     , ao vivo     Enter põe no ar
+ *   + mais rápido  − mais lento  * evento de 10 s  / zoom inteiro   Shift+setas: move o zoom */
+QList<Shortcut> Shortcuts::suggestedReplay()
+{
+#ifdef _WIN32
+	const quint32 KP[10] = {0x52, 0x4F, 0x50, 0x51, 0x4B, 0x4C, 0x4D, 0x47, 0x48, 0x49};
+	const quint32 DEC = 0x53, ENTER = 0x11C, ADD = 0x4E, SUB = 0x4A, MUL = 0x37, DIV = 0x135;
+	const quint32 LEFT = 0x14B, RIGHT = 0x14D, UP = 0x148, DOWN = 0x150;
+#else /* X11 */
+	const quint32 KP[10] = {90, 87, 88, 89, 83, 84, 85, 79, 80, 81};
+	const quint32 DEC = 91, ENTER = 104, ADD = 86, SUB = 82, MUL = 63, DIV = 106;
+	const quint32 LEFT = 113, RIGHT = 114, UP = 111, DOWN = 116;
+#endif
+	auto mk = [](quint32 scan, int mods, const QString &label, const char *fn, const QString &value = QString()) {
+		Shortcut s;
+		s.scan = scan;
+		s.mods = mods;
+		s.label = label;
+		s.function = QString::fromLatin1(fn);
+		s.value = value;
+		return s;
+	};
+	const int SHIFT = Qt::ShiftModifier;
+	return {
+		mk(KP[7], 0, "Num 7", "ReplayMarkIn"),
+		mk(KP[9], 0, "Num 9", "ReplayMarkOut"),
+		mk(KP[8], 0, "Num 8", "ReplayHoldZoomIn"),
+		mk(KP[2], 0, "Num 2", "ReplayHoldZoomOut"),
+		mk(KP[4], 0, "Num 4", "ReplayHoldReverse"),
+		mk(KP[6], 0, "Num 6", "ReplayHoldPlay"),
+		mk(KP[5], 0, "Num 5", "ReplayPlayPause"),
+		mk(KP[1], 0, "Num 1", "ReplayHoldJog", "-1"),
+		mk(KP[3], 0, "Num 3", "ReplayHoldJog", "1"),
+		mk(KP[0], 0, "Num 0", "ReplayPlayLastEvent"),
+		mk(DEC, 0, "Num ,", "ReplayLive"),
+		mk(ENTER, 0, "Num Enter", "ReplayToProgram"),
+		mk(ADD, 0, "Num +", "ReplaySpeedUp", "10"),
+		mk(SUB, 0, "Num -", "ReplaySpeedDown", "10"),
+		mk(MUL, 0, "Num *", "ReplayMarkInOut", "10"),
+		mk(DIV, 0, "Num /", "ReplayZoomReset"),
+		mk(LEFT, SHIFT, "Shift+←", "ReplayHoldPanLeft"),
+		mk(RIGHT, SHIFT, "Shift+→", "ReplayHoldPanRight"),
+		mk(UP, SHIFT, "Shift+↑", "ReplayHoldPanUp"),
+		mk(DOWN, SHIFT, "Shift+↓", "ReplayHoldPanDown"),
+	};
+}
+
 void Shortcuts::install()
 {
 	qApp->installEventFilter(this);
@@ -204,6 +256,9 @@ static bool typingInto(QObject *o)
 bool Shortcuts::trigger(quint32 scan, int mods, int qtKey, bool keypad)
 {
 	mods &= MOD_MASK;
+	/* "soltou e apertou" no mesmo instante = a tecla continua segurada (repetição automática) */
+	if (pendingRelease.remove(scan))
+		return true;
 	bool handled = false;
 	for (const Shortcut &s : items) {
 		bool match;
@@ -214,16 +269,134 @@ bool Shortcuts::trigger(quint32 scan, int mods, int qtKey, bool keypad)
 				s.key == QKeySequence(QKeyCombination(Qt::KeyboardModifiers(mods), Qt::Key(qtKey)));
 		if (!match)
 			continue;
+		handled = true;
+		const FunctionDef *def = findFunction(s.function);
+		if (def && def->hold) {
+			/* de segurar: começa agora e para quando a tecla subir */
+			bool already = false;
+			for (const Held &h : held)
+				already |= h.scan == scan && h.function == s.function;
+			if (already)
+				continue;
+			Held h{scan, s.function, s.value, nullptr};
+			runHoldFunction(s.function, s.value, true);
+			if (s.function == "ReplayHoldJog") {
+				/* como a roda de um controlador: espera um pouco e vai andando enquanto segura */
+				h.repeat = new QTimer(this);
+				h.repeat->setInterval(300);
+				const QString fn = s.function, val = s.value;
+				connect(h.repeat, &QTimer::timeout, this, [t = h.repeat, fn, val] {
+					t->setInterval(40);
+					runHoldFunction(fn, val, true);
+				});
+				h.repeat->start();
+			}
+			held << h;
+#ifdef _WIN32
+			if (!watchdog) {
+				watchdog = new QTimer(this);
+				watchdog->setInterval(150);
+				connect(watchdog, &QTimer::timeout, this, [this] {
+					QList<quint32> gone;
+					for (const Held &x : held)
+						if (!physicallyDown(x.scan))
+							gone << x.scan;
+					for (quint32 s : gone) {
+						blog(LOG_INFO, "atalho de segurar: tecla já solta, parando");
+						finishRelease(s);
+					}
+					if (held.isEmpty())
+						watchdog->stop();
+				});
+			}
+			watchdog->start();
+#endif
+			continue;
+		}
 		QString err;
 		if (!runFunction(s.function, s.input, s.value, &err))
 			blog(LOG_WARNING, "atalho %s: %s", s.display().toUtf8().constData(), err.toUtf8().constData());
-		handled = true;
 	}
 	return handled;
 }
 
+#ifdef _WIN32
+/* a tecla física está apertada agora? (vale com o Num Lock ligado ou desligado) */
+static bool physicallyDown(quint32 scan)
+{
+	const UINT sc = (scan & 0xFF) | ((scan & 0x100) ? 0xE000 : 0);
+	const UINT vk = MapVirtualKeyW(sc, MAPVK_VSC_TO_VK_EX);
+	UINT alt = 0;
+	switch (scan) { /* teclado numérico: com Num Lock é VK_NUMPADx */
+	case 0x47: alt = VK_NUMPAD7; break;
+	case 0x48: alt = VK_NUMPAD8; break;
+	case 0x49: alt = VK_NUMPAD9; break;
+	case 0x4B: alt = VK_NUMPAD4; break;
+	case 0x4C: alt = VK_NUMPAD5; break;
+	case 0x4D: alt = VK_NUMPAD6; break;
+	case 0x4F: alt = VK_NUMPAD1; break;
+	case 0x50: alt = VK_NUMPAD2; break;
+	case 0x51: alt = VK_NUMPAD3; break;
+	case 0x52: alt = VK_NUMPAD0; break;
+	case 0x53: alt = VK_DECIMAL; break;
+	default: break;
+	}
+	if (!vk && !alt)
+		return true; /* sem como saber: confia no aviso de soltar */
+	return ((vk ? GetAsyncKeyState(vk) : 0) | (alt ? GetAsyncKeyState(alt) : 0)) & 0x8000;
+}
+#endif
+
+void Shortcuts::release(quint32 scan)
+{
+	bool isHeld = false;
+	for (const Held &h : held)
+		isHeld |= h.scan == scan;
+	if (!isHeld)
+		return;
+	pendingRelease.insert(scan);
+	QTimer::singleShot(40, this, [this, scan] {
+		if (pendingRelease.remove(scan))
+			finishRelease(scan);
+	});
+}
+
+void Shortcuts::finishRelease(quint32 scan)
+{
+	for (int i = held.size() - 1; i >= 0; i--) {
+		if (held[i].scan != scan)
+			continue;
+		Held h = held.takeAt(i);
+		delete h.repeat;
+		runHoldFunction(h.function, h.value, false);
+	}
+}
+
+void Shortcuts::releaseAll()
+{
+	pendingRelease.clear();
+	while (!held.isEmpty())
+		finishRelease(held.first().scan);
+}
+
 bool Shortcuts::eventFilter(QObject *o, QEvent *e)
 {
+	/* soltou a tecla (ou o programa perdeu o foco com ela apertada): para o que é de segurar */
+	if ((e->type() == QEvent::KeyRelease || e->type() == QEvent::KeyPress) && qEnvironmentVariableIsSet("RDS_DEBUG_KEYS")) {
+		auto *ke = static_cast<QKeyEvent *>(e);
+		blog(LOG_INFO, "[tecla] %s scan=%u repete=%d em %s", e->type() == QEvent::KeyPress ? "aperta" : "solta",
+		     ke->nativeScanCode(), ke->isAutoRepeat(), o->metaObject()->className());
+	}
+	if (e->type() == QEvent::KeyRelease && !held.isEmpty()) {
+		auto *ke = static_cast<QKeyEvent *>(e);
+		if (!ke->isAutoRepeat())
+			release(ke->nativeScanCode());
+		return false;
+	}
+	if (e->type() == QEvent::ApplicationDeactivate && !held.isEmpty() && !globalOn) {
+		releaseAll();
+		return false;
+	}
 	if (e->type() != QEvent::KeyPress || items.isEmpty())
 		return false;
 	auto *ke = static_cast<QKeyEvent *>(e);
@@ -254,6 +427,7 @@ static LRESULT CALLBACK lowLevelKeyboard(int code, WPARAM wParam, LPARAM lParam)
 		const bool down = wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN;
 		if (!down) {
 			g_down.remove(scan);
+			QMetaObject::invokeMethod(&Shortcuts::get(), [scan] { Shortcuts::get().release(scan); }, Qt::QueuedConnection);
 		} else if (!g_down.contains(scan)) {
 			g_down.insert(scan);
 			/* com o programa na frente, quem cuida é o próprio programa (não roda duas vezes) */
