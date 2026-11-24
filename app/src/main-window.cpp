@@ -1,4 +1,5 @@
 #include "main-window.hpp"
+#include "gt/gt-dock.hpp"
 #include "replay-host.hpp"
 #include "flow-layout.hpp"
 #include "audio-mixer.hpp"
@@ -421,7 +422,7 @@ QWidget *MainWindow::buildRightPanel()
 	rightTabs->setMinimumWidth(560);
 	rightTabs->addTab(replayhost::start(this), "Replay instantâneo");
 	rightTabs->addTab(new AudioMixer, "Mixer de áudio");
-	rightTabs->addTab(comingSoon("Títulos GT", "Chega na fase 5."), "Títulos GT");
+	rightTabs->addTab(new GtDock, "Títulos GT");
 	rightTabs->addTab(comingSoon("PTZ", "Chega na fase 6."), "PTZ");
 	rightTabs->addTab(comingSoon("Lista", "Lista de vídeos: chega na fase 6."), "Lista");
 	return rightTabs;
@@ -536,7 +537,12 @@ void MainWindow::buildMenus()
 	replay->addAction("Configuração rápida…", this, [] { replayhost::runWizard(); });
 	replay->addAction("Configurações do replay…", this, [] { replayhost::openSettings(); });
 	QMenu *titles = menuBar()->addMenu("Títulos");
-	titles->addAction("Títulos GT…", this, [this] { notYet("Títulos GT", "fase 5"); });
+	titles->addAction("Painel de títulos GT", this, [this] { rightTabs->setCurrentIndex(2); });
+	titles->addAction("Importar título GT (.gtzip)…", this, [this] {
+		rightTabs->setCurrentIndex(2);
+		if (auto *d = qobject_cast<GtDock *>(rightTabs->widget(2)))
+			QMetaObject::invokeMethod(d, "addTitle");
+	});
 	QMenu *cfg = menuBar()->addMenu("Configurações");
 	cfg->addAction("Configurações…", this, [this] { SettingsDialog(this).exec(); });
 	cfg->addAction("Vídeo (resolução e fps)…", this, [this] { SettingsDialog(this, SettingsDialog::Video).exec(); });

@@ -131,6 +131,9 @@ public:
 
 	/* ganchos (o replay se registra aqui; os testes do motor não usam) */
 	static std::function<void()> beforeProjectLoad; /* tipos extras prontos antes de abrir o projeto */
+	/* antes de tirar uma entrada de um overlay: devolve quantos ms esperar (ex.: o título GT
+	 * anima a saída); 0 = tira na hora */
+	static std::function<int(obs_source_t *)> beforeOverlayOff;
 
 signals:
 	void inputsChanged();
@@ -158,6 +161,7 @@ private:
 	int nextId = 1;
 	int pvw = 0, pgm = 0;
 	int ov[5] = {0, 0, 0, 0, 0};
+	unsigned ovGen[5] = {0, 0, 0, 0, 0}; /* muda a cada troca: a saída animada só limpa se nada mudou */
 	int durationMs = 500;
 	bool ftb = false;
 	bool started = false;

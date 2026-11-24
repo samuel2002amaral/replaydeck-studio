@@ -8,6 +8,8 @@
 #include "settings-dialog.hpp"
 #include "external-output.hpp"
 #include "main-window.hpp"
+#include "gt/gt-source.hpp"
+#include "overlay-channels.hpp"
 #include "dialogs.hpp"
 #include "style.hpp"
 
@@ -19,6 +21,7 @@
 #include <QScrollBar>
 #include <QMessageBox>
 #include <QTimer>
+#include <QDir>
 #include <QProcess>
 #include <QTabWidget>
 
@@ -142,6 +145,57 @@ int main(int argc, char *argv[])
 			runSelfTest(w);
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST_REPLAY"))
 			replayhost::selfTest(&w);
+		if (qEnvironmentVariableIsSet("RDS_SELFTEST_GT")) {
+			/* título GT: importar (vira entrada), overlay 1 liga, desliga com a saída animada
+			 * (fica na tela até a animação acabar), e volta ao abrir o projeto */
+			QTimer::singleShot(800, [&w] {
+				Engine &e = Engine::get();
+				OBSSourceAutoRelease t = gtLibraryAdd(qEnvironmentVariable("RDS_SELFTEST_GT"));
+				Input *in = nullptr;
+				for (Input *x : e.inputs())
+					if (x->source == t)
+						in = x;
+				blog(LOG_INFO, "[gt] entrada=%s titulo=%d paginas=%d saida=%dms", in ? in->name.toUtf8().constData() : "-",
+				     !gtTitleName(t).isEmpty(), (int)gtPages(t).size(), gtOutLengthMs(t));
+				overlays().assignOn(0, obs_source_get_name(t));
+				blog(LOG_INFO, "[gt] overlay1=%d canal=%d estado=%d", e.overlay(1) == (in ? in->id : -1),
+				     overlays().channelOf(obs_source_get_name(t)), gtState(t));
+			});
+			QTimer::singleShot(2000, [] {
+				Engine &e = Engine::get();
+				Input *in = e.input(e.overlay(1));
+				overlays().setOn(0, false);
+				OBSSourceAutoRelease o = obs_get_output_source(1);
+				blog(LOG_INFO, "[gt] desligou: overlay1=%d ainda_na_tela=%d estado=%d", e.overlay(1), o != nullptr,
+				     in ? gtState(in->source) : -1);
+			});
+			QTimer::singleShot(4500, [] {
+				Engine &e = Engine::get();
+				OBSSourceAutoRelease o = obs_get_output_source(1);
+				blog(LOG_INFO, "[gt] depois da saida: na_tela=%d", o != nullptr);
+				const QString proj = QDir::temp().filePath("rds-gt-teste.rdsproj");
+				e.saveProject(proj);
+				e.loadProject(proj);
+				std::vector<obs_source_t *> lib = gtLibraryList();
+				int ov = -1;
+				if (!lib.empty()) {
+					OBSDataAutoRelease st = obs_source_get_settings(lib[0]);
+					ov = (int)obs_data_get_int(st, "overlay");
+				}
+				blog(LOG_INFO, "[gt] projeto reaberto: titulos=%d nome=%s overlay=%d", (int)lib.size(),
+				     lib.empty() ? "-" : gtDisplayName(lib[0]).toUtf8().constData(), ov);
+				for (auto *s : lib)
+					obs_source_release(s);
+			});
+			QTimer::singleShot(5500, [&w] {
+				if (auto *tabs = w.findChild<QTabWidget *>("rightTabs"))
+					tabs->setCurrentIndex(2);
+			});
+			QTimer::singleShot(7000, [&w] {
+				w.grab().save(QDir::temp().filePath("rds-gt.png"));
+				w.close();
+			});
+		}
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST_VCAM")) {
 			/* câmera virtual: ligar com uma entrada, trocar, desligar (sem travar nem cair) */
 			QTimer::singleShot(800, [&w] {

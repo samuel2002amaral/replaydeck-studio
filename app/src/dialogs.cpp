@@ -164,6 +164,7 @@ static const TypeDef typeDefs[] = {
 	{"image_source", "Imagem"},
 	{"slideshow", "Sequência de imagens"},
 	{"browser_source", "Página web (navegador)"},
+	{"instant_replay_gt", "Título GT (.gtzip do vMix)"},
 	{"text_gdiplus", "Texto"},
 	{"color_source", "Cor"},
 	{"monitor_capture", "Captura de tela"},
@@ -224,6 +225,11 @@ QIcon inputTypeIcon(const QString &typeId)
 		p.drawEllipse(QPointF(16, 16), 11, 11);
 		p.drawEllipse(QRectF(11, 5, 10, 22));
 		p.drawLine(QPointF(5, 16), QPointF(27, 16));
+	} else if (t == "instant_replay_gt") {
+		/* tarja de título (lower third) */
+		p.drawLine(QPointF(5, 25), QPointF(27, 25));
+		p.setBrush(QColor(0xc2, 0x74, 0x14));
+		p.drawRoundedRect(QRectF(5, 15, 19, 7), 2, 2);
 	} else if (t == "text_gdiplus" || t == "text_ft2_source") {
 		p.drawLine(QPointF(7, 8), QPointF(25, 8));
 		p.drawLine(QPointF(16, 8), QPointF(16, 25));

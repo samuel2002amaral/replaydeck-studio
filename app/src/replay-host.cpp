@@ -2,6 +2,7 @@
  * e as perguntas do replay (replay/studio-host.hpp), com o modelo do Studio:
  * cenas = entradas, cena atual = Programa, prévia = Prévia, transições = Corte e Fade. */
 #include "replay-host.hpp"
+#include "gt-host.hpp"
 #include "dialogs.hpp"
 #include "engine.hpp"
 
@@ -275,6 +276,7 @@ void registerTypes()
 {
 	registerReplaySource();
 	registerReplayCaptureOutput();
+	gthost::install(); /* títulos GT (entradas instant_replay_gt) */
 	engineCreate(); /* as entradas Replay A/B do projeto já encontram os canais */
 }
 

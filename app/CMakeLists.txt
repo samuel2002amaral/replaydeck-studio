@@ -34,6 +34,7 @@ add_executable(replaydeck-studio WIN32
   src/vertical-canvas.cpp src/vertical-canvas.hpp
   src/shortcuts.cpp src/shortcuts.hpp
   src/style.hpp
+  src/gt-host.cpp src/gt-host.hpp
   # replay (veio do plugin ReplayDeck; roda dentro do programa)
   replay/engine.cpp replay/engine.hpp
   replay/recording.cpp replay/recording.hpp
@@ -49,7 +50,17 @@ add_executable(replaydeck-studio WIN32
   replay/ui-theme.cpp replay/ui-theme.hpp
   replay/i18n.cpp replay/i18n.hpp
   replay/studio-host.hpp replay/session.hpp replay/common.hpp
-  replay/shim/obs-frontend-api.h)
+  replay/shim/obs-frontend-api.h
+  # títulos GT (vMix .gtzip): cada título é uma entrada
+  replay/overlay-channels.hpp
+  replay/gt/gt-doc.cpp replay/gt/gt-doc.hpp
+  replay/gt/gt-render.cpp replay/gt/gt-render.hpp
+  replay/gt/gt-source.cpp replay/gt/gt-source.hpp
+  replay/gt/gt-editor.cpp
+  replay/gt/gt-dock.cpp replay/gt/gt-dock.hpp
+  replay/gt/gt-convert.cpp
+  replay/third_party/miniz/miniz.c replay/third_party/miniz/miniz_zip.c
+  replay/third_party/miniz/miniz_tdef.c replay/third_party/miniz/miniz_tinfl.c)
 
 set_target_properties(replaydeck-studio PROPERTIES
   OUTPUT_NAME "ReplayDeckStudio"
@@ -62,7 +73,8 @@ target_link_libraries(replaydeck-studio PRIVATE OBS::libobs Qt6::Core Qt6::Gui Q
 
 # o replay fala com a "interface do OBS" que o próprio Studio responde (replay/shim vem antes de tudo)
 target_include_directories(replaydeck-studio BEFORE PRIVATE
-  "${CMAKE_CURRENT_SOURCE_DIR}/replay/shim" "${CMAKE_CURRENT_SOURCE_DIR}/replay")
+  "${CMAKE_CURRENT_SOURCE_DIR}/replay/shim" "${CMAKE_CURRENT_SOURCE_DIR}/replay"
+  "${CMAKE_CURRENT_SOURCE_DIR}/replay/third_party/miniz")
 
 # FFmpeg do replay (o mesmo que acompanha o motor: obs-deps no Windows, pacotes do sistema no Linux)
 find_path(RDS_FFMPEG_INCLUDE libavcodec/avcodec.h REQUIRED)

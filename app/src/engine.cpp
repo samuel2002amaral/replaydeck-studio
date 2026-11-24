@@ -1,4 +1,6 @@
 #include "engine.hpp"
+
+#include <QTimer>
 #include "props-cache.hpp"
 
 #include <obs-module.h>
@@ -348,6 +350,7 @@ int Engine::sharedFrom(int id) const
 
 std::function<QString(const char *, obs_data_t *)> Engine::deviceKeyOverride;
 std::function<void()> Engine::beforeProjectLoad;
+std::function<int(obs_source_t *)> Engine::beforeOverlayOff;
 
 QString Engine::deviceKey(const char *unversionedType, obs_data_t *settings)
 {
@@ -867,9 +870,20 @@ void Engine::toggleOverlay(int channel, int id)
 {
 	if (channel < 1 || channel > 4)
 		return;
+	const unsigned gen = ++ovGen[channel];
 	if (ov[channel] == id || !input(id)) {
-		obs_set_output_source(channel, nullptr);
+		Input *was = input(ov[channel]);
+		const int wait = was && beforeOverlayOff ? beforeOverlayOff(was->source) : 0;
 		ov[channel] = 0;
+		if (wait > 0) {
+			/* continua na tela até a animação de saída acabar */
+			QTimer::singleShot(wait, this, [this, channel, gen] {
+				if (ovGen[channel] == gen)
+					obs_set_output_source(channel, nullptr);
+			});
+		} else {
+			obs_set_output_source(channel, nullptr);
+		}
 	} else {
 		obs_set_output_source(channel, input(id)->scene);
 		ov[channel] = id;
