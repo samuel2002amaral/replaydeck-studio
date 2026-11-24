@@ -19,6 +19,7 @@
 
 #ifdef _WIN32
 #include <Windows.h>
+static bool physicallyDown(quint32 scan);
 #endif
 
 static const int MOD_MASK = Qt::ControlModifier | Qt::ShiftModifier | Qt::AltModifier | Qt::MetaModifier;
