@@ -15,6 +15,15 @@
 #include <QMessageBox>
 #include <QRegularExpression>
 #include <QUuid>
+#include <QDateTime>
+#include <QDialog>
+#include <QDir>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QPushButton>
+#include <QSet>
+#include <QTreeWidget>
+#include <QVBoxLayout>
 
 /* "PRÉ-JOGO", "pre jogo" e "Pre-Jogo" batem */
 static QString norm(QString s)
@@ -76,6 +85,146 @@ static void fromXml(const QString &xml, QList<QPair<QString, QString>> &out)
 	}
 }
 
+/* ---------- nomes do vMix por chave (para dizer o que falta) ---------- */
+
+static QMap<QString, QString> g_titles; /* chave (minúscula) -> título no vMix */
+static bool g_titlesLoaded = false;
+
+static QString titlesFile()
+{
+	return QDir(Engine::get().configDir()).filePath("chaves-vmix.json");
+}
+
+static void loadTitles()
+{
+	if (g_titlesLoaded)
+		return;
+	g_titlesLoaded = true;
+	QFile f(titlesFile());
+	if (!f.open(QIODevice::ReadOnly))
+		return;
+	const QJsonObject o = QJsonDocument::fromJson(f.readAll()).object();
+	for (auto it = o.begin(); it != o.end(); ++it)
+		g_titles.insert(it.key().toLower(), it.value().toString());
+}
+
+static void rememberTitles(const QList<QPair<QString, QString>> &pairs)
+{
+	loadTitles();
+	for (const auto &p : pairs)
+		if (!p.second.isEmpty() && !p.first.isEmpty())
+			g_titles.insert(p.second.trimmed().toLower(), p.first);
+	QJsonObject o;
+	for (auto it = g_titles.begin(); it != g_titles.end(); ++it)
+		o.insert(it.key(), it.value());
+	QDir().mkpath(Engine::get().configDir());
+	QFile f(titlesFile());
+	if (f.open(QIODevice::WriteOnly | QIODevice::Truncate))
+		f.write(QJsonDocument(o).toJson());
+}
+
+QString vmixTitleOfKey(const QString &key)
+{
+	loadTitles();
+	QString k = key.trimmed().toLower();
+	if (k.startsWith('{') && k.endsWith('}'))
+		k = k.mid(1, k.size() - 2);
+	return g_titles.value(k);
+}
+
+struct Missing {
+	QString key, title, reason;
+	QSet<QString> functions, fields;
+	int count = 0;
+	QDateTime last;
+};
+static QMap<QString, Missing> g_missing; /* por título/chave */
+
+void noteMissing(const QString &key, const QString &title, const QString &function, const QString &field,
+		 const QString &reason)
+{
+	const QString id = (title.isEmpty() ? key : title) + "|" + reason;
+	Missing &m = g_missing[id];
+	m.key = key;
+	m.title = title;
+	m.reason = reason;
+	m.functions.insert(function);
+	if (!field.isEmpty())
+		m.fields.insert(field);
+	m.count++;
+	m.last = QDateTime::currentDateTime();
+	if (m.count == 1)
+		blog(LOG_WARNING, "app externo pediu e não achou: %s %s (%s)", (title.isEmpty() ? key : title).toUtf8().constData(),
+		     field.toUtf8().constData(), reason.toUtf8().constData());
+}
+
+void showMissing(QWidget *parent)
+{
+	QDialog dlg(parent);
+	dlg.setWindowTitle("O que o app externo pediu e não achou");
+	dlg.resize(900, 460);
+	auto *v = new QVBoxLayout(&dlg);
+	auto *hint = new QLabel(
+		"Tudo que um app feito para o vMix (APPVMIX, Companion...) pediu e o Studio não tinha, desde que o programa abriu. "
+		"Entrada faltando: crie/importe o título com o mesmo nome do vMix e use Entradas → Importar chaves do vMix. "
+		"Campo faltando: o título do Studio não tem esse campo (nome diferente no .gtzip?).");
+	hint->setWordWrap(true);
+	hint->setObjectName("muted");
+	v->addWidget(hint);
+	auto *tree = new QTreeWidget;
+	tree->setHeaderLabels({"Falta", "Nome no vMix", "Campos pedidos", "Funções", "Vezes", "Chave do vMix"});
+	tree->setRootIsDecorated(false);
+	for (const Missing &m : g_missing) {
+		auto *it = new QTreeWidgetItem(tree);
+		it->setText(0, m.reason);
+		it->setText(1, m.title.isEmpty() ? QString("(desconhecido)") : m.title);
+		QStringList fields(m.fields.begin(), m.fields.end());
+		fields.sort();
+		QStringList fns(m.functions.begin(), m.functions.end());
+		fns.sort();
+		it->setText(2, fields.join(", "));
+		it->setText(3, fns.join(", "));
+		it->setText(4, QString::number(m.count));
+		it->setText(5, m.key);
+		it->setToolTip(2, fields.join("\n"));
+	}
+	if (g_missing.isEmpty()) {
+		auto *it = new QTreeWidgetItem(tree);
+		it->setText(0, "Nada faltando até agora");
+	}
+	for (int c = 0; c < 5; c++)
+		tree->resizeColumnToContents(c);
+	v->addWidget(tree, 1);
+	auto *row = new QHBoxLayout;
+	auto *imp = new QPushButton("Importar chaves do vMix…");
+	auto *copy = new QPushButton("Copiar lista");
+	auto *clear = new QPushButton("Limpar");
+	auto *close = new QPushButton("Fechar");
+	row->addWidget(imp);
+	row->addWidget(copy);
+	row->addStretch(1);
+	row->addWidget(clear);
+	row->addWidget(close);
+	v->addLayout(row);
+	QObject::connect(imp, &QPushButton::clicked, &dlg, [&dlg] { importVmixKeys(&dlg); });
+	QObject::connect(copy, &QPushButton::clicked, &dlg, [tree] {
+		QStringList lines;
+		for (int i = 0; i < tree->topLevelItemCount(); i++) {
+			QStringList c;
+			for (int k = 0; k < tree->columnCount(); k++)
+				c << tree->topLevelItem(i)->text(k);
+			lines << c.join(" | ");
+		}
+		QApplication::clipboard()->setText(lines.join("\n"));
+	});
+	QObject::connect(clear, &QPushButton::clicked, &dlg, [tree] {
+		g_missing.clear();
+		tree->clear();
+	});
+	QObject::connect(close, &QPushButton::clicked, &dlg, &QDialog::accept);
+	dlg.exec();
+}
+
 bool applyVmixKeysFromFile(const QString &file, QStringList *done, QStringList *notFound, QString *err)
 {
 	QFile f(file);
@@ -93,6 +242,7 @@ bool applyVmixKeysFromFile(const QString &file, QStringList *done, QStringList *
 		*err = "Nenhuma entrada com chave encontrada nesse arquivo.";
 		return false;
 	}
+	rememberTitles(pairs);
 	/* título -> chave (títulos repetidos no vMix ficam com a 1ª chave) */
 	QMap<QString, QString> byTitle, shown;
 	for (const auto &p : pairs) {

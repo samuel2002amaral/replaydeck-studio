@@ -10,3 +10,10 @@ class QWidget;
 void importVmixKeys(QWidget *parent);
 bool applyVmixKeysFromFile(const QString &file, QStringList *done, QStringList *notFound, QString *err);
 void editVmixKey(QWidget *parent, int inputId);
+
+/* nome que a chave tinha no vMix (das importações), ou vazio */
+QString vmixTitleOfKey(const QString &key);
+/* o app pediu algo que não existe aqui: guarda para a janela "O que o app pediu e não achou" */
+void noteMissing(const QString &key, const QString &title, const QString &function, const QString &field,
+		 const QString &reason);
+void showMissing(QWidget *parent);

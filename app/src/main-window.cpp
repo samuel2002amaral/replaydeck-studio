@@ -589,6 +589,7 @@ void MainWindow::buildMenus()
 	inputs->addSeparator();
 	inputs->addAction("Importar chaves do vMix (.vmix, api.xml ou config do APPVMIX)…", this,
 			  [this] { importVmixKeys(this); });
+	inputs->addAction("O que o app externo pediu e não achou…", this, [this] { showMissing(this); });
 
 	QMenu *replay = menuBar()->addMenu("Replay");
 	replay->addAction("Gravar / parar gravação do replay", this, [] { replayhost::toggleRecording(); });

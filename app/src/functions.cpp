@@ -6,6 +6,7 @@
 #include "playlist.hpp"
 #include "ptz.hpp"
 #include "external-output.hpp"
+#include "vmix-keys.hpp"
 #include <cstring>
 #include "../replay/gt/gt-source.hpp"
 #include "../replay/gt/gt-doc.hpp"
@@ -358,7 +359,12 @@ static bool findGtField(obs_source_t *src, const QMap<QString, QString> &params,
 					return true;
 				}
 	}
-	*err = sel.isEmpty() ? QString("o título não tem esse campo") : QString("o título não tem o campo \"%1\"").arg(sel);
+	QStringList have;
+	for (const GtField &f : fields)
+		if (wantKind < 0 || (int)f.kind == wantKind)
+			have << f.id;
+	*err = (sel.isEmpty() ? QString("não tem esse campo") : QString("não tem o campo \"%1\"").arg(sel)) +
+	       QString(". Campos dele: %1").arg(have.isEmpty() ? QString("nenhum desse tipo") : have.join(", "));
 	return false;
 }
 
@@ -606,9 +612,40 @@ bool runFunction(const QString &name, const QString &inputSpec, const QString &v
 	Input *in = nullptr;
 	if (def->input) {
 		in = resolveInput(inputSpec);
+		const QString spec = inputSpec.trimmed();
+		/* chave do vMix desconhecida, mas o nome dela no vMix existe aqui: adota a chave */
+		const QString vmixTitle = in ? QString() : vmixTitleOfKey(spec);
+		if (!in && !vmixTitle.isEmpty()) {
+			if (Input *byName = e.inputByName(vmixTitle)) {
+				e.setInputKey(byName->id, spec);
+				blog(LOG_INFO, "chave do vMix %s dada à entrada \"%s\" (mesmo nome)", spec.toUtf8().constData(),
+				     vmixTitle.toUtf8().constData());
+				in = byName;
+			}
+		}
 		/* StartStopVirtualCam sem entrada = Programa */
-		if (!in && !(inputSpec.trimmed().isEmpty() && QLatin1String(def->name) == QLatin1String("StartStopVirtualCam")))
-			return fail(QString("%1: entrada \"%2\" não encontrada").arg(def->name, inputSpec));
+		if (!in && !(spec.isEmpty() && QLatin1String(def->name) == QLatin1String("StartStopVirtualCam"))) {
+			static const QRegularExpression guid(R"re(^\{?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-)re");
+			const QString field = g_params.value("SelectedName");
+			if (spec.isEmpty())
+				return fail(QString("%1: não há entrada na Prévia").arg(def->name));
+			if (!vmixTitle.isEmpty()) {
+				noteMissing(spec, vmixTitle, def->name, field, "entrada");
+				return fail(QString("%1: falta a entrada \"%2\" no Studio. Crie ou importe um título com o nome \"%2\" "
+						    "(o mesmo do vMix).%3")
+						    .arg(def->name, vmixTitle,
+							 field.isEmpty() ? QString() : QString(" O app quer o campo %1.").arg(field)));
+			}
+			if (guid.match(spec).hasMatch()) {
+				noteMissing(spec, QString(), def->name, field, "chave sem nome");
+				return fail(QString("%1: o Studio não sabe qual entrada é a chave %2. Faça Entradas → Importar chaves do "
+						    "vMix (escolha o data/config.json do app ou o projeto .vmix) ou cole a chave em ⚙ da "
+						    "entrada → Chave do vMix.")
+						    .arg(def->name, spec));
+			}
+			noteMissing(spec, spec, def->name, field, "entrada");
+			return fail(QString("%1: não existe entrada \"%2\" (nem com esse número)").arg(def->name, spec));
+		}
 	}
 	bool numOk = true;
 	const double v = value.trimmed().isEmpty() ? 0.0 : value.trimmed().toDouble(&numOk);
@@ -650,7 +687,15 @@ bool runFunction(const QString &name, const QString &inputSpec, const QString &v
 				textIdx++;
 			}
 			if (key.isEmpty())
-				return fail(QString("SetText: o título não tem o campo \"%1\"").arg(field));
+			{
+				QStringList have;
+				for (const GtField &f : title->fields())
+					if (f.kind == GtField::Text)
+						have << f.id;
+				noteMissing(in->key, in->name, "SetText", field, "campo");
+				return fail(QString("SetText: o título \"%1\" não tem o campo \"%2\". Campos de texto dele: %3")
+						    .arg(in->name, field, have.isEmpty() ? QString("nenhum") : have.join(", ")));
+			}
 			QMap<QString, QString> vals = gtValues(in->source);
 			vals[key] = value;
 			gtSetValues(in->source, vals);
@@ -711,8 +756,10 @@ bool runFunction(const QString &name, const QString &inputSpec, const QString &v
 		const int kind = n == "SetImage" || n.startsWith("SetImageVisible") ? (int)GtField::Image
 				 : n == "SetColor"                                   ? -1
 										     : (int)GtField::Text;
-		if (!findGtField(in->source, g_params, kind, &f, &err))
-			return fail(n + ": " + err);
+		if (!findGtField(in->source, g_params, kind, &f, &err)) {
+			noteMissing(in->key, in->name, n, g_params.value("SelectedName"), "campo");
+			return fail(QString("%1: título \"%2\": %3").arg(n, in->name, err));
+		}
 		if (n == "SetImage") {
 			const QString val = value.trimmed();
 			QString key = f.id;
