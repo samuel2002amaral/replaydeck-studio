@@ -2,6 +2,11 @@
 #include "engine.hpp"
 #include "outputs.hpp"
 #include "virtualcam.hpp"
+#include "multicorder.hpp"
+#include "playlist.hpp"
+#include <cstring>
+#include "../replay/gt/gt-source.hpp"
+#include "../replay/gt/gt-doc.hpp"
 
 #include "../replay/air-control.hpp"
 #include "../replay/engine.hpp"
@@ -9,7 +14,9 @@
 #include <QRegularExpression>
 #include <QStringList>
 
+#include <algorithm>
 #include <cmath>
+#include <functional>
 
 const QList<FunctionDef> &functionList()
 {
@@ -18,6 +25,8 @@ const QList<FunctionDef> &functionList()
 		{"Cut", "Transição", "Corte: a Prévia vai para o Programa", false, false},
 		{"Fade", "Transição", "Fade: a Prévia vai para o Programa", false, true},
 		{"QuickPlay", "Transição", "Entrada direto para o Programa, com fade", true, false},
+		{"ActiveInput", "Transição", "Entrada direto para o Programa (corte)", true, false},
+		{"SetFader", "Transição", "T-bar (Value 0 a 255; 255 completa)", false, true},
 		{"CutDirect", "Transição", "Entrada direto para o Programa, corte seco", true, false},
 		{"FadeToBlack", "Transição", "Fade para o preto (liga/desliga)", false, false},
 		{"SetTransitionDuration", "Transição", "Duração das transições (Value = ms)", false, true},
@@ -47,6 +56,13 @@ const QList<FunctionDef> &functionList()
 		{"OverlayInput3Out", "Overlay", "Overlay 3 sai", false, false},
 		{"OverlayInput4Out", "Overlay", "Overlay 4 sai", false, false},
 		{"OverlayInputAllOff", "Overlay", "Todos os overlays saem", false, false},
+		/* títulos GT */
+		{"TitleBeginAnimation", "Título", "Título GT: anima (Value = TransitionIn, TransitionOut ou o nome da página)", true, true, false, true},
+		{"SetText", "Título", "Título GT: troca um texto (SelectedName = campo, ex.: Nome.Text; Value = texto)", true, true, false, true},
+		/* scripts */
+		{"ScriptStart", "Script", "Roda um script (Value = nome)", false, true, false, true},
+		{"ScriptStop", "Script", "Para um script (Value = nome)", false, true, false, true},
+		{"ScriptStopAll", "Script", "Para todos os scripts", false, false},
 		/* áudio */
 		{"Audio", "Áudio", "Áudio da entrada liga/desliga", true, false},
 		{"AudioOn", "Áudio", "Áudio da entrada liga", true, false},
@@ -59,6 +75,12 @@ const QList<FunctionDef> &functionList()
 		{"Loop", "Entrada", "Loop do vídeo liga/desliga", true, false},
 		{"Minimise", "Entrada", "Minimizar/expandir na lista", true, false},
 		/* saídas */
+		{"StartPlayList", "Saída", "Playlist começa (aba Lista)", false, false},
+		{"StopPlayList", "Saída", "Playlist para", false, false},
+		{"NextPlayListEntry", "Saída", "Playlist: próximo item", false, false},
+		{"StartStopMultiCorder", "Saída", "MultiCorder liga/desliga (as entradas escolhidas da última vez)", false, false},
+		{"StartMultiCorder", "Saída", "MultiCorder liga", false, false},
+		{"StopMultiCorder", "Saída", "MultiCorder desliga", false, false},
 		{"StartStopRecording", "Saídas", "Gravar: começa/para", false, false},
 		{"StartRecording", "Saídas", "Gravar: começa", false, false},
 		{"StopRecording", "Saídas", "Gravar: para", false, false},
@@ -118,7 +140,16 @@ const FunctionDef *findFunction(const QString &name)
 	return nullptr;
 }
 
-/* "3" = terceira entrada; "CAM 1" = pelo nome; vazio = a da Prévia */
+/* parâmetros extras da chamada atual (SelectedName, Duration...) */
+static QMap<QString, QString> g_params;
+std::function<QString(const QString &, const QString &)> scriptHook;
+
+QString inputKey(int id)
+{
+	return QString("5d1e0000-0000-4000-8000-%1").arg(id, 12, 10, QChar('0'));
+}
+
+/* "3" = terceira entrada; "CAM 1" = pelo nome; vazio = a da Prévia; também a chave do vMix */
 static Input *resolveInput(const QString &spec)
 {
 	Engine &e = Engine::get();
@@ -130,9 +161,30 @@ static Input *resolveInput(const QString &spec)
 	if (isNum)
 		return n >= 1 && n <= e.inputs().size() ? e.inputs()[n - 1] : nullptr;
 	for (Input *in : e.inputs())
-		if (in->name.compare(s, Qt::CaseInsensitive) == 0)
+		if (in->name.compare(s, Qt::CaseInsensitive) == 0 || inputKey(in->id).compare(s, Qt::CaseInsensitive) == 0)
 			return in;
 	return nullptr;
+}
+
+bool runFunctionParams(const QString &name, const QMap<QString, QString> &params, QString *error, QWidget *parent)
+{
+	/* nomes do vMix sem diferenciar maiúsculas */
+	QMap<QString, QString> p;
+	for (auto it = params.begin(); it != params.end(); ++it) {
+		QString k = it.key();
+		for (const char *known : {"Input", "Value", "Duration", "SelectedName", "Mix", "SelectedIndex"})
+			if (k.compare(QLatin1String(known), Qt::CaseInsensitive) == 0)
+				k = QLatin1String(known);
+		p.insert(k, it.value());
+	}
+	QString value = p.value("Value");
+	/* Fade Duration=800 (vMix) = Value aqui */
+	if (value.isEmpty() && p.contains("Duration"))
+		value = p.value("Duration");
+	g_params = p;
+	const bool ok = runFunction(name, p.value("Input"), value, error, parent);
+	g_params.clear();
+	return ok;
 }
 
 bool runFunction(const QString &name, const QString &inputSpec, const QString &value, QString *error, QWidget *parent)
@@ -155,13 +207,88 @@ bool runFunction(const QString &name, const QString &inputSpec, const QString &v
 	}
 	bool numOk = true;
 	const double v = value.trimmed().isEmpty() ? 0.0 : value.trimmed().toDouble(&numOk);
-	if (def->value && !value.trimmed().isEmpty() && !numOk)
+	if (def->value && !def->textValue && !value.trimmed().isEmpty() && !numOk)
 		return fail(QString("%1: Value \"%2\" não é número").arg(def->name, value));
 	const QString n = QString::fromLatin1(def->name);
 	const bool replayUp = engineAlive();
 
 	/* ---- transições e prévia ---- */
-	if (n == "Cut")
+	if (n == "ActiveInput")
+		e.cutTo(in->id);
+	else if (n == "SetFader") {
+		const float t = (float)std::clamp(v / 255.0, 0.0, 1.0);
+		if (t >= 1.0f)
+			e.tbarRelease(1.0f);
+		else
+			e.tbarMove(t);
+	} else if (n == "TitleBeginAnimation" || n == "SetText") {
+		if (!gtIsSource(in->source))
+			return fail(QString("%1: \"%2\" não é um título GT").arg(n, in->name));
+		if (n == "SetText") {
+			QString field = g_params.value("SelectedName").trimmed();
+			std::shared_ptr<GtTitle> title = gtTitleOf(in->source);
+			if (!title)
+				return fail("SetText: o título ainda não carregou");
+			/* "Nome.Text", "Nome" ou o índice (SelectedIndex, como no vMix) */
+			QString key;
+			int textIdx = 0;
+			const int wantIdx = g_params.contains("SelectedIndex") ? g_params.value("SelectedIndex").toInt() : -1;
+			for (const GtField &f : title->fields()) {
+				if (f.kind != GtField::Text)
+					continue;
+				if ((!field.isEmpty() && (f.id.compare(field, Qt::CaseInsensitive) == 0 ||
+							  f.element.compare(field, Qt::CaseInsensitive) == 0)) ||
+				    (field.isEmpty() && textIdx == wantIdx)) {
+					key = f.id;
+					break;
+				}
+				textIdx++;
+			}
+			if (key.isEmpty())
+				return fail(QString("SetText: o título não tem o campo \"%1\"").arg(field));
+			QMap<QString, QString> vals = gtValues(in->source);
+			vals[key] = value;
+			gtSetValues(in->source, vals);
+		} else {
+			const QString a = value.trimmed();
+			if (a.isEmpty() || a.compare("TransitionIn", Qt::CaseInsensitive) == 0)
+				gtPlayIn(in->source);
+			else if (a.compare("TransitionOut", Qt::CaseInsensitive) == 0)
+				gtPlayOut(in->source);
+			else
+				gtPlayPage(in->source, a);
+		}
+	} else if (n == "ScriptStart" || n == "ScriptStop" || n == "ScriptStopAll") {
+		if (!scriptHook)
+			return fail("Scripts não disponíveis");
+		const QString r = scriptHook(n, value.trimmed());
+		if (!r.isEmpty())
+			return fail(r);
+	} else if (n == "StartPlayList") {
+		if (!Playlist::get().active() && !Playlist::get().start())
+			return fail("Playlist vazia (monte na aba Lista)");
+	} else if (n == "StopPlayList") {
+		Playlist::get().stop();
+	} else if (n == "NextPlayListEntry") {
+		Playlist::get().next();
+	} else if (n == "StartStopMultiCorder" || n == "StartMultiCorder" || n == "StopMultiCorder") {
+		MultiCorder &mc = MultiCorder::get();
+		const bool want = n == "StartMultiCorder" || (n == "StartStopMultiCorder" && !mc.active());
+		if (!want) {
+			mc.stop();
+		} else if (!mc.active()) {
+			QList<int> ids(mc.lastSelection.begin(), mc.lastSelection.end());
+			if (ids.isEmpty()) /* nunca escolheu: as câmeras */
+				for (Input *x : e.inputs()) {
+					const char *tid = obs_source_get_unversioned_id(x->source);
+					if (tid && (strstr(tid, "dshow") || strstr(tid, "v4l2") || strstr(tid, "decklink")))
+						ids << x->id;
+				}
+			QString err;
+			if (!mc.start(ids, err))
+				return fail("MultiCorder: " + err);
+		}
+	} else if (n == "Cut")
 		e.transition(TransitionKind::Cut);
 	else if (n == "Fade") {
 		if (v > 0)
@@ -358,20 +485,17 @@ bool runFunctionLine(const QString &line, QString *error, QWidget *parent)
 			*error = "Linha sem função: " + line;
 		return false;
 	}
-	QString input, value;
-	static const QRegularExpression arg(R"((Input|Value)\s*=\s*(\"[^\"]*\"|\S+))", QRegularExpression::CaseInsensitiveOption);
+	QMap<QString, QString> params;
+	static const QRegularExpression arg(R"((\w+)\s*=\s*(\"[^\"]*\"|[^\s&]+))");
 	auto it = arg.globalMatch(m.captured(2));
 	while (it.hasNext()) {
 		const auto a = it.next();
 		QString val = a.captured(2);
 		if (val.startsWith('"'))
 			val = val.mid(1, val.size() - 2);
-		if (a.captured(1).compare("Input", Qt::CaseInsensitive) == 0)
-			input = val;
-		else
-			value = val;
+		params.insert(a.captured(1), val);
 	}
-	return runFunction(m.captured(1), input, value, error, parent);
+	return runFunctionParams(m.captured(1), params, error, parent);
 }
 
 bool runHoldFunction(const QString &name, const QString &value, bool pressed)

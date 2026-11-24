@@ -8,7 +8,7 @@ if(NOT TARGET OBS::libobs)
 endif()
 
 set(CMAKE_AUTOMOC ON)
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network)
 
 if(NOT DEFINED RDS_VERSION)
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../VERSION" RDS_VERSION)
@@ -37,6 +37,13 @@ add_executable(replaydeck-studio WIN32
   src/gt-host.cpp src/gt-host.hpp src/gt-stinger.cpp
   src/gpu.cpp src/gpu.hpp
   src/perf.cpp src/perf.hpp
+  src/scripts.cpp src/scripts.hpp
+  src/interact-window.cpp src/interact-window.hpp
+  src/multicorder.cpp src/multicorder.hpp
+  src/filters-window.cpp src/filters-window.hpp
+  src/plugins.cpp src/plugins.hpp
+  src/playlist.cpp src/playlist.hpp
+  src/vmix-api.cpp src/vmix-api.hpp
   src/transitions-panel.cpp src/transitions-panel.hpp
   # replay (veio do plugin ReplayDeck; roda dentro do programa)
   replay/engine.cpp replay/engine.hpp
@@ -72,7 +79,7 @@ set_target_properties(replaydeck-studio PROPERTIES
   FOLDER frontend
   COMPILE_WARNING_AS_ERROR OFF)
 target_compile_definitions(replaydeck-studio PRIVATE RDS_VERSION="${RDS_VERSION}")
-target_link_libraries(replaydeck-studio PRIVATE OBS::libobs Qt6::Core Qt6::Gui Qt6::Widgets)
+target_link_libraries(replaydeck-studio PRIVATE OBS::libobs Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network)
 
 # o replay fala com a "interface do OBS" que o próprio Studio responde (replay/shim vem antes de tudo)
 target_include_directories(replaydeck-studio BEFORE PRIVATE

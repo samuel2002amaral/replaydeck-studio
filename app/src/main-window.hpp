@@ -68,6 +68,9 @@ private:
 	QTimer *statusTimer = nullptr;
 	QPushButton *recBtn = nullptr;
 	QPushButton *streamBtn = nullptr;
+	QPushButton *mcBtn = nullptr;
+	QPushButton *plBtn = nullptr;
+	void toggleMultiCorder();
 	QPushButton *vcamBtn = nullptr;
 	QLabel *outStatus = nullptr;
 	os_cpu_usage_info_t *cpu = nullptr;

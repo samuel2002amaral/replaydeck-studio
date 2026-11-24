@@ -1,4 +1,6 @@
 #include "input-tile.hpp"
+#include "interact-window.hpp"
+#include "filters-window.hpp"
 #include "engine.hpp"
 #include "video-display.hpp"
 
@@ -277,6 +279,15 @@ void InputTile::optionsMenu(const QPoint &globalPos)
 	QMenu menu(this);
 	menu.addAction("Abrir (ver ao vivo e ajustar)…", this, [this] { emit openRequested(id); });
 	menu.addAction("Mandar para a Prévia", this, [this] { Engine::get().setPreview(id); });
+	menu.addAction("Filtros (chroma key, cor, LUT, ruído do microfone…)…", this, [this] {
+		if (Input *in = Engine::get().input(id))
+			FiltersWindow::open(in->source, in->name, window());
+	});
+	if (Input *me = Engine::get().input(id); me && InteractWindow::canInteract(me->source))
+		menu.addAction("Interagir (usar a página com mouse e teclado)…", this, [this] {
+			if (Input *in = Engine::get().input(id))
+				InteractWindow::open(in->source, in->name, window());
+		});
 	if (Input *cur = Engine::get().input(id)) {
 		menu.addAction(cur->collapsed ? "Expandir" : "Minimizar (ou botão direito)", this,
 			       [this, on = !cur->collapsed] { Engine::get().setInputCollapsed(id, on); });

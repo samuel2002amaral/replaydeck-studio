@@ -3,6 +3,7 @@
 #pragma once
 
 #include <QList>
+#include <QMap>
 #include <QString>
 
 class QWidget;
@@ -14,6 +15,7 @@ struct FunctionDef {
 	bool input;           /* usa Input= (número ou nome da entrada) */
 	bool value;           /* usa Value= */
 	bool hold = false;    /* de segurar: age enquanto a tecla está apertada e para ao soltar */
+	bool textValue = false; /* Value é texto (nome, página...), não número */
 };
 
 const QList<FunctionDef> &functionList();
@@ -26,6 +28,17 @@ bool runFunction(const QString &name, const QString &input, const QString &value
 
 /* função de segurar: pressed = apertou (começa) / soltou (para) */
 bool runHoldFunction(const QString &name, const QString &value, bool pressed);
+
+/* com todos os parâmetros do vMix (Input, Value, Duration, SelectedName...) — API e scripts */
+bool runFunctionParams(const QString &name, const QMap<QString, QString> &params, QString *error = nullptr,
+		       QWidget *parent = nullptr);
+
+/* os scripts se registram aqui: (ScriptStart/ScriptStop/ScriptStopAll, nome) -> erro ou vazio */
+#include <functional>
+extern std::function<QString(const QString &, const QString &)> scriptHook;
+
+/* chave estável de uma entrada, no formato do vMix (GUID) */
+QString inputKey(int id);
 
 /* "Função Input=3 Value=50" (forma das linhas de script e da API) */
 bool runFunctionLine(const QString &line, QString *error = nullptr, QWidget *parent = nullptr);

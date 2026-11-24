@@ -22,6 +22,9 @@ struct StudioSettings {
 	/* vídeo */
 	int width = 1920, height = 1080;
 	int fpsNum = 30, fpsDen = 1;
+	/* API igual a do vMix (Stream Deck, Companion, celular) */
+	bool apiEnabled = true;
+	int apiHttpPort = 8088, apiTcpPort = 8099;
 	QString adapter = "auto"; /* placa de vídeo: "auto" (a dedicada) ou o nome; vale ao reabrir */
 	/* gravação */
 	QString recFolder;          /* vazio = Vídeos/ReplayDeck Studio */
@@ -65,6 +68,8 @@ public:
 	static Outputs &get();
 
 	StudioSettings settings() const { return cfg; }
+	/* codificador de vídeo pela escolha ("auto" = o melhor da placa); usado também pelo MultiCorder */
+	obs_encoder_t *makeVideoEncoder(const QString &choice, int kbps, const char *name, QString &usedId);
 	/* aplica e salva; vídeo só muda sem nada gravando/transmitindo (error explica) */
 	bool setSettings(const StudioSettings &s, QString &error);
 	void load(); /* lê o arquivo e aplica (chamar depois do motor ligar) */
@@ -96,7 +101,7 @@ private:
 	void save();
 	bool applyVideo(const StudioSettings &s, QString &error);
 	void applyMonitor();
-	obs_encoder_t *makeVideoEncoder(const QString &choice, int kbps, const char *name, QString &usedId);
+
 	static void onRecStop(void *data, calldata_t *cd);
 	static void onStreamStop(void *data, calldata_t *cd);
 	static void onStreamReconnect(void *data, calldata_t *cd);

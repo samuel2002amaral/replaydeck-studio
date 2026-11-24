@@ -153,6 +153,8 @@ bool Engine::start(QString &error)
 #else
 	obs_load_all_modules();
 #endif
+	if (loadExtraModules)
+		loadExtraModules();
 	obs_post_load_modules();
 	obs_log_loaded_modules();
 
@@ -356,6 +358,7 @@ int Engine::sharedFrom(int id) const
 std::function<QString(const char *, obs_data_t *)> Engine::deviceKeyOverride;
 std::function<void()> Engine::beforeProjectLoad;
 std::function<int(obs_source_t *)> Engine::beforeOverlayOff;
+std::function<void()> Engine::loadExtraModules;
 
 QString Engine::deviceKey(const char *unversionedType, obs_data_t *settings)
 {

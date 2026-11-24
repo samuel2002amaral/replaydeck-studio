@@ -276,6 +276,36 @@ AddInputDialog::AddInputDialog(QWidget *parent) : QDialog(parent)
 		typeLabels << QString::fromUtf8(t.label);
 		types->addItem(new QListWidgetItem(inputTypeIcon(latest), QString::fromUtf8(t.label)));
 	}
+	/* os outros tipos do motor (plugins do OBS, por exemplo) no fim da lista */
+	{
+		QSet<QByteArray> known;
+		for (const TypeDef &t : typeDefs)
+			known.insert(QByteArray(t.id));
+		static const QSet<QByteArray> internal = {"scene", "group", "instant_replay_source",
+							  "rds_program_mirror", "audio_line"};
+		QList<QPair<QString, QString>> extra; /* rótulo, id */
+		const char *id = nullptr, *unver = nullptr;
+		for (size_t i = 0; obs_enum_input_types2(i, &id, &unver); i++) {
+			const uint32_t fl = obs_get_source_output_flags(id);
+			const QByteArray u(unver ? unver : id);
+			if (known.contains(u) || internal.contains(u) || u.startsWith("instant_replay") || u.startsWith("rds_") ||
+			    (fl & (OBS_SOURCE_DEPRECATED | OBS_SOURCE_CAP_DISABLED | OBS_SOURCE_CAP_OBSOLETE)))
+				continue;
+			if (latestType(u.constData()) != QString::fromUtf8(id))
+				continue; /* só a versão mais nova */
+			const char *dn = obs_source_get_display_name(id);
+			if (dn)
+				extra << qMakePair(QString::fromUtf8(dn), QString::fromUtf8(id));
+		}
+		std::sort(extra.begin(), extra.end());
+		for (const auto &x : extra) {
+			typeIds << x.second;
+			typeLabels << x.first;
+			auto *it = new QListWidgetItem(inputTypeIcon(x.second), x.first);
+			it->setToolTip("Tipo do motor ou de plugin: " + x.second);
+			types->addItem(it);
+		}
+	}
 	body->addWidget(types);
 
 	auto *right = new QWidget;

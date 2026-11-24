@@ -14,7 +14,7 @@ class SettingsDialog : public QDialog {
 public:
 	explicit SettingsDialog(QWidget *parent = nullptr, int startTab = 0);
 
-	enum Tab { Video = 0, Recording = 1, Streaming = 2, Audio = 3, Shortcuts = 4 };
+	enum Tab { Video = 0, Recording = 1, Streaming = 2, Remote = 3, Audio = 4, Shortcuts = 5 };
 
 private:
 	bool apply();
@@ -23,6 +23,8 @@ private:
 	QComboBox *resolution = nullptr;
 	QComboBox *fps = nullptr;
 	QComboBox *adapter = nullptr;
+	class QCheckBox *apiOn = nullptr;
+	QSpinBox *apiHttp = nullptr, *apiTcp = nullptr;
 	QLineEdit *recFolder = nullptr;
 	QComboBox *recFormat = nullptr;
 	QComboBox *recEncoder = nullptr;

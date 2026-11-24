@@ -1,5 +1,9 @@
 #include "settings-dialog.hpp"
 #include "gpu.hpp"
+#include "vmix-api.hpp"
+
+#include <QCheckBox>
+#include <QNetworkInterface>
 #include "engine.hpp"
 #include "engine.hpp"
 #include "outputs.hpp"
@@ -222,6 +226,33 @@ SettingsDialog::SettingsDialog(QWidget *parent, int startTab) : QDialog(parent)
 	}
 
 	/* ---- áudio ---- */
+	page(tabs, "Controle remoto", f,
+	     "API igual a do vMix: Stream Deck, Bitfocus Companion, apps de celular e outros programas feitos para o vMix "
+	     "controlam o Studio do mesmo jeito (escolha \"vMix\" neles e aponte para o IP deste PC). "
+	     "Ex.: http://IP:8088/api/?Function=Cut&Input=2");
+	apiOn = new QCheckBox("Ligada");
+	apiOn->setChecked(s.apiEnabled);
+	f->addRow("API do vMix", apiOn);
+	apiHttp = new QSpinBox;
+	apiHttp->setRange(1, 65535);
+	apiHttp->setValue(s.apiHttpPort);
+	f->addRow("Porta HTTP (web)", apiHttp);
+	apiTcp = new QSpinBox;
+	apiTcp->setRange(1, 65535);
+	apiTcp->setValue(s.apiTcpPort);
+	f->addRow("Porta TCP (Companion)", apiTcp);
+	{
+		QStringList ips;
+		for (const QHostAddress &a : QNetworkInterface::allAddresses())
+			if (a.protocol() == QAbstractSocket::IPv4Protocol && !a.isLoopback())
+				ips << a.toString();
+		auto *st = new QLabel(QString("Agora: %1\nIP deste PC: %2")
+					      .arg(VmixApi::get().status(), ips.isEmpty() ? QString("—") : ips.join(", ")));
+		st->setObjectName("muted");
+		st->setTextInteractionFlags(Qt::TextSelectableByMouse);
+		f->addRow("", st);
+	}
+
 	page(tabs, "Áudio", f, "Fone: onde tocam as entradas com o botão Fone ligado no mixer.");
 	monitor = new QComboBox;
 	monitor->addItem("Padrão do Windows", QStringList{"default", ""});
@@ -459,6 +490,9 @@ bool SettingsDialog::apply()
 	const QStringList m = monitor->currentData().toStringList();
 	s.monitorDeviceId = m.value(0, "default");
 	s.monitorDeviceName = m.value(1);
+	s.apiEnabled = apiOn->isChecked();
+	s.apiHttpPort = apiHttp->value();
+	s.apiTcpPort = apiTcp->value();
 	QList<Shortcut> list;
 	for (int r = 0; r < keys->rowCount(); r++) {
 		auto *ed = qobject_cast<KeyCapture *>(keys->cellWidget(r, 0));

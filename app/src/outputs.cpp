@@ -1,4 +1,5 @@
 #include "outputs.hpp"
+#include "vmix-api.hpp"
 #include "engine.hpp"
 #include "vertical-canvas.hpp"
 
@@ -90,6 +91,10 @@ void Outputs::load()
 		num("fps_num", s.fpsNum);
 		num("fps_den", s.fpsDen);
 		str("placa_video", s.adapter);
+		if (obs_data_has_user_value(d, "api_ligada"))
+			s.apiEnabled = obs_data_get_bool(d, "api_ligada");
+		num("api_porta_http", s.apiHttpPort);
+		num("api_porta_tcp", s.apiTcpPort);
 		str("gravar_pasta", s.recFolder);
 		str("gravar_formato", s.recFormat);
 		str("gravar_codificador", s.recEncoder);
@@ -138,6 +143,9 @@ void Outputs::save()
 	obs_data_set_int(d, "fps_num", cfg.fpsNum);
 	obs_data_set_int(d, "fps_den", cfg.fpsDen);
 	obs_data_set_string(d, "placa_video", cfg.adapter.toUtf8().constData());
+	obs_data_set_bool(d, "api_ligada", cfg.apiEnabled);
+	obs_data_set_int(d, "api_porta_http", cfg.apiHttpPort);
+	obs_data_set_int(d, "api_porta_tcp", cfg.apiTcpPort);
 	obs_data_set_string(d, "gravar_pasta", cfg.recFolder.toUtf8().constData());
 	obs_data_set_string(d, "gravar_formato", cfg.recFormat.toUtf8().constData());
 	obs_data_set_string(d, "gravar_codificador", cfg.recEncoder.toUtf8().constData());
@@ -190,9 +198,13 @@ bool Outputs::setSettings(const StudioSettings &s, QString &error)
 		if (!applyVideo(s, error))
 			return false;
 	}
+	const bool apiChanged = s.apiEnabled != cfg.apiEnabled || s.apiHttpPort != cfg.apiHttpPort ||
+				s.apiTcpPort != cfg.apiTcpPort;
 	cfg = s;
 	applyMonitor();
 	save();
+	if (apiChanged)
+		VmixApi::get().apply(cfg.apiEnabled, cfg.apiHttpPort, cfg.apiTcpPort);
 	return true;
 }
 

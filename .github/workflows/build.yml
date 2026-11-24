@@ -132,7 +132,7 @@ jobs:
       - name: Conferir o pacote
         run: |
           $pkg = "$PWD/pkg"
-          foreach ($f in @('bin/64bit/ReplayDeckStudio.exe', 'bin/64bit/obs.dll', 'bin/64bit/Qt6Widgets.dll', 'bin/64bit/platforms/qwindows.dll',
+          foreach ($f in @('bin/64bit/ReplayDeckStudio.exe', 'bin/64bit/obs.dll', 'bin/64bit/Qt6Widgets.dll', 'bin/64bit/Qt6Network.dll', 'bin/64bit/platforms/qwindows.dll',
                            'core/win-dshow', 'core/obs-ffmpeg', 'core/obs-transitions', 'core/image-source', 'data/libobs', 'LICENCA.txt')) {
             if (-not (Test-Path "$pkg/$f")) { throw "faltando no pacote: $f" }
           }

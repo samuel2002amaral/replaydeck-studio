@@ -1,4 +1,9 @@
 #include "main-window.hpp"
+#include "multicorder.hpp"
+#include "playlist.hpp"
+#include "scripts.hpp"
+#include "plugins.hpp"
+#include <QPointer>
 #include <media-io/video-io.h>
 #include "gt/gt-dock.hpp"
 #include "transitions-panel.hpp"
@@ -460,7 +465,7 @@ QWidget *MainWindow::buildRightPanel()
 	rightTabs->addTab(new GtDock, "Títulos GT");
 	rightTabs->addTab(new TransitionsPanel, "Transições");
 	rightTabs->addTab(comingSoon("PTZ", "Chega na fase 6."), "PTZ");
-	rightTabs->addTab(comingSoon("Lista", "Lista de vídeos: chega na fase 6."), "Lista");
+	rightTabs->addTab(new PlaylistPanel, "Lista");
 	return rightTabs;
 }
 
@@ -502,13 +507,26 @@ QWidget *MainWindow::buildBottomBar()
 	connect(streamBtn, &QPushButton::clicked, this, &MainWindow::toggleStreaming);
 	h->addWidget(streamBtn);
 	h->addWidget(vcamBtn);
-	const QList<QPair<QString, QString>> later = {{"MultiCorder", "fase 6"}, {"Playlist", "fase 6"}};
-	for (const auto &p : later) {
-		auto *b = new QPushButton(p.first);
-		b->setToolTip("Chega na " + p.second);
-		connect(b, &QPushButton::clicked, this, [this, p] { notYet(p.first, p.second); });
-		h->addWidget(b);
-	}
+	mcBtn = new QPushButton("MultiCorder");
+	mcBtn->setObjectName("outButton");
+	mcBtn->setToolTip("Grava cada entrada escolhida num arquivo separado (câmeras limpas para editar depois)");
+	connect(mcBtn, &QPushButton::clicked, this, &MainWindow::toggleMultiCorder);
+	connect(&MultiCorder::get(), &MultiCorder::stateChanged, this, &MainWindow::updateOutputs);
+	h->addWidget(mcBtn);
+	plBtn = new QPushButton("Playlist");
+	plBtn->setObjectName("outButton");
+	plBtn->setToolTip("Toca a lista da aba Lista: entradas ao ar uma depois da outra");
+	connect(plBtn, &QPushButton::clicked, this, [this] {
+		Playlist &pl = Playlist::get();
+		if (pl.active())
+			pl.stop();
+		else if (!pl.start()) {
+			rightTabs->setCurrentIndex(rightTabs->count() - 1);
+			QMessageBox::information(this, "Playlist", "A lista está vazia: monte na aba Lista (＋ Entrada).");
+		}
+	});
+	connect(&Playlist::get(), &Playlist::stateChanged, this, &MainWindow::updateOutputs);
+	h->addWidget(plBtn);
 	h->addStretch(1);
 	auto *cfg = new QPushButton("⚙ Configurações");
 	connect(cfg, &QPushButton::clicked, this, [this] { SettingsDialog(this).exec(); });
@@ -585,6 +603,19 @@ void MainWindow::buildMenus()
 	cfg->addAction("Gravação…", this, [this] { SettingsDialog(this, SettingsDialog::Recording).exec(); });
 	cfg->addAction("Transmissão…", this, [this] { SettingsDialog(this, SettingsDialog::Streaming).exec(); });
 	cfg->addAction("Atalhos de teclado…", this, [this] { SettingsDialog(this, SettingsDialog::Shortcuts).exec(); });
+	cfg->addAction("Controle remoto (API do vMix)…", this, [this] { SettingsDialog(this, SettingsDialog::Remote).exec(); });
+	cfg->addSeparator();
+	cfg->addAction("Plugins do OBS…", this, [this] { PluginsDialog(this).exec(); });
+	cfg->addAction("Scripts…", this, [this] {
+		static QPointer<ScriptsDialog> dlg;
+		if (!dlg) {
+			dlg = new ScriptsDialog(this);
+			dlg->setAttribute(Qt::WA_DeleteOnClose);
+		}
+		dlg->show();
+		dlg->raise();
+		dlg->activateWindow();
+	});
 
 	QMenu *help = menuBar()->addMenu("Ajuda");
 	/* abre com o Explorer e o Bloco de Notas direto: não depende da associação de pastas do
@@ -661,6 +692,27 @@ static QString hms(qint64 ms)
 	return QString("%1:%2:%3").arg(s / 3600, 2, 10, QChar('0')).arg((s / 60) % 60, 2, 10, QChar('0')).arg(s % 60, 2, 10, QChar('0'));
 }
 
+void MainWindow::toggleMultiCorder()
+{
+	MultiCorder &mc = MultiCorder::get();
+	if (mc.active()) {
+		if (QMessageBox::question(this, "MultiCorder", "Parar o MultiCorder?") == QMessageBox::Yes)
+			mc.stop();
+		return;
+	}
+	MultiCorderDialog dlg(this);
+	if (dlg.exec() != QDialog::Accepted)
+		return;
+	const QList<int> ids = dlg.selected();
+	mc.lastSelection = QSet<int>(ids.begin(), ids.end());
+	QString err;
+	if (!mc.start(ids, err))
+		QMessageBox::warning(this, "MultiCorder", err);
+	else if (!err.isEmpty())
+		QMessageBox::information(this, "MultiCorder", err);
+	updateOutputs();
+}
+
 void MainWindow::updateOutputs()
 {
 	Outputs &o = Outputs::get();
@@ -678,6 +730,12 @@ void MainWindow::updateOutputs()
 		st = (o.streamReconnecting() ? "↻ Reconectando " : "● Ao vivo ") +
 		     (o.liveCount() > 1 ? QString("(%1) ").arg(o.liveCount()) : QString()) + hms(o.streamingMs());
 	paint(streamBtn, o.streaming(), st);
+	const Playlist &pl = Playlist::get();
+	paint(plBtn, pl.active(),
+	      pl.active() ? QString("● Playlist %1/%2").arg(pl.currentIndex() + 1).arg(pl.items.size()) : QString("Playlist"));
+	MultiCorder &mc = MultiCorder::get();
+	paint(mcBtn, mc.active(),
+	      mc.active() ? QString("● MultiCorder (%1) %2").arg(mc.count()).arg(hms(mc.elapsedMs())) : QString("MultiCorder"));
 	VirtualCam &vc = VirtualCam::get();
 	paint(vcamBtn, vc.active(), vc.active() ? "● Câmera virtual: " + vc.description() + " ▾" : "Câmera virtual ▾");
 	if (o.streaming()) {

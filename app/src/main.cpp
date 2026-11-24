@@ -9,6 +9,12 @@
 #include "external-output.hpp"
 #include "main-window.hpp"
 #include "perf.hpp"
+#include "playlist.hpp"
+#include "filters-window.hpp"
+#include "plugins.hpp"
+#include "multicorder.hpp"
+#include "scripts.hpp"
+#include "vmix-api.hpp"
 #include "transitions-panel.hpp"
 #include "functions.hpp"
 #include "gt/gt-source.hpp"
@@ -128,6 +134,7 @@ int main(int argc, char *argv[])
 #endif
 
 	perf::tuneProcess();
+	Engine::loadExtraModules = plugins::loadEnabled;
 	QString error;
 	Engine::beforeProjectLoad = replayhost::registerTypes; /* entradas Replay A/B do projeto */
 	if (!Engine::get().start(error)) {
@@ -138,6 +145,8 @@ int main(int argc, char *argv[])
 	}
 
 	perf::logState();
+	Scripts::get().load();
+	Playlist::get().load();
 	VerticalCanvas::registerSource();
 	Outputs::get().load();
 	Shortcuts::get().load();
@@ -148,6 +157,11 @@ int main(int argc, char *argv[])
 		w.showMaximized();
 		perf::startAutosave(&w);
 		perf::startHangWatch();
+		QTimer::singleShot(3000, [] { plugins::startupFinished(); }); /* abriu e ficou de pé */
+		{
+			const StudioSettings &cs = Outputs::get().settings();
+			VmixApi::get().apply(cs.apiEnabled, cs.apiHttpPort, cs.apiTcpPort);
+		}
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST"))
 			runSelfTest(w);
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST_REPLAY"))
@@ -205,6 +219,89 @@ int main(int argc, char *argv[])
 				w.grab().save(QDir::temp().filePath("rds-trans.png"));
 				w.close();
 			});
+		}
+		if (qEnvironmentVariableIsSet("RDS_SELFTEST_PLAYLIST")) {
+			/* playlist: vídeo até o fim -> imagem 1 s -> fim */
+			QTimer::singleShot(800, [] {
+				Engine &e = Engine::get();
+				while (!e.inputs().isEmpty())
+					e.removeInput(e.inputs().first()->id);
+				OBSDataAutoRelease v = obs_data_create();
+				obs_data_set_string(v, "local_file", qEnvironmentVariable("RDS_SELFTEST_PLAYLIST").toUtf8().constData());
+				Input *vid = e.addInput("ffmpeg_source", "VINHETA", v);
+				OBSDataAutoRelease b = obs_data_create();
+				obs_data_set_int(b, "color", 0xFFC05020);
+				Input *blue = e.addInput("color_source_v3", "AZUL", b);
+				Playlist &pl = Playlist::get();
+				pl.items = {PlaylistItem{vid->id, 0}, PlaylistItem{blue->id, 1}};
+				pl.loop = false;
+				pl.transitionId = 0;
+				QObject::connect(&pl, &Playlist::stateChanged, [] {
+					Engine &en = Engine::get();
+					Input *p = en.input(en.programId());
+					blog(LOG_INFO, "[lista] item=%d programa=%s", Playlist::get().currentIndex(),
+					     p ? p->name.toUtf8().constData() : "-");
+				});
+				QString err;
+				runFunction("StartPlayList", QString(), QString(), &err);
+			});
+			QTimer::singleShot(6000, [&w] { w.close(); });
+		}
+		if (qEnvironmentVariableIsSet("RDS_SELFTEST_FILTERS")) {
+			/* filtros: um filtro de cor numa entrada, janela de filtros, e volta ao reabrir o projeto */
+			QTimer::singleShot(800, [&w] {
+				Engine &e = Engine::get();
+				while (!e.inputs().isEmpty())
+					e.removeInput(e.inputs().first()->id);
+				OBSDataAutoRelease r = obs_data_create();
+				obs_data_set_int(r, "color", 0xFF2020C0);
+				Input *in = e.addInput("color_source_v3", "VERMELHO", r);
+				OBSDataAutoRelease fs = obs_data_create();
+				obs_data_set_double(fs, "brightness", -0.5);
+				OBSSourceAutoRelease f = obs_source_create("color_filter_v2", "Correção de cor", fs, nullptr);
+				obs_source_filter_add(in->source, f);
+				FiltersWindow::open(in->source, in->name, &w);
+			});
+			QTimer::singleShot(3000, [] {
+				for (QWidget *x : QApplication::topLevelWidgets())
+					if (x->windowTitle().startsWith("Filtros"))
+						x->grab().save(QDir::temp().filePath("rds-filtros.png"));
+				Engine &e = Engine::get();
+				const QString proj = QDir::temp().filePath("rds-filtros-teste.rdsproj");
+				e.saveProject(proj);
+				e.loadProject(proj);
+				int n = 0;
+				if (!e.inputs().isEmpty())
+					obs_source_enum_filters(e.inputs().first()->source, [](obs_source_t *, obs_source_t *, void *p) { (*(int *)p)++; }, &n);
+				blog(LOG_INFO, "[filtros] depois de reabrir: %d filtro(s)", n);
+			});
+			QTimer::singleShot(4500, [&w] { w.close(); });
+		}
+		if (qEnvironmentVariableIsSet("RDS_SELFTEST_API")) {
+			/* API do vMix e scripts: entradas VERMELHO, AZUL e um título; o teste de fora usa curl/nc */
+			QTimer::singleShot(600, [] {
+				Engine &e = Engine::get();
+				while (!e.inputs().isEmpty())
+					e.removeInput(e.inputs().first()->id);
+				OBSDataAutoRelease r = obs_data_create();
+				obs_data_set_int(r, "color", 0xFF2020C0);
+				Input *red = e.addInput("color_source_v3", "VERMELHO", r);
+				OBSDataAutoRelease b = obs_data_create();
+				obs_data_set_int(b, "color", 0xFFC05020);
+				e.addInput("color_source_v3", "AZUL", b);
+				OBSSourceAutoRelease gt = gtLibraryAdd(qEnvironmentVariable("RDS_SELFTEST_API"));
+				e.cutTo(red->id);
+				Scripts &sc = Scripts::get();
+				sc.remove("teste");
+				sc.add("teste");
+				sc.setCode("teste", "' teste\nAPI.Function(\"PreviewInput\", Input:=\"AZUL\")\nSleep(300)\n"
+						    "For i = 1 To 3\n  Cut\n  Sleep(100)\nNext\n"
+						    "SetText Input=3 SelectedName=Nome.Text Value=\"GOL DO TIME\"\n");
+				for (Input *x : e.inputs())
+					MultiCorder::get().lastSelection.insert(x->id);
+				blog(LOG_INFO, "[api] pronto");
+			});
+			QTimer::singleShot(qMax(8000, qEnvironmentVariableIntValue("RDS_SELFTEST_HOLD") * 1000), [&w] { w.close(); });
 		}
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST_GTSTINGER")) {
 			/* stinger GT: um título .gtzip (entrada) como stinger entre vermelho e azul */
@@ -528,8 +625,12 @@ int main(int argc, char *argv[])
 		}
 		ret = app.exec();
 		perf::stopHangWatch();
+		Scripts::get().stopAll();
+		Playlist::get().stop();
+		VmixApi::get().shutdown();
 		Shortcuts::get().shutdown();
 		VirtualCam::get().shutdown();
+		MultiCorder::get().shutdown();
 		Outputs::get().shutdown(); /* fecha o arquivo da gravação e a transmissão */
 		VerticalCanvas::get().shutdown();
 		replayhost::shutdown(); /* para a gravação do replay antes de fechar a janela */

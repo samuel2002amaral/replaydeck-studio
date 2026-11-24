@@ -254,6 +254,9 @@ static bool typingInto(QObject *o)
 			return true;
 		if (auto *cb = qobject_cast<QComboBox *>(x); cb && cb->isEditable())
 			return true;
+		/* janela "Interagir" (página web): o teclado é da página */
+		if (auto *xw = qobject_cast<QWidget *>(x); xw && xw->window() && xw->window()->property("rdsTyping").toBool())
+			return true;
 	}
 	return false;
 }

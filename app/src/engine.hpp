@@ -158,6 +158,8 @@ public:
 	/* antes de tirar uma entrada de um overlay: devolve quantos ms esperar (ex.: o título GT
 	 * anima a saída); 0 = tira na hora */
 	static std::function<int(obs_source_t *)> beforeOverlayOff;
+	/* plugins do OBS: carregados junto com os módulos do motor */
+	static std::function<void()> loadExtraModules;
 
 signals:
 	void inputsChanged();
