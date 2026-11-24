@@ -42,6 +42,8 @@ private:
 	void openInput(int id);
 	void addInput();
 	void notYet(const QString &what, const QString &phase);
+	enum class LogAction { Folder, Notepad, Desktop };
+	void openLogs(LogAction what);
 	void toggleRecording();
 	void toggleStreaming();
 	void updateOutputs();

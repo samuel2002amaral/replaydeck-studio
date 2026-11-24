@@ -1,5 +1,7 @@
 ## ReplayDeck Studio — fase 3 (áudio, gravar, transmitir, saída externa)
 
+> 2.5.1: Ajuda → **Abrir pasta de logs** não fazia nada em alguns PCs (a associação de pastas do Windows quebrada). Agora abre o Explorer direto, já com o log mais novo selecionado. Novos: **Abrir o log atual** (Bloco de Notas) e **Copiar o log atual para a Área de Trabalho**.
+>
 > 2.5.0:
 > - **Funções com os nomes do vMix** (Cut, Fade, QuickPlay, OverlayInput1In, SetVolume, ReplayMarkIn, ReplayPlayLastEvent… 60+) — base de atalhos, scripts e da API.
 > - **Atalhos de teclado para tudo** (Configurações → Atalhos): tecla (com Ctrl/Shift/Alt) → função, entrada e valor. Botão "Atalhos sugeridos" (Espaço = Corte, Enter = Fade, F1-F4 = overlays, 1-9 = Prévia, I/O = Mark In/Out, P = último lance…). Não disparam enquanto você digita.

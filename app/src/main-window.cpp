@@ -7,6 +7,11 @@
 #include "settings-dialog.hpp"
 #include "virtualcam.hpp"
 #include <QMenu>
+#include <QFile>
+#include <QDir>
+#include <QFileInfo>
+#include <QStandardPaths>
+#include <QProcess>
 #include <QDropEvent>
 #include <QMimeData>
 #include <climits>
@@ -540,7 +545,11 @@ void MainWindow::buildMenus()
 	cfg->addAction("Atalhos de teclado…", this, [this] { SettingsDialog(this, SettingsDialog::Shortcuts).exec(); });
 
 	QMenu *help = menuBar()->addMenu("Ajuda");
-	help->addAction("Abrir pasta de logs", this, [&e] { QDesktopServices::openUrl(QUrl::fromLocalFile(e.configDir() + "/logs")); });
+	/* abre com o Explorer e o Bloco de Notas direto: não depende da associação de pastas do
+	 * Windows (quebrada em alguns PCs: "não tem um aplicativo associado") */
+	help->addAction("Abrir pasta de logs", this, [this] { openLogs(LogAction::Folder); });
+	help->addAction("Abrir o log atual (Bloco de Notas)", this, [this] { openLogs(LogAction::Notepad); });
+	help->addAction("Copiar o log atual para a Área de Trabalho", this, [this] { openLogs(LogAction::Desktop); });
 	help->addAction("Sobre", this, [this] {
 		QMessageBox::about(this, "ReplayDeck Studio",
 				   QString("<b>ReplayDeck Studio %1</b><br>Motor de vídeo: libobs %2 (OBS Studio, GPL)<br>"
@@ -655,6 +664,44 @@ void MainWindow::toggleStreaming()
 			QMessageBox::warning(this, "Transmitir", "A transmissão não começou.\n\n" + err);
 	}
 	updateOutputs();
+}
+
+/* ---------- log ---------- */
+
+void MainWindow::openLogs(LogAction what)
+{
+	const QString dir = QDir::cleanPath(Engine::get().configDir() + "/logs");
+	const QFileInfoList files = QDir(dir).entryInfoList({"*.txt"}, QDir::Files, QDir::Time);
+	const QString newest = files.isEmpty() ? QString() : files.first().absoluteFilePath();
+	if (what == LogAction::Desktop) {
+		if (newest.isEmpty()) {
+			QMessageBox::information(this, "Log", "Nenhum log encontrado em:\n" + QDir::toNativeSeparators(dir));
+			return;
+		}
+		const QString desk = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
+		const QString dest = desk + "/ReplayDeck Studio log " + files.first().baseName() + ".txt";
+		QFile::remove(dest);
+		if (QFile::copy(newest, dest))
+			QMessageBox::information(this, "Log", "O log foi copiado para a Área de Trabalho:\n" +
+								 QDir::toNativeSeparators(dest) + "\n\nÉ só arrastar esse arquivo para a conversa.");
+		else
+			QMessageBox::warning(this, "Log", "Não consegui copiar para a Área de Trabalho.\nO log está em:\n" +
+								QDir::toNativeSeparators(newest));
+		return;
+	}
+#ifdef _WIN32
+	bool ok;
+	if (what == LogAction::Notepad && !newest.isEmpty())
+		ok = QProcess::startDetached("notepad.exe", {QDir::toNativeSeparators(newest)});
+	else if (!newest.isEmpty())
+		ok = QProcess::startDetached("explorer.exe", {"/select,", QDir::toNativeSeparators(newest)});
+	else
+		ok = QProcess::startDetached("explorer.exe", {QDir::toNativeSeparators(dir)});
+	if (!ok)
+		QMessageBox::information(this, "Log", "O log está em:\n" + QDir::toNativeSeparators(newest.isEmpty() ? dir : newest));
+#else
+	QDesktopServices::openUrl(QUrl::fromLocalFile(what == LogAction::Notepad && !newest.isEmpty() ? newest : dir));
+#endif
 }
 
 /* ---------- janelas ---------- */
