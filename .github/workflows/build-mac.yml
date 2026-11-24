@@ -156,13 +156,15 @@ jobs:
         run: |
           APP="pkg/ReplayDeck Studio.app"
           export RDS_SELFTEST="$PWD/teste-mac.png"
-          perl -e 'alarm shift; exec @ARGV' 150 "$APP/Contents/MacOS/ReplayDeckStudio" > teste-mac-saida.txt 2>&1 || echo "saiu com código $?"
+          perl -e 'alarm shift; exec {$ARGV[0]} @ARGV or die "nao abriu: $!"' 150 "$APP/Contents/MacOS/ReplayDeckStudio" > teste-mac-saida.txt 2>&1 || echo "saiu com código $?"
           tail -40 teste-mac-saida.txt || true
           LOGS="$HOME/Library/Application Support/ReplayDeckStudio/logs"
           ls -la "$LOGS" || true
           cp "$(ls -t "$LOGS"/*.txt | head -1)" teste-mac-log.txt || true
           grep -iE "módulo|module|erro|error|falh|placa|vídeo|video|carregad" teste-mac-log.txt | head -80 || true
           test -f teste-mac.png && echo "foto ok" || echo "::warning::sem foto da janela"
+          grep "\[teste\]" teste-mac-log.txt
+          grep -q "\[teste\] abrir=1" teste-mac-log.txt || { echo "::error::o teste automático não chegou ao fim"; exit 1; }
 
       - uses: actions/upload-artifact@v7
         if: always()

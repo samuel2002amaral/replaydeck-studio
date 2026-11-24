@@ -113,7 +113,13 @@ static void runSelfTest(MainWindow &w)
 				if (sa->widget() && sa->widget()->objectName() == "tilesHost")
 					sa->verticalScrollBar()->setValue(qEnvironmentVariableIntValue("RDS_SELFTEST_SCROLL"));
 	});
-	step(6500, [] { QProcess::execute("import", {"-window", "root", qEnvironmentVariable("RDS_SELFTEST")}); });
+	step(6500, [] {
+#ifdef __APPLE__
+		QProcess::execute("screencapture", {"-x", qEnvironmentVariable("RDS_SELFTEST")});
+#else
+		QProcess::execute("import", {"-window", "root", qEnvironmentVariable("RDS_SELFTEST")});
+#endif
+	});
 	step(7000, [&w] { w.close(); });
 }
 
