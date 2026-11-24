@@ -30,7 +30,18 @@ struct Input {
 	float volume = 1.0f; /* multiplicador (1 = 0 dB) */
 	bool audioAuto = true;
 	bool monitor = false; /* ouvir no fone (saída de monitoramento) */
+	/* aparência na lista (como no vMix): cor do cabeçalho e minimizada em barra */
+	QString color; /* chave de inputColors() ("" = padrão) */
+	bool collapsed = false;
 };
+
+struct InputColor {
+	const char *key;
+	const char *label;
+	const char *hex;
+};
+const QList<InputColor> &inputColors();
+QString inputColorHex(const QString &key); /* cor do cabeçalho (padrão se vazio) */
 
 enum class TransitionKind { Cut, Fade, Stinger, FadeToBlack };
 
@@ -77,6 +88,8 @@ public:
 	void setInputVolume(int id, float mul);
 	void setInputAudioAuto(int id, bool on);
 	void setInputMonitor(int id, bool on);
+	void setInputColor(int id, const QString &key);
+	void setInputCollapsed(int id, bool on);
 	float masterVolume() const { return master; }
 	void setMasterVolume(float mul);
 	static bool hasAudio(const Input *in);

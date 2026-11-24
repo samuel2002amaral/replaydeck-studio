@@ -55,7 +55,7 @@ private:
 	QSlider *tbar = nullptr;
 	QSpinBox *duration = nullptr;
 	QWidget *tilesHost = nullptr;
-	QGridLayout *tilesGrid = nullptr;
+	class FlowLayout *tilesGrid = nullptr;
 	QLabel *emptyHint = nullptr;
 	QList<InputTile *> tiles;
 	QTabWidget *rightTabs = nullptr;

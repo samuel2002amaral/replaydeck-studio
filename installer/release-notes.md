@@ -1,5 +1,12 @@
 ## ReplayDeck Studio — fase 3 (áudio, gravar, transmitir, saída externa)
 
+> 2.3.0: visual mais claro e com um pouco de cor:
+> - **Minimizar em barra** (botão direito → Minimizar): a entrada vira uma barra estreita com o nome na vertical, como no vMix. Clique = Prévia; duplo clique = expandir.
+> - **Cor da entrada** (botão direito → Cor): azul, laranja, roxo, ciano, amarelo, rosa, marrom, cinza — para separar câmeras, gráficos, celulares.
+> - Prévia e Programa com cabeçalho inteiro **verde** e **vermelho**; a entrada no ar mostra a sua cor numa faixa embaixo.
+> - Overlay ligado em **âmbar** (não confunde com o vermelho do Programa).
+> - Fundos um pouco mais claros, com mais separação entre painéis, quadros e botões.
+>
 > 2.2.1: nas telas de vídeo (Prévia, Programa, miniaturas, janela da entrada) a sobra ao redor da imagem agora tem a cor da página; preto só onde é a imagem que vai ao ar.
 >
 > 2.2.0:

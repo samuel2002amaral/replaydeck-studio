@@ -24,6 +24,10 @@ protected:
 private:
 	int id;
 	QWidget *header = nullptr;
+	QWidget *expanded = nullptr;
+	class CollapsedBar *bar = nullptr;
+	int fullHeight = 0;
+	int lastCollapsed = -1;
 	QLabel *num = nullptr;
 	QLabel *name = nullptr;
 	VideoDisplay *video = nullptr;

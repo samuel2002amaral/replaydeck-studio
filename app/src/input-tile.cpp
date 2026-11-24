@@ -3,6 +3,9 @@
 #include "video-display.hpp"
 
 #include <QContextMenuEvent>
+#include <QMouseEvent>
+#include <QPainter>
+#include <functional>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QInputDialog>
@@ -13,6 +16,54 @@
 #include <QStyle>
 #include <QToolButton>
 #include <QVBoxLayout>
+
+/* entrada minimizada: barra estreita com o número e o nome na vertical (como no vMix) */
+class CollapsedBar : public QWidget {
+public:
+	std::function<void()> onClick, onDoubleClick;
+	QString number, text;
+	QColor color;
+	explicit CollapsedBar(QWidget *parent = nullptr) : QWidget(parent)
+	{
+		setFixedWidth(30);
+		setCursor(Qt::PointingHandCursor);
+		setToolTip("Clique: Prévia · duplo clique: abrir a barra (expandir)");
+	}
+
+protected:
+	void paintEvent(QPaintEvent *) override
+	{
+		QPainter p(this);
+		p.fillRect(rect(), color);
+		p.setPen(Qt::white);
+		QFont f = font();
+		f.setBold(true);
+		f.setPointSizeF(9.5);
+		p.setFont(f);
+		p.drawText(QRect(0, 4, width(), 18), Qt::AlignCenter, number);
+		f.setBold(false);
+		f.setPointSizeF(9);
+		p.setFont(f);
+		p.save();
+		p.translate(width() / 2.0 + 5, height() - 6);
+		p.rotate(-90);
+		const QString elided = QFontMetrics(f).elidedText(text, Qt::ElideRight, height() - 34);
+		p.drawText(QPoint(0, 0), elided);
+		p.restore();
+	}
+	void mousePressEvent(QMouseEvent *e) override
+	{
+		if (e->button() == Qt::LeftButton && onClick)
+			onClick();
+		else
+			QWidget::mousePressEvent(e);
+	}
+	void mouseDoubleClickEvent(QMouseEvent *e) override
+	{
+		if (e->button() == Qt::LeftButton && onDoubleClick)
+			onDoubleClick();
+	}
+};
 
 static QPushButton *tileButton(const QString &text, const QString &tip = QString())
 {
@@ -28,11 +79,19 @@ static QPushButton *tileButton(const QString &text, const QString &tip = QString
 InputTile::InputTile(int inputId, QWidget *parent) : QFrame(parent), id(inputId)
 {
 	setObjectName("inputTile");
-	setFixedWidth(216);
 	/* o quadro inteiro é uma janela nativa: assim a imagem (nativa) anda junto quando a lista
 	 * muda de colunas; sem isso ela ficava parada no lugar antigo */
 	setAttribute(Qt::WA_NativeWindow);
-	auto *v = new QVBoxLayout(this);
+	auto *outer = new QHBoxLayout(this);
+	outer->setContentsMargins(0, 0, 0, 0);
+	outer->setSpacing(0);
+	bar = new CollapsedBar;
+	bar->onClick = [this] { Engine::get().setPreview(id); };
+	bar->onDoubleClick = [this] { Engine::get().setInputCollapsed(id, false); };
+	outer->addWidget(bar);
+	expanded = new QWidget;
+	outer->addWidget(expanded);
+	auto *v = new QVBoxLayout(expanded);
 	v->setContentsMargins(1, 1, 1, 1);
 	v->setSpacing(0);
 
@@ -105,8 +164,8 @@ InputTile::InputTile(int inputId, QWidget *parent) : QFrame(parent), id(inputId)
 		if (changed == id)
 			refresh();
 	});
-	if (video && in0)
-		video->showSource(in0->scene);
+	fullHeight = expanded->sizeHint().height() + 2;
+	setFixedHeight(fullHeight);
 	refresh();
 }
 
@@ -116,20 +175,42 @@ void InputTile::refresh()
 	Input *in = e.input(id);
 	if (!in)
 		return;
+	/* minimizada: só a barra (e a imagem para de ser desenhada) */
+	if ((in->collapsed ? 1 : 0) != lastCollapsed) { /* -1 na primeira vez: sempre aplica */
+		lastCollapsed = in->collapsed ? 1 : 0;
+		expanded->setVisible(!in->collapsed);
+		bar->setVisible(in->collapsed);
+		setFixedWidth(in->collapsed ? 30 : 216);
+		if (video) {
+			if (in->collapsed)
+				video->clear();
+			else
+				video->showSource(in->scene);
+		}
+	}
 	num->setText(QString::number(e.indexOf(id) + 1));
 	name->setText(in->enabled ? in->name : in->name + "  · desativada");
 	name->setToolTip(in->enabled ? in->name : in->name + " (desativada: botão direito → Ativar entrada)");
 	/* só refaz o visual quando o estado muda de verdade (refazer estilo é caro) */
 	const QString state = id == e.programId() ? "program" : id == e.previewId() ? "preview" : "";
-	if (state != lastBus) {
-		lastBus = state;
+	/* cabeçalho: vermelho no Programa, verde na Prévia; senão a cor escolhida para a entrada
+	 * (no Programa/Prévia a cor da entrada continua numa faixa embaixo do cabeçalho) */
+	const QString tag = inputColorHex(in->color);
+	const QString head = state == "program" ? "#b0322a" : state == "preview" ? "#1f7a45" : tag;
+	const QString look = state + "|" + tag;
+	if (look != lastBus) {
+		lastBus = look;
 		setProperty("bus", state);
-		header->setProperty("bus", state);
-		for (QWidget *w : {static_cast<QWidget *>(this), header}) {
-			w->style()->unpolish(w);
-			w->style()->polish(w);
-		}
+		style()->unpolish(this);
+		style()->polish(this);
+		header->setStyleSheet(QString("#tileHeader { background: %1; border-bottom: 3px solid %2; }")
+					      .arg(head, state.isEmpty() ? head : tag));
+		bar->color = QColor(head);
+		bar->update();
 	}
+	bar->number = QString::number(e.indexOf(id) + 1);
+	bar->text = in->name;
+	bar->update();
 	int ovMask = 0;
 	for (int ch = 1; ch <= 4; ch++)
 		if (e.overlay(ch) == id)
@@ -151,6 +232,19 @@ void InputTile::contextMenuEvent(QContextMenuEvent *e)
 	QMenu menu(this);
 	menu.addAction("Abrir…", this, [this] { emit openRequested(id); });
 	menu.addAction("Mandar para a Prévia", this, [this] { Engine::get().setPreview(id); });
+	if (Input *cur = Engine::get().input(id)) {
+		menu.addAction(cur->collapsed ? "Expandir" : "Minimizar (barra)", this,
+			       [this, on = !cur->collapsed] { Engine::get().setInputCollapsed(id, on); });
+		QMenu *colors = menu.addMenu("Cor");
+		for (const InputColor &c : inputColors()) {
+			QPixmap px(14, 14);
+			px.fill(QColor(QString::fromLatin1(c.hex)));
+			QAction *a = colors->addAction(QIcon(px), QString::fromUtf8(c.label), this,
+						       [this, key = QString::fromLatin1(c.key)] { Engine::get().setInputColor(id, key); });
+			a->setCheckable(true);
+			a->setChecked(cur->color == QLatin1String(c.key));
+		}
+	}
 	if (Input *cur = Engine::get().input(id))
 		menu.addAction(cur->enabled ? "Desativar entrada" : "Ativar entrada", this,
 			       [this, on = !cur->enabled] { Engine::get().setInputEnabled(id, on); });

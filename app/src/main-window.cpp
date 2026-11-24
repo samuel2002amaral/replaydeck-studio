@@ -1,5 +1,6 @@
 #include "main-window.hpp"
 #include "replay-host.hpp"
+#include "flow-layout.hpp"
 #include "audio-mixer.hpp"
 #include "external-output.hpp"
 #include "outputs.hpp"
@@ -262,10 +263,7 @@ QWidget *MainWindow::buildInputsArea()
 	scroll->viewport()->setAttribute(Qt::WA_NativeWindow);
 	tilesHost = new QWidget;
 	tilesHost->setObjectName("tilesHost");
-	tilesGrid = new QGridLayout(tilesHost);
-	tilesGrid->setContentsMargins(6, 6, 6, 6);
-	tilesGrid->setSpacing(6);
-	tilesGrid->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+	tilesGrid = new FlowLayout(tilesHost, 6, 6); /* quadros e barras lado a lado, quebrando a linha */
 	emptyHint = new QLabel("Nenhuma entrada ainda.\nClique em \"Adicionar entrada\" lá embaixo para colocar uma câmera, vídeo ou imagem.");
 	emptyHint->setObjectName("muted");
 	emptyHint->setAlignment(Qt::AlignCenter);
@@ -289,28 +287,20 @@ void MainWindow::rebuildTiles()
 		connect(t, &InputTile::openRequested, this, &MainWindow::openInput);
 		tiles.append(t);
 	}
-	lastCols = 0;
-	layoutTiles();
+	if (tiles.isEmpty()) {
+		tilesGrid->addWidget(emptyHint);
+		emptyHint->show();
+	}
+	for (InputTile *t : tiles) {
+		tilesGrid->addWidget(t);
+		t->show();
+	}
 	updateBus();
 }
 
 void MainWindow::layoutTiles()
 {
-	if (tiles.isEmpty()) {
-		tilesGrid->addWidget(emptyHint, 0, 0);
-		emptyHint->show();
-		return;
-	}
-	const int cols = qMax(1, (tilesHost->width() - 12) / 222);
-	if (cols == lastCols)
-		return;
-	lastCols = cols;
-	for (InputTile *t : tiles)
-		tilesGrid->removeWidget(t);
-	for (int i = 0; i < tiles.size(); i++) {
-		tilesGrid->addWidget(tiles[i], i / cols, i % cols);
-		tiles[i]->show();
-	}
+	tilesGrid->invalidate(); /* o layout em fila se ajusta sozinho à largura */
 }
 
 void MainWindow::resizeEvent(QResizeEvent *e)

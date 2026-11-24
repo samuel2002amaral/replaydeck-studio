@@ -519,6 +519,41 @@ void Engine::setInputAudio(int id, bool on)
 	}
 }
 
+const QList<InputColor> &inputColors()
+{
+	/* tons firmes mas sóbrios; verde e vermelho ficam para Prévia e Programa */
+	static const QList<InputColor> list = {
+		{"", "Padrão", "#2b3549"},      {"azul", "Azul", "#2456a3"},       {"laranja", "Laranja", "#c0621b"},
+		{"roxo", "Roxo", "#6a3d9e"},    {"ciano", "Ciano", "#17808c"},     {"amarelo", "Amarelo", "#a3861a"},
+		{"rosa", "Rosa", "#a3366a"},    {"marrom", "Marrom", "#7a5132"},   {"cinza", "Cinza", "#4b5466"},
+	};
+	return list;
+}
+
+QString inputColorHex(const QString &key)
+{
+	for (const InputColor &c : inputColors())
+		if (key == QLatin1String(c.key))
+			return QString::fromLatin1(c.hex);
+	return QString::fromLatin1(inputColors().first().hex);
+}
+
+void Engine::setInputColor(int id, const QString &key)
+{
+	if (Input *in = input(id)) {
+		in->color = key;
+		emit inputChanged(id);
+	}
+}
+
+void Engine::setInputCollapsed(int id, bool on)
+{
+	if (Input *in = input(id)) {
+		in->collapsed = on;
+		emit inputChanged(id);
+	}
+}
+
 bool Engine::hasAudio(const Input *in)
 {
 	return in && (obs_source_get_output_flags(in->source) & OBS_SOURCE_AUDIO);
@@ -878,6 +913,8 @@ bool Engine::saveProject(const QString &path)
 		obs_data_set_double(o, "volume", in->volume);
 		obs_data_set_bool(o, "audio_auto", in->audioAuto);
 		obs_data_set_bool(o, "fone", in->monitor);
+		obs_data_set_string(o, "cor", in->color.toUtf8().constData());
+		obs_data_set_bool(o, "minimizada", in->collapsed);
 		if (const int from = sharedFrom(in->id)) {
 			obs_data_set_int(o, "mesma_fonte_de", from);
 		} else {
@@ -935,6 +972,8 @@ bool Engine::loadProject(const QString &path)
 		if (obs_data_has_user_value(o, "audio_auto"))
 			in->audioAuto = obs_data_get_bool(o, "audio_auto");
 		in->monitor = obs_data_get_bool(o, "fone");
+		in->color = QString::fromUtf8(obs_data_get_string(o, "cor"));
+		in->collapsed = obs_data_get_bool(o, "minimizada");
 		if (in->monitor)
 			obs_source_set_monitoring_type(src, OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT);
 		applyVolume(in);

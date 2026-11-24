@@ -52,6 +52,23 @@ static void runSelfTest(MainWindow &w)
 		}
 	});
 	step(5600, [&e] {
+		if (qEnvironmentVariableIsSet("RDS_SELFTEST_LOOK") && e.inputs().size() > 2) {
+			/* aparência: uma entrada minimizada em barra e outra com cor */
+			e.setInputCollapsed(e.inputs()[1]->id, true);
+			e.setInputColor(e.inputs()[2]->id, "laranja");
+			OBSDataAutoRelease c = obs_data_create();
+			obs_data_set_int(c, "color", 0xFF30A0F0);
+			if (Input *x = e.addInput("color_source_v3", "GOL CASA", c)) {
+				e.setInputCollapsed(x->id, true);
+				e.setInputColor(x->id, "roxo");
+			}
+			if (Input *x = e.addInput("color_source_v3", "ESCALAÇÃO FORA", c)) {
+				e.setInputCollapsed(x->id, true);
+				e.setInputColor(x->id, "roxo");
+			}
+			if (Input *x = e.addInput("color_source_v3", "PLACAR", c))
+				e.setInputColor(x->id, "azul");
+		}
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST_OFF") && e.inputs().size() > 2)
 			e.setInputEnabled(e.inputs()[2]->id, false); /* tela com uma entrada desativada */
 	});

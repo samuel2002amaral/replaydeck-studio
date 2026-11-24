@@ -63,8 +63,8 @@ void VideoDisplay::createDisplay()
 	info.window.id = (uint32_t)windowHandle()->winId();
 	info.window.display = obs_get_nix_platform_display();
 #endif
-	/* fora da imagem: a cor do painel (#12161e, em 0xAABBGGRR); preto só onde é vídeo */
-	display = obs_display_create(&info, 0xFF1E1612);
+	/* fora da imagem: a cor do painel (#1c212a, em 0xAABBGGRR); preto só onde é vídeo */
+	display = obs_display_create(&info, 0xFF2A211C);
 	if (display)
 		obs_display_add_draw_callback(display, draw, this);
 }
