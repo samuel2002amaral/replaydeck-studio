@@ -259,16 +259,24 @@ int main(int argc, char *argv[])
 				obs_data_set_string(s, "local_file", html.toUtf8().constData());
 				obs_data_set_int(s, "width", 1280);
 				obs_data_set_int(s, "height", 720);
-				Input *in = e.addInput("browser_source", "PAGINA", s);
-				blog(LOG_INFO, "[teste-mac] navegador: entrada=%d", in != nullptr);
-				if (in)
-					e.cutTo(in->id);
-				obs_properties_t *p = obs_get_source_properties("screen_capture");
-				int n = 0;
-				for (obs_property_t *q = p ? obs_properties_first(p) : nullptr; q; obs_property_next(&q))
-					n++;
-				blog(LOG_INFO, "[teste-mac] captura de tela: opcoes=%d (thread principal)", n);
-				obs_properties_destroy(p);
+				const bool doScreen = !qEnvironmentVariableIsSet("RDS_SELFTEST_SEM_TELA");
+				const bool doBrowser = !qEnvironmentVariableIsSet("RDS_SELFTEST_SEM_NAVEGADOR");
+				if (doScreen) {
+					blog(LOG_INFO, "[teste-mac] captura de tela: montando as opções…");
+					obs_properties_t *p = obs_get_source_properties("screen_capture");
+					int n = 0;
+					for (obs_property_t *q = p ? obs_properties_first(p) : nullptr; q; obs_property_next(&q))
+						n++;
+					blog(LOG_INFO, "[teste-mac] captura de tela: opcoes=%d (thread principal)", n);
+					obs_properties_destroy(p);
+				}
+				if (doBrowser) {
+					Input *in = e.addInput("browser_source", "PAGINA", s);
+					blog(LOG_INFO, "[teste-mac] navegador: entrada=%d", in != nullptr);
+					if (in)
+						e.cutTo(in->id);
+					blog(LOG_INFO, "[teste-mac] navegador: no ar");
+				}
 			});
 			QTimer::singleShot(6000, [] {
 				Input *in = Engine::get().inputByName("PAGINA");

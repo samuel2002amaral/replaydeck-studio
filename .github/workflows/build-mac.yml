@@ -180,44 +180,31 @@ jobs:
       - name: Teste do Mac (página web e captura de tela)
         run: |
           APP="pkg/ReplayDeck Studio.app"
-          export RDS_SELFTEST_MAC="$PWD/teste-mac-navegador.png"
-          code=0
-          perl -e 'alarm shift; exec {$ARGV[0]} @ARGV or die "nao abriu: $!"' 90 "$APP/Contents/MacOS/ReplayDeckStudio" > teste-mac-nav-saida.txt 2>&1 || code=$?
-          echo "saída: $code"
-          tail -30 teste-mac-nav-saida.txt || true
+          BIN="$APP/Contents/MacOS/ReplayDeckStudio"
           LOGS="$HOME/Library/Application Support/ReplayDeckStudio/logs"
-          cp "$(ls -t "$LOGS"/*.txt | head -1)" teste-mac-nav-log.txt || true
-          grep -iE "teste-mac|browser|navegador|cef|obs-browser" teste-mac-nav-log.txt | head -40 || true
           ls "$APP/Contents/Frameworks" | grep -i -E "helper|chromium" || echo "::warning::sem os ajudantes do navegador no app"
-          if [ "$code" -ge 128 ]; then
-            # relatório de falha do macOS: onde o programa caiu
-            sleep 5
-            rep=$(ls -t "$HOME/Library/Logs/DiagnosticReports/"*ReplayDeck*.ips 2>/dev/null | head -1)
-            if [ -n "$rep" ]; then
-              cp "$rep" teste-mac-falha.ips
-              python3 - "$rep" <<'PY' || head -c 20000 "$rep"
-          import json, sys
-          raw = open(sys.argv[1]).read()
-          head, body = raw.split("\n", 1)
-          d = json.loads(body)
-          print("exceção:", d.get("exception"), d.get("termination", {}).get("indicator"))
-          imgs = d.get("usedImages", [])
-          for t in d.get("threads", []):
-              if not t.get("triggered"):
-                  continue
-              print("thread:", t.get("name") or t.get("queue") or t.get("id"))
-              for f in t.get("frames", [])[:40]:
-                  im = imgs[f["imageIndex"]] if f.get("imageIndex") is not None and f["imageIndex"] < len(imgs) else {}
-                  print("  ", (im.get("name") or "?").ljust(40), f.get("symbol", hex(f.get("imageOffset", 0))))
-          PY
-            else
-              echo "sem relatório de falha"
+          # roda pelo depurador: se cair, mostra onde (pilha de chamadas)
+          rodar() {
+            local nome="$1"; shift
+            echo "=== $nome ==="
+            env "$@" RDS_SELFTEST_MAC="$PWD/teste-mac-$nome.png" perl -e 'alarm shift; exec {$ARGV[0]} @ARGV or die "nao abriu: $!"' 120 \
+              lldb --batch -o "run" -k "thread backtrace all" -k "quit 1" -- "$BIN" > "teste-mac-$nome-saida.txt" 2>&1 || true
+            cp "$(ls -t "$LOGS"/*.txt | head -1)" "teste-mac-$nome-log.txt" || true
+            grep -E "\[teste-mac\]" "teste-mac-$nome-log.txt" || true
+            if grep -qE "stop reason = (EXC_|signal)" "teste-mac-$nome-saida.txt"; then
+              echo "::error::$nome: o programa caiu"
+              grep -n -A60 "stop reason" "teste-mac-$nome-saida.txt" | head -90
+              return 1
             fi
-            echo "::error::o programa fechou sozinho (sinal $((code-128)))"; exit 1
-          fi
-          grep -q "\[teste-mac\] navegador: entrada=1" teste-mac-nav-log.txt || { echo "::error::não criou a página web"; exit 1; }
-          grep -q "\[teste-mac\] captura de tela: opcoes=" teste-mac-nav-log.txt || { echo "::error::as opções da captura de tela não abriram"; exit 1; }
-          grep -q "navegador depois de 5 s: 1280x720" teste-mac-nav-log.txt || echo "::warning::a página web não mostrou imagem no teste"
+            return 0
+          }
+          ok=0
+          rodar tela RDS_SELFTEST_SEM_NAVEGADOR=1 || ok=1
+          rodar navegador RDS_SELFTEST_SEM_TELA=1 || ok=1
+          [ $ok -eq 0 ] || exit 1
+          grep -q "\[teste-mac\] captura de tela: opcoes=" teste-mac-tela-log.txt || { echo "::error::as opções da captura de tela não abriram"; exit 1; }
+          grep -q "\[teste-mac\] navegador: no ar" teste-mac-navegador-log.txt || { echo "::error::a página web não entrou no ar"; exit 1; }
+          grep -q "navegador depois de 5 s: 1280x720" teste-mac-navegador-log.txt || echo "::warning::a página web não mostrou imagem no teste"
 
       - name: Teste do Mac (replay gravando e tocando)
         run: |
@@ -241,12 +228,10 @@ jobs:
             teste-mac.png
             teste-mac-log.txt
             teste-mac-saida.txt
-            teste-mac-navegador.png
-            teste-mac-nav-log.txt
-            teste-mac-nav-saida.txt
+            teste-mac-*.png
+            teste-mac-*.txt
             teste-mac-replay.png
             teste-mac-replay-log.txt
-            teste-mac-falha.ips
 
       - name: DMG
         run: |
