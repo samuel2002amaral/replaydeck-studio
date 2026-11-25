@@ -5,9 +5,11 @@ name: Build Mac
 # Igual ao Windows: o MOTOR (OBS Studio) é compilado uma vez e fica no cache; cada mudança no programa
 # compila só a pasta app/ e monta o "ReplayDeck Studio.app" dentro de um .dmg.
 # Commit com [release] anexa o .dmg à mesma página de Releases da versão do Windows.
-# Por enquanto o Mac NÃO acompanha cada mudança (pedido do Samuel): só roda quando
-# disparado à mão (Actions → Build Mac → Run workflow) e aí anexa o .dmg à versão atual.
+# O Mac acompanha cada versão publicada (commit com [release]) e também pode ser
+# disparado à mão (Actions → Build Mac → Run workflow): anexa o .dmg à versão atual.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -19,6 +21,7 @@ concurrency:
 
 jobs:
   macos:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]')
     runs-on: macos-26
     timeout-minutes: 300
     defaults:
