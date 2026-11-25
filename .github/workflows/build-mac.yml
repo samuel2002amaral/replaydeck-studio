@@ -145,6 +145,10 @@ jobs:
           pb "Delete :CFBundleIconFile"
           pb "Add :CFBundleIconFile string ReplayDeck"
           rm -f "$APP/Contents/Resources/AppIcon.icns"
+          # página web (navegador CEF) fora do Mac por enquanto: ainda derruba o programa ao abrir
+          rm -rf "$APP/Contents/PlugIns/obs-browser.plugin" "$APP/Contents/PlugIns/obs-browser-page"* \
+                 "$APP/Contents/Frameworks/Chromium Embedded Framework.framework" "$APP"/Contents/Frameworks/*Helper*.app
+          ls "$APP/Contents/PlugIns" | grep -i browser && echo "::warning::ainda tem navegador no app" || echo "navegador fora do app"
           # ajudantes do navegador (CEF): o Chromium acha o programa principal pelo nome
           # (identificador do principal + ".helper..."); com o do OBS o processo da GPU não conecta
           for h in "$APP"/Contents/Frameworks/*Helper*.app; do
@@ -192,7 +196,6 @@ jobs:
           APP="pkg/ReplayDeck Studio.app"
           BIN="$APP/Contents/MacOS/ReplayDeckStudio"
           LOGS="$HOME/Library/Application Support/ReplayDeckStudio/logs"
-          ls "$APP/Contents/Frameworks" | grep -i -E "helper|chromium" || echo "::warning::sem os ajudantes do navegador no app"
           # roda pelo depurador: se cair, mostra onde (pilha de chamadas)
           rodar() {
             local nome="$1"; shift
@@ -219,6 +222,7 @@ jobs:
           [ $ok -eq 0 ] || exit 1
           grep -q "\[teste-mac\] captura de tela: opcoes=" teste-mac-tela-log.txt || { echo "::error::as opções da captura de tela não abriram"; exit 1; }
           grep "\[teste-mac\] navegador" teste-mac-navegador-log.txt || true
+          grep -q "\[teste-mac\] navegador: entrada=0" teste-mac-navegador-log.txt || { echo "::error::a página web ainda aparece no Mac"; exit 1; }
 
       - name: Teste do Mac (replay gravando e tocando)
         run: |
