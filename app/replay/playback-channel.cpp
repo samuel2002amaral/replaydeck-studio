@@ -8,11 +8,13 @@
 
 extern "C" {
 #include <libavcodec/avcodec.h>
+#include <libavutil/hwcontext.h>
 }
 
 PlaybackChannel::PlaybackChannel(int id_) : id(id_)
 {
 	frame = av_frame_alloc();
+	swFrame = av_frame_alloc();
 	pkt = av_packet_alloc();
 	thread = std::thread(&PlaybackChannel::loop, this);
 }
@@ -25,6 +27,8 @@ PlaybackChannel::~PlaybackChannel()
 	if (dec)
 		avcodec_free_context(&dec);
 	av_frame_free(&frame);
+	av_frame_free(&swFrame);
+	av_buffer_unref(&hwDev);
 	av_packet_free(&pkt);
 }
 
@@ -570,11 +574,30 @@ bool PlaybackChannel::ensureDecoder(int codecId)
 	dec->flags |= AV_CODEC_FLAG_LOW_DELAY;
 	dec->thread_count = 4;
 	dec->thread_type = FF_THREAD_SLICE;
+#ifdef __APPLE__
+	/* Mac: o VideoToolbox grava cada quadro numa fatia só, então a decodificação por CPU
+	 * fica numa thread e o replay engasga; o chip da Apple decodifica H.264/HEVC sem esforço */
+	if (codecId == AV_CODEC_ID_H264 || codecId == AV_CODEC_ID_HEVC) {
+		if (!hwDev && av_hwdevice_ctx_create(&hwDev, AV_HWDEVICE_TYPE_VIDEOTOOLBOX, nullptr, nullptr, 0) < 0)
+			hwDev = nullptr;
+		if (hwDev) {
+			dec->hw_device_ctx = av_buffer_ref(hwDev);
+			dec->get_format = [](AVCodecContext *, const enum AVPixelFormat *fmts) {
+				for (const enum AVPixelFormat *f = fmts; *f != AV_PIX_FMT_NONE; f++)
+					if (*f == AV_PIX_FMT_VIDEOTOOLBOX)
+						return *f;
+				return fmts[0];
+			};
+		}
+	}
+#endif
 	if (avcodec_open2(dec, codec, nullptr) < 0) {
 		avcodec_free_context(&dec);
 		return false;
 	}
 	decCodec = codecId;
+	blog(LOG_INFO, "[ReplayDeck] canal %d: decodificando %s %s", id + 1, codec->name,
+	     dec->hw_device_ctx ? "no chip (VideoToolbox)" : "pela CPU");
 	return true;
 }
 
@@ -637,9 +660,22 @@ bool PlaybackChannel::decodeTo(Session &s, int a, int64_t target, Pic &out)
 	if (ret < 0)
 		return false;
 
+	AVFrame *src = frame;
+	if (frame->format == AV_PIX_FMT_VIDEOTOOLBOX) {
+		/* Mac: traz o quadro decodificado no chip para a memória (NV12) */
+		av_frame_unref(swFrame);
+		if (av_hwframe_transfer_data(swFrame, frame, 0) < 0) {
+			av_frame_unref(frame);
+			return false;
+		}
+		av_frame_copy_props(swFrame, frame);
+		av_frame_unref(frame);
+		src = swFrame;
+	}
+
 	enum video_format fmt;
-	bool full = frame->color_range == AVCOL_RANGE_JPEG;
-	switch (frame->format) {
+	bool full = src->color_range == AVCOL_RANGE_JPEG;
+	switch (src->format) {
 	case AV_PIX_FMT_YUVJ420P:
 		full = true;
 		[[fallthrough]];
@@ -662,12 +698,12 @@ bool PlaybackChannel::decodeTo(Session &s, int a, int64_t target, Pic &out)
 		fmt = VIDEO_FORMAT_NV12;
 		break;
 	default:
-		av_frame_unref(frame);
+		av_frame_unref(src);
 		return false;
 	}
 
-	storePic(frame, fmt, full, out);
-	av_frame_unref(frame);
+	storePic(src, fmt, full, out);
+	av_frame_unref(src);
 	return true;
 }
 

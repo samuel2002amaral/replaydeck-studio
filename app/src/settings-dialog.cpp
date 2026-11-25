@@ -89,14 +89,22 @@ SettingsDialog::SettingsDialog(QWidget *parent, int startTab) : QDialog(parent)
 	f->addRow("Resolução", resolution);
 	fps = new QComboBox;
 	const QList<QPair<QString, QPoint>> rates = {{"25", {25, 1}},          {"29,97", {30000, 1001}}, {"30", {30, 1}},
-						     {"50", {50, 1}},          {"59,94", {60000, 1001}}, {"60", {60, 1}}};
+						     {"50", {50, 1}},          {"59,94", {60000, 1001}}, {"60", {60, 1}},
+						     {"100", {100, 1}},        {"119,88", {120000, 1001}}, {"120", {120, 1}}};
 	for (const auto &r : rates)
 		fps->addItem(r.first + " quadros/s", r.second);
 	const int fi = fps->findData(QPoint(s.fpsNum, s.fpsDen));
 	fps->setCurrentIndex(fi < 0 ? 2 : fi);
+	fps->setToolTip("100/120 quadros/s: movimento mais liso (telas de 120 Hz, câmera lenta do replay), mas o dobro de\n"
+			"trabalho para gravar, transmitir e o replay. As câmeras também precisam entregar 120.");
 	f->addRow("Quadros por segundo", fps);
 	adapter = new QComboBox;
+#ifdef __APPLE__
+	adapter->addItem("Chip da Apple (vídeo e codificador VideoToolbox)", "auto");
+	adapter->setEnabled(false);
+#else
 	adapter->addItem("Automática (a dedicada: NVIDIA / AMD)", "auto");
+#endif
 	for (const gpu::Adapter &a : gpu::adapters())
 		if (!a.software)
 			adapter->addItem(a.name + (a.dedicatedMB ? QString("  (%1 MB)").arg(a.dedicatedMB) : QString()), a.name);

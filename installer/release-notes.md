@@ -1,5 +1,7 @@
 ## ReplayDeck Studio — fase 6 (controle, gravação múltipla, PTZ, plugins)
 
+> 2.16.2: **Mac**: o replay decodifica no **chip da Apple (VideoToolbox)** e deixa de engasgar. Antes a decodificação era pela CPU, numa thread só. Na configuração do replay (aba Gravação), a lista de encoders mostra o **Apple VideoToolbox** em vez de NVIDIA/Intel/AMD; deixe em Automático. Em Configurações > Vídeo, a placa aparece como "Chip da Apple". **Todos**: opções de **100, 119,88 e 120 quadros/s** para o programa. É o dobro de trabalho para gravar, transmitir e para o replay, e as câmeras também precisam entregar 120. Também vale para o Mac: ícone novo, a captura de tela sem fechar o programa e a página web (navegador), da 2.16.1.
+>
 > 2.16.1: **ícone novo** do ReplayDeck Studio, no Windows (programa, atalhos e instalador) e no Mac. **Mac**: a **captura de tela** não fecha mais o programa (as opções dela agora são montadas na thread principal, como o Mac exige). A **entrada de página web (navegador)** chegou ao Mac. Na primeira captura de tela, o Mac pede a permissão "Gravação de Tela": permita em Ajustes do Sistema > Privacidade e Segurança e abra o programa de novo.
 >
 > 2.16.0: **montar títulos GT no editor**. No editor do título (⋮ → Editar), aba **Layout**:

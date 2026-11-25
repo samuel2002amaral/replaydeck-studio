@@ -193,6 +193,20 @@ jobs:
           grep -q "\[teste-mac\] captura de tela: opcoes=" teste-mac-nav-log.txt || { echo "::error::as opções da captura de tela não abriram"; exit 1; }
           grep -q "navegador depois de 5 s: 1280x720" teste-mac-nav-log.txt || echo "::warning::a página web não mostrou imagem no teste"
 
+      - name: Teste do Mac (replay gravando e tocando)
+        run: |
+          APP="pkg/ReplayDeck Studio.app"
+          export RDS_SELFTEST_REPLAY="$PWD/teste-mac-replay.png"
+          code=0
+          perl -e 'alarm shift; exec {$ARGV[0]} @ARGV or die "nao abriu: $!"' 120 "$APP/Contents/MacOS/ReplayDeckStudio" > teste-mac-replay-saida.txt 2>&1 || code=$?
+          echo "saída: $code"
+          LOGS="$HOME/Library/Application Support/ReplayDeckStudio/logs"
+          cp "$(ls -t "$LOGS"/*.txt | head -1)" teste-mac-replay-log.txt || true
+          grep -E "teste-replay|decodificando|encoder|VideoToolbox|videotoolbox" teste-mac-replay-log.txt | head -40 || true
+          [ "$code" -ge 128 ] && { echo "::error::o programa fechou sozinho no replay (sinal $((code-128)))"; exit 1; }
+          grep -q "\[teste-replay\] gravando=1" teste-mac-replay-log.txt || { echo "::error::o replay não gravou"; exit 1; }
+          grep -q "no chip (VideoToolbox)" teste-mac-replay-log.txt || echo "::warning::o replay não decodificou no chip"
+
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -204,6 +218,8 @@ jobs:
             teste-mac-navegador.png
             teste-mac-nav-log.txt
             teste-mac-nav-saida.txt
+            teste-mac-replay.png
+            teste-mac-replay-log.txt
 
       - name: DMG
         run: |

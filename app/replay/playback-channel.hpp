@@ -5,6 +5,7 @@
 
 struct AVCodecContext;
 struct AVFrame;
+struct AVBufferRef;
 struct AVPacket;
 
 struct PlayRange {
@@ -177,6 +178,8 @@ private:
 	/* somente na thread do canal */
 	AVCodecContext *dec = nullptr;
 	AVFrame *frame = nullptr;
+	AVFrame *swFrame = nullptr;   /* Mac: quadro trazido do chip (VideoToolbox) */
+	AVBufferRef *hwDev = nullptr; /* Mac: decodificação no chip */
 	AVPacket *pkt = nullptr;
 	int decCodec = 0;
 	std::vector<uint8_t> buf;
