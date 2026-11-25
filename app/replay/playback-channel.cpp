@@ -42,6 +42,12 @@ void PlaybackChannel::setSession(std::shared_ptr<Session> s)
 	refresh = true;
 }
 
+bool PlaybackChannel::playingSession(const std::string &dir)
+{
+	std::lock_guard<std::mutex> lk(mtx);
+	return session && session->dir == dir;
+}
+
 bool PlaybackChannel::usesSession(const std::string &dir)
 {
 	std::lock_guard<std::mutex> lk(mtx);

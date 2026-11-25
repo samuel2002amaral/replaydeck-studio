@@ -386,6 +386,30 @@ void selfTest(QMainWindow *window)
 		const bool ok = engine().startRecording(err);
 		blog(LOG_INFO, "[teste-replay] gravando=%d %s", ok, err.c_str());
 	});
+	if (qEnvironmentVariableIsSet("RDS_SELFTEST_MARK")) {
+		/* Mark In/Out no replay (fora do ao vivo): marca onde o replay está, não o ao vivo */
+		step(3000, [] {
+			engine().seekTo(20);
+			engine().pause();
+		});
+		step(3300, [] {
+			blog(LOG_INFO, "[teste-mark] posição do replay: quadro que o Mark In usaria=%lld",
+			     (long long)engine().markFrame());
+			engine().markIn();
+			engine().seekTo(50);
+		});
+		step(3600, [] {
+			engine().markOut();
+			const auto ev = engine().events(engine().activeList());
+			if (!ev.empty())
+				blog(LOG_INFO, "[teste-mark] evento marcado no replay: in=%lld out=%lld",
+				     (long long)ev.back().in, (long long)ev.back().out);
+			engine().goLive();
+		});
+		step(3800, [] {
+			blog(LOG_INFO, "[teste-mark] ao vivo: Mark In usaria %lld (ao vivo)", (long long)engine().markFrame());
+		});
+	}
 	step(4000, [] {
 		engine().autoEvent(2);
 		blog(LOG_INFO, "[teste-replay] eventos na lista: %d", (int)engine().events(engine().activeList()).size());

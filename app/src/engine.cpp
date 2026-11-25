@@ -638,10 +638,9 @@ void Engine::applyLayout(Input *in)
 		applyItemPos(main, in->source, in->pos, baseW, baseH);
 		in->fittedW = obs_source_get_width(in->source);
 		in->fittedH = obs_source_get_height(in->source);
-		obs_sceneitem_set_order_position(main, 0);
 	}
 	QSet<int64_t> keep;
-	int order = 0;
+	QList<obs_sceneitem_t *> back, front; /* de baixo para cima */
 	for (InputLayer &l : in->layers) {
 		Input *li = input(l.inputId);
 		if (!li)
@@ -662,8 +661,15 @@ void Engine::applyLayout(Input *in)
 		keep << l.itemId;
 		obs_sceneitem_set_visible(item, l.on);
 		applyItemPos(item, li->scene, l.pos, baseW, baseH);
-		obs_sceneitem_set_order_position(item, ++order);
+		(l.behind ? back : front) << item;
 	}
+	/* ordem: camadas de trás, a principal, camadas da frente (cada grupo na ordem 1..10) */
+	QList<obs_sceneitem_t *> order = back;
+	if (main)
+		order << main;
+	order << front;
+	for (int i = 0; i < order.size(); i++)
+		obs_sceneitem_set_order_position(order[i], i);
 	/* sobras (camada trocada ou tirada) */
 	QList<obs_sceneitem_t *> stale;
 	struct Ctx {
@@ -763,6 +769,16 @@ void Engine::setLayerOn(int id, int index, bool on)
 	if (in->layers[index].itemId)
 		if (obs_sceneitem_t *item = obs_scene_find_sceneitem_by_id(scene, in->layers[index].itemId))
 			obs_sceneitem_set_visible(item, on);
+	emit inputLayoutChanged(id);
+}
+
+void Engine::setLayerBehind(int id, int index, bool behind)
+{
+	Input *in = input(id);
+	if (!in || index < 0 || index >= INPUT_LAYERS || in->layers[index].behind == behind)
+		return;
+	in->layers[index].behind = behind;
+	applyLayout(in);
 	emit inputLayoutChanged(id);
 }
 
@@ -1506,12 +1522,13 @@ bool Engine::saveProject(const QString &path)
 		OBSDataArrayAutoRelease layers = obs_data_array_create();
 		for (int li = 0; li < INPUT_LAYERS; li++) {
 			const InputLayer &l = in->layers[li];
-			if (!l.inputId && l.on && l.pos.isDefault())
+			if (!l.inputId && l.on && !l.behind && l.pos.isDefault())
 				continue;
 			OBSDataAutoRelease ld = obs_data_create();
 			obs_data_set_int(ld, "numero", li + 1);
 			obs_data_set_int(ld, "entrada", l.inputId);
 			obs_data_set_bool(ld, "ligada", l.on);
+			obs_data_set_bool(ld, "atras", l.behind);
 			OBSDataAutoRelease pd = posToData(l.pos);
 			obs_data_set_obj(ld, "posicao", pd);
 			obs_data_array_push_back(layers, ld);
@@ -1611,6 +1628,7 @@ bool Engine::loadProject(const QString &path)
 				InputLayer &l = in->layers[num - 1];
 				l.inputId = (int)obs_data_get_int(ld, "entrada");
 				l.on = !obs_data_has_user_value(ld, "ligada") || obs_data_get_bool(ld, "ligada");
+				l.behind = obs_data_get_bool(ld, "atras");
 				OBSDataAutoRelease lp = obs_data_get_obj(ld, "posicao");
 				l.pos = posFromData(lp);
 			}

@@ -45,6 +45,7 @@ public:
 	void setSession(std::shared_ptr<Session> s);
 	/* a gravação (pasta) está em uso neste canal? */
 	bool usesSession(const std::string &dir);
+	bool playingSession(const std::string &dir); /* o que está na tela é desta gravação? */
 	/* source: a fonte da cena (visibilidade e áudio); video: quem recebe os quadros
 	 * (a fonte interna que a de cena desenha com zoom) */
 	void addOutput(obs_source_t *source, obs_source_t *video = nullptr);

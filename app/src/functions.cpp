@@ -117,6 +117,7 @@ const QList<FunctionDef> &functionList()
 		{"MultiViewOverlay", "Camadas", "Camada liga/desliga (Value = número 1 a 10)", true, true},
 		{"MultiViewOverlayOn", "Camadas", "Camada liga (Value = número)", true, true},
 		{"MultiViewOverlayOff", "Camadas", "Camada desliga (Value = número)", true, true},
+		{"SetLayerBehind", "Camadas", "Camada atrás da imagem principal (Value = número,1) ou na frente (número,0)", true, true, false, true},
 		{"SetLayerZoom", "Camadas", "Ampliação de uma camada (Value = número,zoom)", true, true, false, true},
 		{"SetLayerPanX", "Camadas", "Pan X de uma camada (Value = número,pan)", true, true, false, true},
 		{"SetLayerPanY", "Camadas", "Pan Y de uma camada (Value = número,pan)", true, true, false, true},
@@ -932,7 +933,7 @@ bool runFunction(const QString &name, const QString &inputSpec, const QString &v
 		}
 		e.setInputPosition(in->id, p);
 	} else if (n == "SetLayer" || n == "SetMultiViewOverlay" || n == "SetLayerZoom" || n == "SetLayerPanX" ||
-		   n == "SetLayerPanY") {
+		   n == "SetLayerPanY" || n == "SetLayerBehind") {
 		const int comma = value.indexOf(',');
 		bool okNum = false;
 		const int idx = value.left(comma < 0 ? value.size() : comma).trimmed().toInt(&okNum);
@@ -951,6 +952,11 @@ bool runFunction(const QString &name, const QString &inputSpec, const QString &v
 				target = li->id;
 			}
 			e.setLayer(in->id, idx - 1, target);
+		} else if (n == "SetLayerBehind") {
+			const QString r = rest.toLower();
+			const bool behind = rest.isEmpty() ? !in->layers[idx - 1].behind
+							   : (r == "1" || r == "true" || r == "on" || r == "atras" || r == "atrás");
+			e.setLayerBehind(in->id, idx - 1, behind);
 		} else {
 			bool okV = false;
 			const double lv = rest.toDouble(&okV);

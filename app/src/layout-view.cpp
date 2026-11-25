@@ -121,7 +121,8 @@ QList<LayoutView::Box> LayoutView::boxes() const
 	m.imgH = obs_source_get_height(in->source);
 	m.empty = !m.imgW || !m.imgH || !in->enabled;
 	m.f = itemFrame(m.pos, m.imgW, m.imgH, W, H);
-	out << m;
+	/* de baixo para cima: camadas de trás, a principal, camadas da frente */
+	QList<Box> front;
 	for (int i = 0; i < INPUT_LAYERS; i++) {
 		const InputLayer &l = in->layers[i];
 		Input *li = e.input(l.inputId);
@@ -135,8 +136,12 @@ QList<LayoutView::Box> LayoutView::boxes() const
 		b.imgH = H;
 		b.empty = !obs_source_get_width(li->source);
 		b.f = itemFrame(b.pos, W, H, W, H);
-		out << b;
+		if (l.behind)
+			b.name += " (atrás)";
+		(l.behind ? out : front) << b;
 	}
+	out << m;
+	out << front;
 	return out;
 }
 

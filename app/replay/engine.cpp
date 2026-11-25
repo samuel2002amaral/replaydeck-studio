@@ -8,6 +8,7 @@ extern "C" {
 #include <libavcodec/codec_id.h>
 }
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
@@ -816,12 +817,31 @@ void ReplayEngine::addEvent(int64_t in, int64_t out)
 	forSelected([r](PlaybackChannel &c) { c.playList({r}, false); });
 }
 
+int64_t ReplayEngine::markFrame()
+{
+	std::lock_guard<std::recursive_mutex> lk(mtx);
+	if (!session)
+		return -1;
+	PlaybackChannel &c = (selection.load() & SEL_A) ? *channels[0] : *channels[1];
+	const ChannelState st = c.state();
+	if (!st.liveMode && st.hasSession && c.playingSession(session->dir)) {
+		const int64_t live = session->liveFrame();
+		int64_t f = (int64_t)std::llround(st.pos);
+		if (live >= 0)
+			f = std::min(f, live);
+		return std::max<int64_t>(0, f);
+	}
+	return session->liveFrame();
+}
+
 void ReplayEngine::markIn()
 {
 	std::lock_guard<std::recursive_mutex> lk(mtx);
 	if (!session)
 		return;
-	pendingIn = session->liveFrame();
+	pendingIn = markFrame();
+	blog(LOG_INFO, "[ReplayDeck] Mark In no quadro %lld (%s)", (long long)pendingIn,
+	     pendingIn == session->liveFrame() ? "ao vivo" : "posição do replay");
 	if (cfg.zoomResetOnMark)
 		zoomResetAll();
 	evVersion++;
@@ -832,15 +852,19 @@ void ReplayEngine::markOut()
 	std::lock_guard<std::recursive_mutex> lk(mtx);
 	if (!session)
 		return;
-	const int64_t live = session->liveFrame();
-	if (live < 0)
+	const int64_t out0 = markFrame();
+	if (out0 < 0)
 		return;
 	/* sem Mark In prévio: assume 5 s antes */
-	int64_t in = pendingIn >= 0 ? pendingIn : live - (int64_t)(5 * session->fps());
+	int64_t in = pendingIn >= 0 ? pendingIn : out0 - (int64_t)(5 * session->fps());
+	int64_t out = out0;
+	if (out < in)
+		std::swap(in, out); /* marcou o Out antes do In (voltando o replay): vale do mesmo jeito */
 	pendingIn = -1;
 	if (cfg.zoomResetOnMark)
 		zoomResetAll();
-	addEvent(in, live);
+	blog(LOG_INFO, "[ReplayDeck] Mark Out: evento %lld..%lld", (long long)in, (long long)out);
+	addEvent(in, out);
 }
 
 void ReplayEngine::markCancel()

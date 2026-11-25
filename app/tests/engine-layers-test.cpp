@@ -141,6 +141,17 @@ int main(int argc, char **argv)
 		      obs_sceneitem_get_source(it[1]) == b->scene.Get() && obs_sceneitem_get_source(it[2]) == c->scene.Get(),
 	      "camadas 1 e 3: principal embaixo, camada 1 e depois a 3 por cima");
 
+	e.setLayerBehind(aid, 2, true);
+	it = items(a);
+	check(it.size() == 3 && obs_sceneitem_get_source(it[0]) == c->scene.Get() &&
+		      obs_sceneitem_get_source(it[1]) == a->source.Get() && obs_sceneitem_get_source(it[2]) == b->scene.Get(),
+	      "camada 3 \"Atrás\": fica embaixo da imagem principal");
+	e.setLayerBehind(aid, 2, false);
+	it = items(a);
+	check(obs_sceneitem_get_source(it[0]) == a->source.Get() && obs_sceneitem_get_source(it[2]) == c->scene.Get(),
+	      "camada 3 de volta \"Na frente\"");
+	e.setLayerBehind(aid, 2, true); /* fica atrás para o salvar/abrir */
+
 	e.setLayer(bid, 0, aid);
 	check(b->layers[0].inputId == 0 && e.layerWouldLoop(bid, aid) && e.layerWouldLoop(aid, aid),
 	      "não deixa uma entrada aparecer dentro dela mesma");
@@ -175,10 +186,11 @@ int main(int argc, char **argv)
 	check(a && a->pos == mp && a->layers[0].inputId == bid && !a->layers[0].on && a->layers[2].inputId == cid &&
 		      a->layers[2].pos == lp && c->pos.zoom == 0.5,
 	      "salvar e abrir: posição e camadas iguais");
-	check(it.size() == 3 && obs_sceneitem_get_source(it[0]) == a->source.Get() &&
-		      obs_sceneitem_get_source(it[1]) == b->scene.Get() && !obs_sceneitem_visible(it[1]) &&
-		      obs_sceneitem_get_source(it[2]) == c->scene.Get(),
-	      "salvar e abrir: itens da cena na ordem certa");
+	check(it.size() == 3 && obs_sceneitem_get_source(it[0]) == c->scene.Get() &&
+		      obs_sceneitem_get_source(it[1]) == a->source.Get() &&
+		      obs_sceneitem_get_source(it[2]) == b->scene.Get() && !obs_sceneitem_visible(it[2]) &&
+		      a->layers[2].behind,
+	      "salvar e abrir: itens da cena na ordem certa (CAM atrás, PLACAR desligado na frente)");
 
 	e.removeInput(cid);
 	it = items(a);

@@ -68,5 +68,6 @@ private:
 	QCheckBox *onBox[INPUT_LAYERS] = {};
 	QComboBox *combo[INPUT_LAYERS] = {};
 	QPushButton *editBtn[INPUT_LAYERS] = {};
+	QPushButton *behindBtn[INPUT_LAYERS] = {};
 	bool updating = false;
 };

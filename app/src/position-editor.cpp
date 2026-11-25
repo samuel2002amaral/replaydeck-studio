@@ -295,10 +295,22 @@ LayersEditor::LayersEditor(int inputId, QWidget *parent) : QWidget(parent), id(i
 		combo[i]->setToolTip("Entrada que aparece por cima (camada 1 embaixo, 10 em cima)");
 		editBtn[i] = new QPushButton("Editar");
 		editBtn[i]->setToolTip("Posição desta camada: tamanho, lugar, corte");
+		behindBtn[i] = new QPushButton("Na frente");
+		behindBtn[i]->setCheckable(true);
+		behindBtn[i]->setMinimumWidth(84);
+		behindBtn[i]->setToolTip("Na frente: por cima da imagem principal.\n"
+					 "Atrás: embaixo da imagem principal — aparece pelas partes transparentes dela\n"
+					 "(ex.: o replay atrás da arte do VAR, aparecendo pela janela da arte).");
 		grid->addWidget(num, i, 0);
 		grid->addWidget(onBox[i], i, 1);
 		grid->addWidget(combo[i], i, 2);
-		grid->addWidget(editBtn[i], i, 3);
+		grid->addWidget(behindBtn[i], i, 3);
+		grid->addWidget(editBtn[i], i, 4);
+		connect(behindBtn[i], &QPushButton::toggled, this, [this, i](bool on) {
+			behindBtn[i]->setText(on ? "Atrás" : "Na frente");
+			if (!updating)
+				Engine::get().setLayerBehind(id, i, on);
+		});
 		connect(onBox[i], &QCheckBox::toggled, this, [this, i](bool on) {
 			if (!updating)
 				Engine::get().setLayerOn(id, i, on);
@@ -332,8 +344,10 @@ LayersEditor::LayersEditor(int inputId, QWidget *parent) : QWidget(parent), id(i
 		g->addWidget(b, k / 2, k % 2);
 	}
 	side->addLayout(g);
-	auto *hint = new QLabel("Camada = outra entrada por cima desta (como fontes dentro de uma cena no OBS). "
-				"Ela aparece com a posição e as camadas dela. A entrada principal fica embaixo de todas.");
+	auto *hint = new QLabel("Camada = outra entrada junto com esta (como fontes dentro de uma cena no OBS). "
+				"Ela aparece com a posição e as camadas dela. \"Na frente\" fica por cima da imagem principal; "
+				"\"Atrás\" fica embaixo dela e aparece pelas partes transparentes (a janela de uma arte, por "
+				"exemplo).");
 	hint->setWordWrap(true);
 	hint->setObjectName("muted");
 	side->addWidget(hint);
@@ -390,6 +404,8 @@ void LayersEditor::refresh()
 		}
 		combo[i]->setCurrentIndex(std::max(0, idx));
 		onBox[i]->setChecked(l.on);
+		behindBtn[i]->setChecked(l.behind);
+		behindBtn[i]->setText(l.behind ? "Atrás" : "Na frente");
 		editBtn[i]->setEnabled(l.inputId != 0);
 	}
 	updating = false;

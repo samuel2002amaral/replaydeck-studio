@@ -154,8 +154,11 @@ public:
 	void syncBToA();
 
 	/* eventos */
+	/* Mark In/Out como no vMix: no ao vivo marcam o ao vivo; com o replay fora do ao vivo
+	 * (parado ou tocando o que já foi gravado) marcam onde o replay está */
 	void markIn();
 	void markOut();
+	int64_t markFrame(); /* quadro que o Mark In/Out usaria agora */
 	void markCancel();
 	void autoEvent(int seconds);
 	void setActiveList(int list);

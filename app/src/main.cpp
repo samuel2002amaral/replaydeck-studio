@@ -260,6 +260,7 @@ int main(int argc, char *argv[])
 					vp.panX = -0.45;
 					vp.panY = -0.3;
 					e.setLayerPosition(cam->id, 1, vp);
+					e.setLayerBehind(cam->id, 1, true);
 				}
 				e.cutTo(cam->id);
 				auto *iw = new InputWindow(cam->id, &w);

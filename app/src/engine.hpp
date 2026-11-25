@@ -46,6 +46,7 @@ constexpr int INPUT_LAYERS = 10;
 struct InputLayer {
 	int inputId = 0; /* 0 = vazia */
 	bool on = true;
+	bool behind = false; /* atrás da imagem principal (ex.: o replay por trás de uma arte com janela transparente) */
 	ItemPos pos;
 	int64_t itemId = 0; /* item na cena desta entrada */
 };
@@ -147,6 +148,7 @@ public:
 	void setInputPosition(int id, const ItemPos &pos);
 	void setLayer(int id, int index, int layerInputId); /* index 0..9; 0 = tira a camada */
 	void setLayerOn(int id, int index, bool on);
+	void setLayerBehind(int id, int index, bool behind);
 	void setLayerPosition(int id, int index, const ItemPos &pos);
 	/* pôr "candidate" como camada de "id" faria uma entrada aparecer dentro dela mesma? */
 	bool layerWouldLoop(int id, int candidate) const;

@@ -1919,12 +1919,12 @@ ReplayDock::ReplayDock(QWidget *parent) : QWidget(parent)
 		flow->addWidget(blk);
 	}
 
-	inBtn = ui::toggle(tl("IN"), tl("Mark In: marca o início de um evento"), this, "warn");
+	inBtn = ui::toggle(tl("IN"), tl("Mark In: marca o início de um evento. No ao vivo marca o ao vivo; com o replay parado ou tocando, marca onde o replay está"), this, "warn");
 	connect(inBtn, &QPushButton::clicked, this, [this] {
 		engine().markIn();
 		refresh();
 	});
-	auto *outB = ui::button(tl("OUT"), tl("Mark Out: fecha o evento"), this, "", [this] {
+	auto *outB = ui::button(tl("OUT"), tl("Mark Out: fecha o evento (no ao vivo ou onde o replay está)"), this, "", [this] {
 		engine().markOut();
 		refresh();
 	});
