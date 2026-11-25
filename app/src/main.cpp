@@ -263,7 +263,10 @@ int main(int argc, char *argv[])
 				const bool doBrowser = !qEnvironmentVariableIsSet("RDS_SELFTEST_SEM_NAVEGADOR");
 				if (doScreen) {
 					blog(LOG_INFO, "[teste-mac] captura de tela: montando as opções…");
-					obs_properties_t *p = obs_get_source_properties("screen_capture");
+					/* como a janela de adicionar faz no Mac: uma fonte temporária para as opções */
+					OBSDataAutoRelease def = obs_get_source_defaults("screen_capture");
+					OBSSourceAutoRelease tmp = obs_source_create_private("screen_capture", "opções (temporária)", def);
+					obs_properties_t *p = tmp ? obs_source_properties(tmp) : nullptr;
 					int n = 0;
 					for (obs_property_t *q = p ? obs_properties_first(p) : nullptr; q; obs_property_next(&q))
 						n++;

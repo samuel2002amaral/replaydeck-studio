@@ -193,7 +193,11 @@ jobs:
             grep -E "\[teste-mac\]" "teste-mac-$nome-log.txt" || true
             if grep -qE "stop reason = (EXC_|signal)" "teste-mac-$nome-saida.txt"; then
               echo "::error::$nome: o programa caiu"
-              grep -n -A60 "stop reason" "teste-mac-$nome-saida.txt" | head -90
+              echo "--- mensagens do Chromium/CEF antes da queda:"
+              grep -aiE "FATAL|Check failed|:ERROR:|NOTREACHED|DCHECK|CefInitialize|bundle" "teste-mac-$nome-saida.txt" | head -40 || true
+              CEFLOG=$(find "$HOME/Library/Application Support/ReplayDeckStudio" -iname "*cef*log*" 2>/dev/null | head -1)
+              [ -n "$CEFLOG" ] && { echo "--- $CEFLOG:"; tail -40 "$CEFLOG"; }
+              grep -n -A40 "stop reason" "teste-mac-$nome-saida.txt" | head -60
               return 1
             fi
             return 0

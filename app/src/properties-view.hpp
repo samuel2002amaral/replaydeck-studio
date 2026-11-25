@@ -40,6 +40,7 @@ private:
 	void apply(obs_property_t *p);
 
 	OBSWeakSourceAutoRelease weak;
+	OBSSourceAutoRelease tempSrc; /* Mac: as capturas só montam as opções com uma fonte de verdade */
 	obs_data_t *data = nullptr;
 	QByteArray type;
 	obs_properties_t *props = nullptr;

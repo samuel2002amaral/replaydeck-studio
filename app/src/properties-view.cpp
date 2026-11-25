@@ -47,6 +47,14 @@ PropertiesView::PropertiesView(obs_source_t *source, const char *sourceType, QWi
 		data = obs_get_source_defaults(sourceType);
 		if (!data)
 			data = obs_data_create();
+#ifdef __APPLE__
+		/* Mac: a captura de tela/janela (ScreenCaptureKit) lê a própria fonte ao montar as opções;
+		 * sem uma fonte o programa fecha. Usa uma fonte temporária, só para as opções. */
+		const QByteArray t(sourceType);
+		if (t.startsWith("screen_capture") || t.startsWith("display_capture") || t.startsWith("window_capture") ||
+		    t.startsWith("sck_audio_capture"))
+			tempSrc = obs_source_create_private(sourceType, "opções (temporária)", data);
+#endif
 	}
 	setupUi();
 	reload();
@@ -112,6 +120,8 @@ void PropertiesView::reload()
 	refresh(); /* mostra "Procurando…" */
 
 	OBSSource src = OBSSourceAutoRelease(obs_weak_source_get_source(weak)).Get();
+	if (!src && tempSrc)
+		src = tempSrc.Get();
 	OBSData settings = data;
 	const QByteArray typeId = type;
 	QPointer<PropertiesView> self(this);
