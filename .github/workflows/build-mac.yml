@@ -145,20 +145,24 @@ jobs:
           pb "Delete :CFBundleIconFile"
           pb "Add :CFBundleIconFile string ReplayDeck"
           rm -f "$APP/Contents/Resources/AppIcon.icns"
-          # página web (navegador CEF) fora do Mac por enquanto: ainda derruba o programa ao abrir
-          rm -rf "$APP/Contents/PlugIns/obs-browser.plugin" "$APP/Contents/PlugIns/obs-browser-page"* \
-                 "$APP/Contents/Frameworks/Chromium Embedded Framework.framework" "$APP"/Contents/Frameworks/*Helper*.app
-          ls "$APP/Contents/PlugIns" | grep -i browser && echo "::warning::ainda tem navegador no app" || echo "navegador fora do app"
-          # ajudantes do navegador (CEF): o Chromium acha o programa principal pelo nome
-          # (identificador do principal + ".helper..."); com o do OBS o processo da GPU não conecta
-          for h in "$APP"/Contents/Frameworks/*Helper*.app; do
+          # ajudantes do navegador (CEF), como o OBS faz: o Chromium procura em Contents/Frameworks
+          # "<nome do executável principal> Helper.app" (o OBS se chama "OBS" -> "OBS Helper.app").
+          # O nosso executável é "ReplayDeckStudio": os ajudantes viram "ReplayDeckStudio Helper*.app".
+          for h in "$APP"/Contents/Frameworks/"OBS Helper"*.app; do
             [ -d "$h" ] || continue
+            base=$(basename "$h" .app)                     # OBS Helper (GPU)
+            novo="ReplayDeckStudio${base#OBS}"             # ReplayDeckStudio Helper (GPU)
+            mv "$h/Contents/MacOS/$base" "$h/Contents/MacOS/$novo"
             HP="$h/Contents/Info.plist"
-            old=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$HP" 2>/dev/null || true)
-            new="${old/com.obsproject.obs-studio/com.replaydeck.studio}"
-            /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $new" "$HP" || true
-            echo "ajudante: $(basename "$h"): $old -> $new"
+            /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $novo" "$HP"
+            /usr/libexec/PlistBuddy -c "Set :CFBundleName $novo" "$HP" 2>/dev/null || true
+            /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $novo" "$HP" 2>/dev/null || true
+            id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$HP")
+            /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier ${id/com.obsproject.obs-studio/com.replaydeck.studio}" "$HP"
+            mv "$h" "$(dirname "$h")/$novo.app"
+            echo "ajudante: $base -> $novo"
           done
+          ls "$APP/Contents/Frameworks" | grep -i helper
           pb "Set :CFBundleName ReplayDeck Studio"
           pb "Delete :CFBundleDisplayName"; pb "Add :CFBundleDisplayName string ReplayDeck Studio"
           pb "Set :CFBundleShortVersionString $STUDIO_VERSION"
@@ -217,12 +221,11 @@ jobs:
           }
           ok=0
           rodar tela RDS_SELFTEST_SEM_NAVEGADOR=1 || ok=1
-          # página web desligada no Mac por enquanto: confere que ela não aparece (e não derruba)
           rodar navegador RDS_SELFTEST_SEM_TELA=1 || ok=1
           [ $ok -eq 0 ] || exit 1
           grep -q "\[teste-mac\] captura de tela: opcoes=" teste-mac-tela-log.txt || { echo "::error::as opções da captura de tela não abriram"; exit 1; }
-          grep "\[teste-mac\] navegador" teste-mac-navegador-log.txt || true
-          if grep -q "Loading module: obs-browser" teste-mac-navegador-log.txt; then echo "::error::o navegador ainda carrega no Mac"; exit 1; fi
+          grep -q "\[teste-mac\] navegador: no ar" teste-mac-navegador-log.txt || { echo "::error::a página web não entrou no ar"; exit 1; }
+          grep -q "navegador depois de 5 s: 1280x720" teste-mac-navegador-log.txt || echo "::warning::a página web não mostrou imagem no teste"
 
       - name: Teste do Mac (replay gravando e tocando)
         run: |

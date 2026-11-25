@@ -15,7 +15,6 @@ INSTALAR
 
 AINDA NÃO TEM NO MAC
 - Câmera virtual (precisa de assinatura da Apple).
-- Entrada de página web (navegador): em ajuste, volta numa próxima versão.
 - Atalhos funcionando com outro programa na frente.
 
 Configurações e logs ficam em: ~/Library/Application Support/ReplayDeckStudio
