@@ -180,6 +180,11 @@ bool Engine::start(QString &error)
 					"mac-avcapture", "mac-capture", "mac-videotoolbox", "mac-syphon"};
 	for (const char *m : modules)
 		obs_add_safe_module(m);
+#if defined(__APPLE__) && LIBOBS_API_MAJOR_VER >= 32
+	/* Mac: a página web (navegador CEF) ainda derruba o programa ao abrir; fica desligada por enquanto */
+	if (!qEnvironmentVariableIsSet("RDS_MAC_NAVEGADOR"))
+		obs_add_disabled_module("obs-browser");
+#endif
 #if LIBOBS_API_MAJOR_VER >= 32
 	obs_load_core_modules();
 #else
