@@ -7,6 +7,7 @@ name: Build
 # Se o motor mudar (versão do OBS, patch-obs.py ou ENGINE_REV em versions.env), ele é refeito uma vez.
 #
 # Commit com [release] na mensagem (ou rodar manualmente com oficial=true) publica na página de Releases.
+# Commit com [windows]: versão só do Windows (o Mac não compila).
 on:
   push:
     branches: [main]
@@ -28,7 +29,7 @@ jobs:
   windows:
     # o Windows só compila quando é versão do Windows ([release]) ou disparado à mão:
     # mudanças só do Mac não mexem no Windows
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]')
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]') || contains(github.event.head_commit.message, '[windows]')
     runs-on: windows-2025-vs2026
     timeout-minutes: 240
     defaults:
@@ -171,7 +172,7 @@ jobs:
           compression-level: 0
 
       - name: Publicar na página de Releases
-        if: github.event.inputs.oficial == 'true' || contains(github.event.head_commit.message, '[release]')
+        if: github.event.inputs.oficial == 'true' || contains(github.event.head_commit.message, '[release]') || contains(github.event.head_commit.message, '[windows]')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

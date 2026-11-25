@@ -25,6 +25,7 @@
 #include "dialogs.hpp"
 #include "crash.hpp"
 #include "pack.hpp"
+#include "appvmix.hpp"
 #include "mac-permissions.hpp"
 #include "layout-view.hpp"
 #include "style.hpp"
@@ -42,6 +43,7 @@
 #include <QImage>
 #include <QFile>
 #include <QProcess>
+#include <QTcpSocket>
 #include <QProcessEnvironment>
 #include <QMouseEvent>
 #include <QTabWidget>
@@ -201,6 +203,7 @@ int main(int argc, char *argv[])
 		{
 			const StudioSettings &cs = Outputs::get().settings();
 			VmixApi::get().apply(cs.apiEnabled, cs.apiHttpPort, cs.apiTcpPort);
+			AppVmix::get().startIfWanted(); /* painel APPVMIX junto, sem o iniciar.bat */
 		}
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST"))
 			runSelfTest(w);
@@ -257,6 +260,27 @@ int main(int argc, char *argv[])
 			});
 			QTimer::singleShot(qMax(7500, qEnvironmentVariableIntValue("RDS_SELFTEST_HOLD") * 1000), [&w] {
 				w.grab().save(QDir::temp().filePath("rds-trans.png"));
+				w.close();
+			});
+		}
+		if (qEnvironmentVariableIsSet("RDS_SELFTEST_PAINEL")) {
+			/* painel APPVMIX ligado pelo Studio (sem o iniciar.bat) e desligado ao fechar */
+			QTimer::singleShot(500, [] {
+				AppVmix &a = AppVmix::get();
+				a.setFolder(qEnvironmentVariable("RDS_SELFTEST_PAINEL"));
+				a.start();
+			});
+			QTimer::singleShot(12000, [&w] {
+				AppVmix &a = AppVmix::get();
+				QTcpSocket t;
+				t.connectToHost("127.0.0.1", 3000);
+				const bool up = t.waitForConnected(1000);
+				blog(LOG_INFO, "[painel-teste] rodando=%d porta3000=%d url=%s status=%s", a.running(), up,
+				     a.url().toUtf8().constData(), a.status().toUtf8().constData());
+				a.stop();
+				QTcpSocket t2;
+				t2.connectToHost("127.0.0.1", 3000);
+				blog(LOG_INFO, "[painel-teste] depois de desligar: porta3000=%d", t2.waitForConnected(1000));
 				w.close();
 			});
 		}
@@ -974,6 +998,7 @@ int main(int argc, char *argv[])
 		perf::stopHangWatch();
 		Scripts::get().stopAll();
 		Playlist::get().stop();
+		AppVmix::get().stop();
 		VmixApi::get().shutdown();
 		Shortcuts::get().shutdown();
 		VirtualCam::get().shutdown();

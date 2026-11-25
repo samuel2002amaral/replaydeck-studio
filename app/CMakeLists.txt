@@ -28,6 +28,7 @@ add_executable(replaydeck-studio WIN32
   src/mac-permissions.cpp src/mac-permissions.hpp
   src/crash.cpp src/crash.hpp
   src/pack.cpp src/pack.hpp
+  src/appvmix.cpp src/appvmix.hpp
   src/main-window.cpp src/main-window.hpp
   src/replay-host.cpp src/replay-host.hpp
   src/audio-mixer.cpp src/audio-mixer.hpp
@@ -110,7 +111,7 @@ if(MSVC)
   # inline completo, intrínsecos e otimização do programa inteiro na ligação
   target_compile_options(replaydeck-studio PRIVATE $<$<NOT:$<CONFIG:Debug>>:/Ob2 /Oi /GL /Gy>)
   target_link_options(replaydeck-studio PRIVATE $<$<NOT:$<CONFIG:Debug>>:/LTCG /OPT:REF /OPT:ICF /INCREMENTAL:NO>)
-  target_link_libraries(replaydeck-studio PRIVATE dxgi winmm)
+  target_link_libraries(replaydeck-studio PRIVATE dxgi winmm shell32)
   if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/res/app.rc")
     target_sources(replaydeck-studio PRIVATE res/app.rc)
   endif()

@@ -1,4 +1,5 @@
 #include "settings-dialog.hpp"
+#include "appvmix.hpp"
 #include "gpu.hpp"
 #include "vmix-api.hpp"
 
@@ -23,6 +24,10 @@
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QDir>
+#include <QRegularExpression>
+#include <QUrl>
+#include <QDesktopServices>
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
@@ -259,6 +264,75 @@ SettingsDialog::SettingsDialog(QWidget *parent, int startTab) : QDialog(parent)
 		st->setObjectName("muted");
 		st->setTextInteractionFlags(Qt::TextSelectableByMouse);
 		f->addRow("", st);
+	}
+	{
+		/* painel APPVMIX (GT/placar): o Studio liga sozinho, sem o iniciar.bat */
+		AppVmix &av = AppVmix::get();
+		auto *title = new QLabel("<b>Painel APPVMIX (GT / placar)</b> — liga junto com o ReplayDeck, sem o iniciar.bat");
+		title->setWordWrap(true);
+		f->addRow(title);
+		auto *row = new QHBoxLayout;
+		auto *folder = new QLineEdit(av.folder());
+		folder->setPlaceholderText("Pasta do APPVMIX (a que tem o iniciar.bat)");
+		auto *browse = new QPushButton("Procurar…");
+		row->addWidget(folder, 1);
+		row->addWidget(browse);
+		f->addRow("Pasta", row);
+		auto *autoBox = new QCheckBox("Ligar o painel junto com o ReplayDeck (e desligar ao fechar)");
+		autoBox->setChecked(av.autoStart());
+		f->addRow("", autoBox);
+		auto *btns = new QHBoxLayout;
+		auto *startBtn = new QPushButton("Ligar agora");
+		auto *stopBtn = new QPushButton("Desligar");
+		auto *openBtn = new QPushButton("Abrir o painel");
+		auto *fwBtn = new QPushButton("Liberar no Firewall (celular/tablet)");
+		fwBtn->setToolTip("Uma vez só: o Windows pede permissão de administrador e libera a porta 3000,\n"
+				  "para o celular e o tablet abrirem o painel pela rede.");
+		for (QPushButton *b : {startBtn, stopBtn, openBtn, fwBtn})
+			btns->addWidget(b);
+		btns->addStretch(1);
+		f->addRow("", btns);
+		auto *st = new QLabel;
+		st->setObjectName("muted");
+		st->setWordWrap(true);
+		st->setTextInteractionFlags(Qt::TextSelectableByMouse);
+		f->addRow("Painel", st);
+		auto refresh = [st, startBtn, stopBtn, openBtn] {
+			AppVmix &a = AppVmix::get();
+			st->setText(a.status());
+			startBtn->setEnabled(!a.running());
+			stopBtn->setEnabled(a.running());
+			openBtn->setEnabled(!a.url().isEmpty());
+		};
+		refresh();
+		connect(&av, &AppVmix::statusChanged, st, refresh);
+		auto setFolder = [folder, st, refresh](const QString &d) {
+			folder->setText(QDir::toNativeSeparators(d));
+			AppVmix::get().setFolder(d);
+			if (!AppVmix::validFolder(d))
+				st->setText("Esta pasta não tem o APPVMIX (procure a que tem o iniciar.bat e a pasta server)");
+			else
+				refresh();
+		};
+		connect(browse, &QPushButton::clicked, this, [this, setFolder, folder] {
+			const QString d = QFileDialog::getExistingDirectory(this, "Pasta do APPVMIX", folder->text());
+			if (!d.isEmpty())
+				setFolder(d);
+		});
+		connect(folder, &QLineEdit::editingFinished, this, [setFolder, folder] {
+			setFolder(QDir::fromNativeSeparators(folder->text().trimmed()));
+		});
+		connect(autoBox, &QCheckBox::toggled, this, [](bool on) { AppVmix::get().setAutoStart(on); });
+		connect(startBtn, &QPushButton::clicked, this, [] { AppVmix::get().start(); });
+		connect(stopBtn, &QPushButton::clicked, this, [] { AppVmix::get().stop(); });
+		connect(openBtn, &QPushButton::clicked, this, [] {
+			QString u = AppVmix::get().url();
+			QDesktopServices::openUrl(QUrl(u.replace(QRegularExpression(R"(//\d+\.\d+\.\d+\.\d+)"), "//127.0.0.1")));
+		});
+		connect(fwBtn, &QPushButton::clicked, this, [] { AppVmix::openFirewall(); });
+#ifndef _WIN32
+		fwBtn->hide();
+#endif
 	}
 
 	page(tabs, "Áudio", f, "Fone: onde tocam as entradas com o botão Fone ligado no mixer.");
