@@ -222,7 +222,7 @@ jobs:
           [ $ok -eq 0 ] || exit 1
           grep -q "\[teste-mac\] captura de tela: opcoes=" teste-mac-tela-log.txt || { echo "::error::as opções da captura de tela não abriram"; exit 1; }
           grep "\[teste-mac\] navegador" teste-mac-navegador-log.txt || true
-          grep -q "\[teste-mac\] navegador: entrada=0" teste-mac-navegador-log.txt || { echo "::error::a página web ainda aparece no Mac"; exit 1; }
+          if grep -q "Loading module: obs-browser" teste-mac-navegador-log.txt; then echo "::error::o navegador ainda carrega no Mac"; exit 1; fi
 
       - name: Teste do Mac (replay gravando e tocando)
         run: |
