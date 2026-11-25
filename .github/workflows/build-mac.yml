@@ -145,6 +145,16 @@ jobs:
           pb "Delete :CFBundleIconFile"
           pb "Add :CFBundleIconFile string ReplayDeck"
           rm -f "$APP/Contents/Resources/AppIcon.icns"
+          # ajudantes do navegador (CEF): o Chromium acha o programa principal pelo nome
+          # (identificador do principal + ".helper..."); com o do OBS o processo da GPU não conecta
+          for h in "$APP"/Contents/Frameworks/*Helper*.app; do
+            [ -d "$h" ] || continue
+            HP="$h/Contents/Info.plist"
+            old=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$HP" 2>/dev/null || true)
+            new="${old/com.obsproject.obs-studio/com.replaydeck.studio}"
+            /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $new" "$HP" || true
+            echo "ajudante: $(basename "$h"): $old -> $new"
+          done
           pb "Set :CFBundleName ReplayDeck Studio"
           pb "Delete :CFBundleDisplayName"; pb "Add :CFBundleDisplayName string ReplayDeck Studio"
           pb "Set :CFBundleShortVersionString $STUDIO_VERSION"
