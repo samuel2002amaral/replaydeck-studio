@@ -7,6 +7,7 @@ name: Build Mac
 # Commit com [release] anexa o .dmg à mesma página de Releases da versão do Windows.
 # O Mac acompanha cada versão publicada (commit com [release]) e também pode ser
 # disparado à mão (Actions → Build Mac → Run workflow): anexa o .dmg à versão atual.
+# Commit com [mac]: versão SÓ do Mac (o Windows não publica; a página é criada aqui).
 on:
   push:
     branches: [main]
@@ -21,7 +22,7 @@ concurrency:
 
 jobs:
   macos:
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]')
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]') || contains(github.event.head_commit.message, '[mac]')
     runs-on: macos-26
     timeout-minutes: 300
     defaults:
@@ -237,10 +238,18 @@ jobs:
           compression-level: 0
 
       - name: Anexar ao Release
-        if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]')
+        if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]') || contains(github.event.head_commit.message, '[mac]')
         env:
           GH_TOKEN: ${{ github.token }}
+          SO_MAC: ${{ contains(github.event.head_commit.message, '[mac]') }}
         run: |
+          if [ "$SO_MAC" = "true" ] && ! gh release view "v$STUDIO_VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # versão só do Mac: o Windows continua na anterior
+            { cat studio/installer/release-notes.md; printf '\n\n---\nVersão só para Mac (o Windows continua na versão anterior).\n'; } > notas.md
+            gh release create "v$STUDIO_VERSION" dist/*.dmg --target "$GITHUB_SHA" --repo "$GITHUB_REPOSITORY" \
+              --title "ReplayDeck Studio $STUDIO_VERSION (Mac)" --notes-file notas.md --latest=false
+            exit 0
+          fi
           # a página da versão é criada pelo job do Windows: espera até 60 min por ela
           for i in $(seq 1 120); do
             if gh release view "v$STUDIO_VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
