@@ -87,6 +87,8 @@ bool Engine::start(QString &error)
 	logFile = fopen(QFile::encodeName(logPath).constData(), "w");
 	base_set_log_handler(logHandler, nullptr);
 	blog(LOG_INFO, "ReplayDeck Studio %s iniciando (motor libobs %s)", RDS_VERSION, obs_get_version_string());
+	if (onConfigDir)
+		onConfigDir(cfgDir); /* ex.: aplicar um pacote importado antes de ler as configurações */
 
 	QDir().mkpath(cfgDir + "/plugin_config");
 	const QByteArray pluginCfg = QFile::encodeName(cfgDir + "/plugin_config");
@@ -520,6 +522,7 @@ int Engine::sharedFrom(int id) const
 
 std::function<QString(const char *, obs_data_t *)> Engine::deviceKeyOverride;
 std::function<void()> Engine::beforeProjectLoad;
+std::function<void(const QString &)> Engine::onConfigDir;
 std::function<int(obs_source_t *)> Engine::beforeOverlayOff;
 std::function<void()> Engine::loadExtraModules;
 

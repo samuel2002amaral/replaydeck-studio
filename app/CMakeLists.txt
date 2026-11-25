@@ -27,6 +27,7 @@ add_executable(replaydeck-studio WIN32
   src/layout-view.cpp src/layout-view.hpp
   src/mac-permissions.cpp src/mac-permissions.hpp
   src/crash.cpp src/crash.hpp
+  src/pack.cpp src/pack.hpp
   src/main-window.cpp src/main-window.hpp
   src/replay-host.cpp src/replay-host.hpp
   src/audio-mixer.cpp src/audio-mixer.hpp

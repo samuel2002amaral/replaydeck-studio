@@ -208,6 +208,7 @@ public:
 	static QString typeDisplayName(const char *id);
 
 	/* ganchos (o replay se registra aqui; os testes do motor não usam) */
+	static std::function<void(const QString &)> onConfigDir; /* pasta de configuração pronta, nada lido ainda */
 	static std::function<void()> beforeProjectLoad; /* tipos extras prontos antes de abrir o projeto */
 	/* antes de tirar uma entrada de um overlay: devolve quantos ms esperar (ex.: o título GT
 	 * anima a saída); 0 = tira na hora */

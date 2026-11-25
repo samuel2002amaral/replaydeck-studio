@@ -24,6 +24,7 @@
 #include "overlay-channels.hpp"
 #include "dialogs.hpp"
 #include "crash.hpp"
+#include "pack.hpp"
 #include "mac-permissions.hpp"
 #include "layout-view.hpp"
 #include "style.hpp"
@@ -38,6 +39,7 @@
 #include <QTimer>
 #include <QDir>
 #include <QIcon>
+#include <QImage>
 #include <QFile>
 #include <QProcess>
 #include <QProcessEnvironment>
@@ -162,6 +164,7 @@ int main(int argc, char *argv[])
 	perf::tuneProcess();
 	Engine::loadExtraModules = plugins::loadEnabled;
 	QString error;
+	Engine::onConfigDir = pack::applyPending; /* pacote importado de outro computador */
 	Engine::beforeProjectLoad = replayhost::registerTypes; /* entradas Replay A/B do projeto */
 	if (!Engine::get().start(error)) {
 		QMessageBox::critical(nullptr, "ReplayDeck Studio", "Não foi possível iniciar.\n\n" + error +
@@ -255,6 +258,50 @@ int main(int argc, char *argv[])
 			QTimer::singleShot(qMax(7500, qEnvironmentVariableIntValue("RDS_SELFTEST_HOLD") * 1000), [&w] {
 				w.grab().save(QDir::temp().filePath("rds-trans.png"));
 				w.close();
+			});
+		}
+		if (qEnvironmentVariableIsSet("RDS_SELFTEST_PACOTE")) {
+			/* pacote: exporta (com imagem e GT), "outro computador" sem os arquivos, importa e confere */
+			QTimer::singleShot(800, [&w] {
+				Engine &e = Engine::get();
+				while (!e.inputs().isEmpty())
+					e.removeInput(e.inputs().first()->id);
+				const QString srcDir = QDir::temp().filePath("pacote-origem");
+				QDir().mkpath(srcDir);
+				QImage img(320, 180, QImage::Format_ARGB32);
+				img.fill(QColor(200, 30, 30));
+				img.save(srcDir + "/logo.png");
+				OBSDataAutoRelease s = obs_data_create();
+				obs_data_set_string(s, "file", (srcDir + "/logo.png").toUtf8().constData());
+				e.addInput("image_source", "LOGO", s);
+				const QString gt = qEnvironmentVariable("RDS_SELFTEST_PACOTE");
+				if (QFile::exists(gt))
+					OBSSourceAutoRelease g = gtLibraryAdd(gt);
+				const QString out = QDir::temp().filePath("teste.rdspacote");
+				QString err;
+				const bool wrote = pack::writePack(out, true, nullptr, &err);
+				blog(LOG_INFO, "[pacote-teste] exportou=%d tamanho=%lld %s", wrote, (long long)QFileInfo(out).size(),
+				     err.toUtf8().constData());
+				/* outro computador: os arquivos originais não existem */
+				QDir(srcDir).removeRecursively();
+				const QString gtAway = gt + ".longe";
+				QFile::rename(gt, gtAway);
+				const bool read = pack::readPack(out, nullptr, &err);
+				pack::applyPending(e.configDir());
+				const bool loaded = e.loadProject(e.defaultProjectPath());
+				QString logoPath;
+				bool gtOk = false;
+				for (Input *in : e.inputs()) {
+					OBSDataAutoRelease st = obs_source_get_settings(in->source);
+					if (in->name == "LOGO")
+						logoPath = QString::fromUtf8(obs_data_get_string(st, "file"));
+					if (gtIsSource(in->source))
+						gtOk = gtTitleOf(in->source) != nullptr;
+				}
+				blog(LOG_INFO, "[pacote-teste] importou=%d abriu=%d entradas=%d logo=%s existe=%d gt=%d", read, loaded,
+				     (int)e.inputs().size(), logoPath.toUtf8().constData(), QFile::exists(logoPath), gtOk);
+				QFile::rename(gtAway, gt);
+				QTimer::singleShot(500, &w, [&w] { w.close(); });
 			});
 		}
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST_MAC")) {
@@ -938,5 +985,7 @@ int main(int argc, char *argv[])
 	replayhost::finish();
 	Engine::get().stop();
 	perf::restore();
+	if (pack::restartRequested()) /* importou um pacote: abre de novo já configurado */
+		QProcess::startDetached(QCoreApplication::applicationFilePath(), {}, QCoreApplication::applicationDirPath());
 	return ret;
 }

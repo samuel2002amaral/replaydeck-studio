@@ -1,5 +1,6 @@
 #include "main-window.hpp"
 #include "mac-permissions.hpp"
+#include "pack.hpp"
 #include "multicorder.hpp"
 #include "playlist.hpp"
 #include "ptz.hpp"
@@ -573,6 +574,9 @@ void MainWindow::buildMenus()
 		if (!p.isEmpty())
 			e.saveProject(p);
 	});
+	file->addSeparator();
+	file->addAction("Exportar tudo para outro computador (pacote)…", this, [this] { pack::exportDialog(this); });
+	file->addAction("Importar pacote de outro computador…", this, [this] { pack::importDialog(this); });
 	file->addSeparator();
 	file->addAction("Sair", this, &QWidget::close);
 
