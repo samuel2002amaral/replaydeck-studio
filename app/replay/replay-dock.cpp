@@ -1107,6 +1107,12 @@ static bool showConfigDialog(QWidget *parent)
 	fRec->addRow(tl("Qualidade"), quality);
 
 	auto *enc = new QComboBox(&dlg);
+#ifdef __APPLE__
+	/* Mac: o codificador do próprio chip (Apple Silicon) */
+	enc->addItem(tl("Automático (Apple VideoToolbox → MJPEG)"), "auto");
+	enc->addItem("Apple VideoToolbox H.264 intra", "h264_videotoolbox");
+	enc->addItem("Apple VideoToolbox HEVC intra", "hevc_videotoolbox");
+#else
 	enc->addItem(tl("Automático (NVENC → QSV → AMF → MJPEG)"), "auto");
 	enc->addItem("NVIDIA NVENC H.264 intra", "h264_nvenc");
 	enc->addItem("NVIDIA NVENC HEVC intra", "hevc_nvenc");
@@ -1114,6 +1120,7 @@ static bool showConfigDialog(QWidget *parent)
 	enc->addItem("Intel QSV HEVC intra", "hevc_qsv");
 	enc->addItem("AMD AMF H.264 intra", "h264_amf");
 	enc->addItem("AMD AMF HEVC intra", "hevc_amf");
+#endif
 	enc->addItem("MJPEG 4:2:2 (CPU)", "mjpeg");
 	enc->setCurrentIndex(qMax(0, enc->findData(QString::fromUtf8(cfg.rec.encoder.c_str()))));
 	fRec->addRow(tl("Encoder"), enc);
