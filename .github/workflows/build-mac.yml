@@ -189,7 +189,32 @@ jobs:
           cp "$(ls -t "$LOGS"/*.txt | head -1)" teste-mac-nav-log.txt || true
           grep -iE "teste-mac|browser|navegador|cef|obs-browser" teste-mac-nav-log.txt | head -40 || true
           ls "$APP/Contents/Frameworks" | grep -i -E "helper|chromium" || echo "::warning::sem os ajudantes do navegador no app"
-          [ "$code" -ge 128 ] && { echo "::error::o programa fechou sozinho (sinal $((code-128)))"; exit 1; }
+          if [ "$code" -ge 128 ]; then
+            # relatório de falha do macOS: onde o programa caiu
+            sleep 5
+            rep=$(ls -t "$HOME/Library/Logs/DiagnosticReports/"*ReplayDeck*.ips 2>/dev/null | head -1)
+            if [ -n "$rep" ]; then
+              cp "$rep" teste-mac-falha.ips
+              python3 - "$rep" <<'PY' || head -c 20000 "$rep"
+          import json, sys
+          raw = open(sys.argv[1]).read()
+          head, body = raw.split("\n", 1)
+          d = json.loads(body)
+          print("exceção:", d.get("exception"), d.get("termination", {}).get("indicator"))
+          imgs = d.get("usedImages", [])
+          for t in d.get("threads", []):
+              if not t.get("triggered"):
+                  continue
+              print("thread:", t.get("name") or t.get("queue") or t.get("id"))
+              for f in t.get("frames", [])[:40]:
+                  im = imgs[f["imageIndex"]] if f.get("imageIndex") is not None and f["imageIndex"] < len(imgs) else {}
+                  print("  ", (im.get("name") or "?").ljust(40), f.get("symbol", hex(f.get("imageOffset", 0))))
+          PY
+            else
+              echo "sem relatório de falha"
+            fi
+            echo "::error::o programa fechou sozinho (sinal $((code-128)))"; exit 1
+          fi
           grep -q "\[teste-mac\] navegador: entrada=1" teste-mac-nav-log.txt || { echo "::error::não criou a página web"; exit 1; }
           grep -q "\[teste-mac\] captura de tela: opcoes=" teste-mac-nav-log.txt || { echo "::error::as opções da captura de tela não abriram"; exit 1; }
           grep -q "navegador depois de 5 s: 1280x720" teste-mac-nav-log.txt || echo "::warning::a página web não mostrou imagem no teste"
@@ -221,6 +246,7 @@ jobs:
             teste-mac-nav-saida.txt
             teste-mac-replay.png
             teste-mac-replay-log.txt
+            teste-mac-falha.ips
 
       - name: DMG
         run: |
