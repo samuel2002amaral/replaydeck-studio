@@ -146,6 +146,7 @@ jobs:
           cp -R studio/app/replay/data/* "$APP/Contents/Resources/data/replaydeck-studio/replay/"
           cp engine/runtime/LICENCA.txt pkg/LICENCA.txt
           echo "ReplayDeck Studio $STUDIO_VERSION (Mac, Apple Silicon) - motor OBS $OBS_VERSION - build ${{ github.run_number }} ${{ github.sha }}" > "$APP/Contents/Resources/VERSAO.txt"
+          echo "--- motor dentro do app:"; ls "$APP/Contents/Frameworks" "$APP/Contents/PlugIns" | head -80
           echo "--- dependências do programa:"
           otool -L "$APP/Contents/MacOS/ReplayDeckStudio" | head -30
           # assinatura "ad-hoc": sem ela o Mac com chip Apple não abre nada

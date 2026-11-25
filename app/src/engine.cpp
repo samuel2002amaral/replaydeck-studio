@@ -122,6 +122,25 @@ bool Engine::start(QString &error)
 	obs_video_info ovi = {};
 #ifdef _WIN32
 	ovi.graphics_module = "libobs-d3d11";
+#elif defined(__APPLE__)
+	/* no Mac o módulo de vídeo fica em Contents/Frameworks com o número da versão no nome
+	 * (libobs-opengl.33.dylib) ou como .framework, conforme a compilação do motor */
+	static QByteArray glModule = "libobs-opengl.dylib";
+	{
+		const QDir fw(QCoreApplication::applicationDirPath() + "/../Frameworks");
+		const QStringList found =
+			fw.entryList({"libobs-opengl*.dylib", "libobs-opengl*.so", "libobs-opengl.framework"},
+				     QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+		for (const QString &f : found) {
+			QString path = fw.absoluteFilePath(f);
+			if (f.endsWith(".framework"))
+				path += "/libobs-opengl";
+			glModule = QFile::encodeName(QDir::cleanPath(path));
+			break;
+		}
+		blog(LOG_INFO, "módulo de vídeo: %s", glModule.constData());
+	}
+	ovi.graphics_module = glModule.constData();
 #else
 	ovi.graphics_module = "libobs-opengl";
 #endif
