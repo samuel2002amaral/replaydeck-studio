@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <map>
 
 class QWidget;
 
@@ -83,10 +84,49 @@ enum GtPlay { GT_HIDDEN = 0, GT_IN = 1, GT_SHOWN = 2, GT_OUT = 3, GT_PAGE = 4 };
 
 struct GtItem {
 	GtElement el; /* com os valores do editor aplicados */
+	QString look; /* o que muda a imagem (texto, fonte, cor, tamanho…); posição/opacidade/giro não */
 	QImage img;
 	gs_texture_t *tex = nullptr;
 	bool dirty = true;
 };
+
+/* chave da aparência: igual = a imagem já desenhada continua valendo */
+static QString lookKey(const GtElement &e)
+{
+	auto brush = [](const GtBrush &b) {
+		QString k = QString("%1|%2|%3|%4,%5,%6,%7|%8")
+				    .arg((int)b.kind)
+				    .arg(b.color.rgba())
+				    .arg(b.bitmap)
+				    .arg(b.start.x())
+				    .arg(b.start.y())
+				    .arg(b.end.x())
+				    .arg(b.end.y())
+				    .arg(b.stretch);
+		for (const auto &st : b.stops)
+			k += QString(";%1@%2").arg(st.color.rgba()).arg(st.offset);
+		return k;
+	};
+	return QString("%1|%2x%3|%4|%5|%6|%7,%8|")
+		       .arg((int)e.kind)
+		       .arg(e.rect.width())
+		       .arg(e.rect.height())
+		       .arg(brush(e.fill), brush(e.stroke))
+		       .arg(e.strokeThickness)
+		       .arg(e.radiusX)
+		       .arg(e.radiusY) +
+	       e.text + '|' + e.fontFamily + '|' + QString::number(e.fontSize) + '|' + e.fontWeight + '|' + e.fontStyle +
+	       '|' + e.align + '|' + e.valign + '|' + QString::number(e.lineSpacing) + '|' + e.image + '|' + e.imageStretch +
+	       QString("|%1,%2,%3,%4|%5,%6,%7,%8")
+		       .arg(e.crop.x())
+		       .arg(e.crop.y())
+		       .arg(e.crop.width())
+		       .arg(e.crop.height())
+		       .arg(e.feather.left())
+		       .arg(e.feather.top())
+		       .arg(e.feather.right())
+		       .arg(e.feather.bottom());
+}
 
 struct GtLayerRt {
 	QRectF rect; /* com os valores do editor */
@@ -101,6 +141,8 @@ struct GtSource {
 	std::recursive_mutex mtx;
 	std::shared_ptr<GtTitle> base;  /* como veio do arquivo */
 	std::shared_ptr<GtTitle> title; /* com o que o editor acrescentou/apagou (ou o próprio base) */
+	std::shared_ptr<GtTitle> titleBase; /* de qual base o title foi montado */
+	QString structSig;                  /* e com quais chaves de estrutura (mudou só texto: reaproveita) */
 	QString file;
 	GtValues values;
 	std::vector<GtLayerRt> layers;
@@ -115,32 +157,87 @@ struct GtSource {
 
 static void rebuildItems(GtSource *g)
 {
-	/* chamado com mtx travado */
+	/* chamado com mtx travado.
+	 * O que não mudou de aparência (placar novo só troca 1 texto) reaproveita a imagem e a
+	 * textura já prontas: nada de redesenhar e reenviar o título inteiro à placa de vídeo. */
+	std::map<QString, GtItem> old;
+	std::vector<gs_texrender_t *> oldTr;
 	for (auto &L : g->layers) {
-		for (auto &it : L.items)
-			if (it.tex)
+		for (auto &it : L.items) {
+			if (!it.el.name.isEmpty() && !it.dirty && !old.count(it.el.name))
+				old.emplace(it.el.name, std::move(it));
+			else if (it.tex)
 				g->trash.push_back(it.tex);
-		if (L.tr)
-			g->trashTr.push_back(L.tr);
+		}
+		oldTr.push_back(L.tr);
 	}
 	g->layers.clear();
-	g->title = gtStructured(g->base, g->values);
-	if (!g->title)
+	{
+		/* montar de novo só quando a ESTRUTURA muda (elemento novo, apagado, ordem, animação):
+		 * mudar texto/placar a cada segundo reaproveita o título e as imagens já carregadas */
+		QString sig;
+		for (auto it = g->values.begin(); it != g->values.end(); ++it) {
+			const QString &k = it.key();
+			if (k.startsWith("+L:") || k.startsWith("+E:") || k.endsWith(".Removed") || k.endsWith(".Order") ||
+			    k.endsWith(".AnimIn") || k.endsWith(".AnimOut") || k.endsWith(".AnimDuration") ||
+			    k.endsWith(".AnimDelay"))
+				sig += k + '=' + it.value() + '\n';
+		}
+		if (!g->title || g->titleBase != g->base || sig != g->structSig) {
+			g->title = gtStructured(g->base, g->values);
+			g->titleBase = g->base;
+			g->structSig = sig;
+		}
+	}
+	static const bool noCache = qEnvironmentVariableIsSet("RDS_GT_SEM_CACHE"); /* medir a diferença */
+	if (noCache) {
+		for (auto &o : old)
+			if (o.second.tex)
+				g->trash.push_back(o.second.tex);
+		old.clear();
+	}
+	auto finish = [&]() {
+		for (auto &o : old)
+			if (o.second.tex)
+				g->trash.push_back(o.second.tex);
+		for (size_t i = g->layers.size(); i < oldTr.size(); i++)
+			if (oldTr[i])
+				g->trashTr.push_back(oldTr[i]);
+	};
+	if (!g->title) {
+		finish();
 		return;
+	}
 	for (auto &L : g->title->layers) {
 		GtLayerRt rt;
 		rt.rect = gtLayerRect(L, g->values);
 		rt.visible = gtLayerVisible(L, g->values);
 		rt.rotation = gtLayerRotation(L, g->values);
+		/* a textura de desenho da camada é refeita a cada quadro: reaproveita a da mesma posição */
+		if (g->layers.size() < oldTr.size()) {
+			rt.tr = oldTr[g->layers.size()];
+			oldTr[g->layers.size()] = nullptr;
+		}
 		for (auto &e : L.elements) {
 			GtItem it;
 			it.el = gtApplyValues(e, g->values);
-			if (it.el.visible)
-				it.img = gtRenderElement(*g->title, it.el);
+			if (it.el.visible) {
+				it.look = lookKey(it.el);
+				auto o = it.el.name.isEmpty() ? old.end() : old.find(it.el.name);
+				if (o != old.end() && o->second.look == it.look && !o->second.img.isNull()) {
+					it.img = std::move(o->second.img);
+					it.tex = o->second.tex;
+					it.dirty = false;
+					old.erase(o);
+				} else {
+					it.img = gtRenderElement(*g->title, it.el);
+				}
+			}
 			rt.items.push_back(std::move(it));
 		}
 		g->layers.push_back(std::move(rt));
 	}
+	finish();
 }
 
 static void loadFile(GtSource *g, const QString &file)

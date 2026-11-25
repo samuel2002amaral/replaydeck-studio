@@ -40,6 +40,7 @@
 #include <QTimer>
 #include <QDir>
 #include <QIcon>
+#include <QElapsedTimer>
 #include <QImage>
 #include <QFile>
 #include <QProcess>
@@ -261,6 +262,36 @@ int main(int argc, char *argv[])
 			QTimer::singleShot(qMax(7500, qEnvironmentVariableIntValue("RDS_SELFTEST_HOLD") * 1000), [&w] {
 				w.grab().save(QDir::temp().filePath("rds-trans.png"));
 				w.close();
+			});
+		}
+		if (qEnvironmentVariableIsSet("RDS_SELFTEST_GTRAPIDO")) {
+			/* custo de trocar 1 texto do GT (placar/relógio) várias vezes por segundo */
+			QTimer::singleShot(800, [&w] {
+				OBSSourceAutoRelease src = gtLibraryAdd(qEnvironmentVariable("RDS_SELFTEST_GTRAPIDO"));
+				Input *in = nullptr;
+				for (Input *i : Engine::get().inputs())
+					if (gtIsSource(i->source))
+						in = i;
+				if (!in)
+					return;
+				Engine::get().cutTo(in->id);
+				auto t = gtTitleOf(in->source);
+				QString field;
+				for (const GtField &f : t->fields())
+					if (f.kind == GtField::Text) {
+						field = f.id;
+						break;
+					}
+				QElapsedTimer tm;
+				tm.start();
+				for (int i = 0; i < 300; i++) {
+					QMap<QString, QString> v = gtValues(in->source);
+					v.insert(field, QString::number(i));
+					gtSetValues(in->source, v);
+				}
+				blog(LOG_INFO, "[gt-rapido] 300 trocas de %s: %lld ms (%s)", field.toUtf8().constData(),
+				     (long long)tm.elapsed(), qEnvironmentVariableIsSet("RDS_GT_SEM_CACHE") ? "sem reaproveitar" : "reaproveitando");
+				QTimer::singleShot(1500, &w, [&w] { w.close(); });
 			});
 		}
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST_PAINEL")) {

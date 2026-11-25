@@ -35,6 +35,8 @@ private:
 	void save();
 	void setStatus(const QString &s);
 	void launch(const QStringList &steps);
+	QString bundlePath() const;
+	bool bundleOutdated() const;
 
 	QString dir;
 	bool autoOn = false;
@@ -42,4 +44,5 @@ private:
 	QString panelUrl;
 	QString statusText = "Desligado";
 	bool stopping = false;
+	bool bundleFailed = false;
 };

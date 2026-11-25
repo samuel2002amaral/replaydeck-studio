@@ -5,6 +5,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QDirIterator>
 #include <QProcess>
 #include <QRegularExpression>
 #include <QSettings>
@@ -115,8 +116,31 @@ void AppVmix::start()
 		steps << "install";
 	if (!QFile::exists(dir + "/web/dist/index.html"))
 		steps << "build";
+	if (bundleOutdated())
+		steps << "bundle";
 	steps << "start";
 	launch(steps);
+}
+
+/* o servidor do painel num arquivo só, já em JavaScript: abre mais rápido e usa metade da memória
+ * (o tsx traduz o TypeScript toda vez que liga). Refaz quando o código do APPVMIX muda. */
+QString AppVmix::bundlePath() const
+{
+	return dir + "/server/.replaydeck/index.mjs";
+}
+
+bool AppVmix::bundleOutdated() const
+{
+	const QFileInfo b(bundlePath());
+	if (!b.exists() || bundleFailed)
+		return !bundleFailed;
+	for (const char *src : {"/server/src", "/shared/src"}) {
+		QDirIterator it(dir + src, {"*.ts"}, QDir::Files, QDirIterator::Subdirectories);
+		while (it.hasNext())
+			if (QFileInfo(it.next()).lastModified() > b.lastModified())
+				return true;
+	}
+	return false;
 }
 
 void AppVmix::launch(const QStringList &steps)
@@ -160,6 +184,12 @@ void AppVmix::launch(const QStringList &steps)
 		proc = nullptr;
 		if (stopping)
 			return;
+		if (step == "bundle" && code != 0) {
+			bundleFailed = true; /* segue pelo tsx, como o iniciar.bat */
+			QFile::remove(bundlePath());
+			launch(rest);
+			return;
+		}
 		if (step != "start" && code == 0) {
 			launch(rest); /* próxima etapa */
 			return;
@@ -169,11 +199,23 @@ void AppVmix::launch(const QStringList &steps)
 					    : QString("O painel parou (código %1; veja logs/appvmix.txt)").arg(code));
 	});
 
+	if (step == "bundle") {
+		const QString js =
+			"require('esbuild').buildSync({entryPoints:['server/src/index.ts'],bundle:true,platform:'node',"
+			"format:'esm',external:['fastify','@fastify/*','fast-xml-parser','ws','pino*'],target:'node18',"
+			"outfile:'server/.replaydeck/index.mjs',logLevel:'warning',banner:{js:\"import{createRequire as "
+			"__cr}from'module';const require=__cr(import.meta.url);\"}})";
+		proc->start(QStandardPaths::findExecutable("node"), {"-e", js});
+		setStatus("Preparando o painel (uma vez)…");
+		return;
+	}
 	if (step == "start") {
 		/* direto pelo node (como o "npm start" faz, mas sem o npm no meio) */
 		const QString tsx = dir + "/node_modules/tsx/dist/cli.mjs";
 		const QString node = QStandardPaths::findExecutable("node");
-		if (QFile::exists(tsx)) {
+		if (QFile::exists(bundlePath()) && !bundleFailed) {
+			proc->start(node, {bundlePath()});
+		} else if (QFile::exists(tsx)) {
 			proc->start(node, {tsx, "server/src/index.ts"});
 		} else {
 #ifdef _WIN32
