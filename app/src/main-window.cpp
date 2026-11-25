@@ -1,4 +1,5 @@
 #include "main-window.hpp"
+#include "mac-permissions.hpp"
 #include "multicorder.hpp"
 #include "playlist.hpp"
 #include "ptz.hpp"
@@ -634,6 +635,9 @@ void MainWindow::buildMenus()
 	help->addAction("Abrir pasta de logs", this, [this] { openLogs(LogAction::Folder); });
 	help->addAction("Abrir o log atual (Bloco de Notas)", this, [this] { openLogs(LogAction::Notepad); });
 	help->addAction("Copiar o log atual para a Área de Trabalho", this, [this] { openLogs(LogAction::Desktop); });
+#ifdef __APPLE__
+	help->addAction("Permissões do Mac (câmera, microfone, tela)…", this, [this] { macperm::showDialog(this); });
+#endif
 	help->addAction("Sobre", this, [this] {
 		QMessageBox::about(this, "ReplayDeck Studio",
 				   QString("<b>ReplayDeck Studio %1</b><br>Motor de vídeo: libobs %2 (OBS Studio, GPL)<br>"

@@ -224,6 +224,8 @@ jobs:
           rodar navegador RDS_SELFTEST_SEM_TELA=1 || ok=1
           [ $ok -eq 0 ] || exit 1
           grep -q "\[teste-mac\] captura de tela: opcoes=" teste-mac-tela-log.txt || { echo "::error::as opções da captura de tela não abriram"; exit 1; }
+          grep -q "\[teste-mac\] janela de permissões aberta" teste-mac-tela-log.txt || { echo "::error::a janela de permissões não abriu"; exit 1; }
+          grep "\[permissões\]" teste-mac-tela-log.txt || true
           grep -q "\[teste-mac\] navegador: no ar" teste-mac-navegador-log.txt || { echo "::error::a página web não entrou no ar"; exit 1; }
           grep -q "navegador depois de 5 s: 1280x720" teste-mac-navegador-log.txt || echo "::warning::a página web não mostrou imagem no teste"
 

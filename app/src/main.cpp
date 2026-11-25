@@ -23,6 +23,8 @@
 #include "gt/gt-doc.hpp"
 #include "overlay-channels.hpp"
 #include "dialogs.hpp"
+#include "crash.hpp"
+#include "mac-permissions.hpp"
 #include "layout-view.hpp"
 #include "style.hpp"
 
@@ -38,6 +40,7 @@
 #include <QIcon>
 #include <QFile>
 #include <QProcess>
+#include <QProcessEnvironment>
 #include <QMouseEvent>
 #include <QTabWidget>
 
@@ -167,6 +170,7 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
+	crash::install(Engine::get().configDir()); /* se o programa cair: guarda onde caiu */
 	perf::logState();
 	Scripts::get().load();
 	Playlist::get().load();
@@ -179,6 +183,15 @@ int main(int argc, char *argv[])
 	{
 		MainWindow w;
 		w.showMaximized();
+		{
+			bool selftest = false;
+			for (const QString &k : QProcessEnvironment::systemEnvironment().keys())
+				selftest = selftest || k.startsWith("RDS_SELFTEST");
+			if (!selftest) {
+				crash::showPrevious(&w);
+				macperm::showAtStartup(&w); /* Mac: câmera, microfone e tela de uma vez */
+			}
+		}
 		perf::startAutosave(&w);
 		perf::startHangWatch();
 		QTimer::singleShot(3000, [] { plugins::startupFinished(); }); /* abriu e ficou de pé */
@@ -291,7 +304,11 @@ int main(int argc, char *argv[])
 #endif
 				}
 			});
-			QTimer::singleShot(7000, [&w] { w.close(); });
+			QTimer::singleShot(6500, [&w] {
+				macperm::showDialog(&w); /* janela de permissões abre sem cair */
+				blog(LOG_INFO, "[teste-mac] janela de permissões aberta");
+			});
+			QTimer::singleShot(7500, [&w] { w.close(); });
 		}
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST_GTNEW")) {
 			/* título GT novo em branco: acrescenta texto, retângulo, camada e cópia pelo editor */

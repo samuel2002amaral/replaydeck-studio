@@ -3,6 +3,7 @@
 #include "properties-view.hpp"
 #include "video-display.hpp"
 #include "position-editor.hpp"
+#include "mac-permissions.hpp"
 #include "layout-view.hpp"
 
 #include <QDialogButtonBox>
@@ -492,6 +493,11 @@ void AddInputDialog::addNew()
 	QWidget *owner = parentWidget();
 	const QString id = typeIds[row], label = typeLabels[row];
 	QDialog::accept();
+	/* Mac: captura de tela/janela/som do Mac só com a permissão de Gravação de Tela */
+	if ((id.startsWith("screen_capture") || id.startsWith("window_capture") || id.startsWith("display_capture") ||
+	     id.startsWith("sck_audio_capture")) &&
+	    !macperm::ensureScreen(owner))
+		return;
 	NewInputDialog d(id, label, owner);
 	d.exec();
 }

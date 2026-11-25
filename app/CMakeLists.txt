@@ -25,6 +25,8 @@ add_executable(replaydeck-studio WIN32
   src/dialogs.cpp src/dialogs.hpp
   src/position-editor.cpp src/position-editor.hpp
   src/layout-view.cpp src/layout-view.hpp
+  src/mac-permissions.cpp src/mac-permissions.hpp
+  src/crash.cpp src/crash.hpp
   src/main-window.cpp src/main-window.hpp
   src/replay-host.cpp src/replay-host.hpp
   src/audio-mixer.cpp src/audio-mixer.hpp
@@ -122,7 +124,7 @@ if(APPLE)
   # Mac: NSApplication compatível com o navegador (CEF) — Objective-C++
   enable_language(OBJCXX)
   target_sources(replaydeck-studio PRIVATE src/mac-app.mm)
-  target_link_libraries(replaydeck-studio PRIVATE "-framework AppKit")
+  target_link_libraries(replaydeck-studio PRIVATE "-framework AppKit" "-framework AVFoundation" "-framework CoreGraphics")
   # Mac: o programa vai dentro do .app, ao lado dos frameworks do motor e do Qt (Contents/Frameworks)
   set_target_properties(replaydeck-studio PROPERTIES
     BUILD_RPATH "@executable_path/../Frameworks"
