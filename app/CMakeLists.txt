@@ -24,6 +24,7 @@ add_executable(replaydeck-studio WIN32
   src/input-tile.cpp src/input-tile.hpp
   src/dialogs.cpp src/dialogs.hpp
   src/position-editor.cpp src/position-editor.hpp
+  src/layout-view.cpp src/layout-view.hpp
   src/main-window.cpp src/main-window.hpp
   src/replay-host.cpp src/replay-host.hpp
   src/audio-mixer.cpp src/audio-mixer.hpp

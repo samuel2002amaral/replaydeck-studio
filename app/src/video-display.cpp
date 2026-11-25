@@ -167,6 +167,20 @@ void VideoDisplay::mouseDoubleClickEvent(QMouseEvent *e)
 	QWidget::mouseDoubleClickEvent(e);
 }
 
+float VideoDisplay::imageScale(float imgW, float imgH) const
+{
+	if (imgW < 1 || imgH < 1)
+		return 1.0f;
+	return std::min((float)width() / imgW, (float)height() / imgH);
+}
+
+QPointF VideoDisplay::toImage(const QPointF &p, float imgW, float imgH) const
+{
+	const float s = imageScale(imgW, imgH);
+	const float ox = ((float)width() - imgW * s) / 2.0f, oy = ((float)height() - imgH * s) / 2.0f;
+	return QPointF((p.x() - ox) / s, (p.y() - oy) / s);
+}
+
 void VideoDisplay::showSource(obs_source_t *src)
 {
 	std::lock_guard<std::mutex> l(m);
@@ -238,6 +252,8 @@ void VideoDisplay::draw(void *data, uint32_t cx, uint32_t cy)
 		obs_render_main_texture();
 	else
 		obs_source_video_render(src);
+	if (self->overlay)
+		self->overlay(bw, bh, bw / (float)std::max(1, w));
 
 	gs_projection_pop();
 	gs_viewport_pop();

@@ -418,6 +418,12 @@ void LayersEditor::editLayer(int index)
 		if (!Engine::get().input(inputId))
 			d->close();
 	});
+	/* mexeu com o mouse na imagem (ou pela API): os números acompanham */
+	connect(&Engine::get(), &Engine::inputLayoutChanged, ed, [ed, inputId, index](int changed) {
+		Input *cur = Engine::get().input(inputId);
+		if (changed == inputId && cur && cur->layers[index].pos != ed->pos())
+			ed->setPos(cur->layers[index].pos);
+	});
 	v->addWidget(ed);
 	auto *bb = new QDialogButtonBox(QDialogButtonBox::Close);
 	connect(bb, &QDialogButtonBox::rejected, d, &QDialog::close);

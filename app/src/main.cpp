@@ -22,6 +22,7 @@
 #include "gt/gt-source.hpp"
 #include "overlay-channels.hpp"
 #include "dialogs.hpp"
+#include "layout-view.hpp"
 #include "style.hpp"
 
 #include <functional>
@@ -34,6 +35,7 @@
 #include <QTimer>
 #include <QDir>
 #include <QProcess>
+#include <QMouseEvent>
 #include <QTabWidget>
 
 #include <obs.h>
@@ -249,6 +251,16 @@ int main(int argc, char *argv[])
 				const bool loopRefused = !runFunction("SetLayer", "PLACAR", "1,CAMERA", &err);
 				blog(LOG_INFO, "[camadas] funcoes=%d recusou_loop=%d camada1=%d pos_zoom=%.2f (%s)", ok, loopRefused,
 				     cam->layers[0].inputId == plc->id, plc->pos.zoom, err.toUtf8().constData());
+				/* camada 2 vazia (imagem sem arquivo = como o replay parado): só a moldura amarela */
+				Input *vazio = e.addInput("image_source", "REPLAY PARADO");
+				if (vazio) {
+					e.setLayer(cam->id, 1, vazio->id);
+					ItemPos vp;
+					vp.zoom = 0.45;
+					vp.panX = -0.45;
+					vp.panY = -0.3;
+					e.setLayerPosition(cam->id, 1, vp);
+				}
 				e.cutTo(cam->id);
 				auto *iw = new InputWindow(cam->id, &w);
 				iw->setObjectName("rdsInputWindow");
@@ -258,6 +270,46 @@ int main(int argc, char *argv[])
 				auto *iw = w.findChild<InputWindow *>("rdsInputWindow");
 				if (auto *tabs = iw ? iw->findChild<QTabWidget *>() : nullptr)
 					tabs->setCurrentIndex(2);
+				/* mouse: clica no PLACAR (camada 1), arrasta 200 px para a direita, puxa o canto ↘ */
+				auto *lv = iw ? iw->findChild<LayoutView *>() : nullptr;
+				Engine &e = Engine::get();
+				Input *cam = e.inputByName("CAMERA");
+				if (!lv || !cam)
+					return;
+				const float W = (float)e.baseWidth(), H = (float)e.baseHeight();
+				auto toWidget = [lv, W, H](double x, double y) {
+					const float sc = lv->imageScale(W, H);
+					return QPointF(x * sc + (lv->width() - W * sc) / 2.0, y * sc + (lv->height() - H * sc) / 2.0);
+				};
+				auto send = [lv](QEvent::Type t, QPointF p, Qt::MouseButtons bs, Qt::KeyboardModifiers mods = {}) {
+					QMouseEvent ev(t, p, lv->mapToGlobal(p), t == QEvent::MouseMove ? Qt::NoButton : Qt::LeftButton,
+						       bs, mods);
+					QApplication::sendEvent(lv, &ev);
+				};
+				for (const LayoutView::Box &b : lv->boxes())
+					if (b.which == 0) {
+						/* ponto do PLACAR fora da camada 2 (que fica embaixo à esquerda) */
+						const QPointF c = toWidget(b.f.visCx + 500, b.f.visCy - 300);
+						const QPointF to = toWidget(b.f.visCx + 700, b.f.visCy - 300);
+						send(QEvent::MouseButtonPress, c, Qt::LeftButton);
+						send(QEvent::MouseMove, (c + to) / 2, Qt::LeftButton);
+						send(QEvent::MouseMove, to, Qt::LeftButton);
+						send(QEvent::MouseButtonRelease, to, Qt::NoButton);
+					}
+				const double panAfterMove = cam->layers[0].pos.panX;
+				for (const LayoutView::Box &b : lv->boxes())
+					if (b.which == 0) {
+						const QPointF br = toWidget(b.f.visCx + b.f.visW / 2, b.f.visCy + b.f.visH / 2);
+						/* canto ↘ puxado para dentro: fica com 3/4 do tamanho */
+						const QPointF to = toWidget(b.f.visCx + b.f.visW / 4, b.f.visCy + b.f.visH / 4);
+						send(QEvent::MouseButtonPress, br, Qt::LeftButton);
+						send(QEvent::MouseMove, to, Qt::LeftButton);
+						send(QEvent::MouseButtonRelease, to, Qt::NoButton);
+					}
+				blog(LOG_INFO,
+				     "[camadas] mouse: escolhida=%d panX_depois_de_mover=%.3f zoom_depois_do_canto=%.3f panX=%.3f panY=%.3f",
+				     lv->selected(), panAfterMove, cam->layers[0].pos.zoom, cam->layers[0].pos.panX,
+				     cam->layers[0].pos.panY);
 			});
 			QTimer::singleShot(3600, [] {
 				QProcess::execute("import", {"-window", "root", QDir::temp().filePath("rds-camadas.png")});

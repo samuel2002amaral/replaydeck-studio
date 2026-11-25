@@ -3,6 +3,7 @@
 #include "properties-view.hpp"
 #include "video-display.hpp"
 #include "position-editor.hpp"
+#include "layout-view.hpp"
 
 #include <QDialogButtonBox>
 #include <QTimer>
@@ -21,6 +22,8 @@
 #include <QRegularExpression>
 #include <QSplitter>
 #include <QTabWidget>
+#include <QComboBox>
+#include <QSignalBlocker>
 #include <QVBoxLayout>
 
 #include <cstring>
@@ -49,12 +52,42 @@ InputWindow::InputWindow(int inputId, QWidget *parent) : QDialog(parent), id(inp
 
 	auto *live = section("Ao vivo — a prévia e o programa não mudam");
 	auto *lv = new QVBoxLayout(live);
-	auto *video = new VideoDisplay;
+	/* a imagem com as molduras: clique e arraste para mexer na principal e nas camadas */
+	auto *video = new LayoutView(id);
 	video->setMinimumSize(560, 315);
 	video->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-	if (in)
-		video->showSource(in->scene);
 	lv->addWidget(video, 1);
+	{
+		auto *pick = new QHBoxLayout;
+		pick->addWidget(new QLabel("Mexer em:"));
+		auto *which = new QComboBox;
+		which->setMinimumWidth(220);
+		pick->addWidget(which);
+		auto *help = new QLabel("arraste = mover · cantos = tamanho (Shift: livre) · bordas = esticar · "
+					"Alt + borda = cortar · setas = 1 px (Shift: 10) · Ctrl = sem grudar");
+		help->setObjectName("muted");
+		help->setWordWrap(true);
+		pick->addWidget(help, 1);
+		lv->addLayout(pick);
+		auto fill = [video, which] {
+			const QSignalBlocker b(which);
+			which->clear();
+			which->addItem("Nada (clique na imagem)", -2);
+			for (const LayoutView::Box &bx : video->boxes())
+				which->addItem(bx.name, bx.which);
+			which->setCurrentIndex(std::max(0, which->findData(video->selected())));
+		};
+		fill();
+		connect(&Engine::get(), &Engine::inputLayoutChanged, which, [fill](int) { fill(); });
+		connect(&Engine::get(), &Engine::inputsChanged, which, fill);
+		connect(&Engine::get(), &Engine::inputRenamed, which, fill);
+		connect(video, &LayoutView::selectionChanged, which, [which](int w) {
+			const QSignalBlocker b(which);
+			which->setCurrentIndex(std::max(0, which->findData(w)));
+		});
+		connect(which, &QComboBox::currentIndexChanged, video,
+			[video, which] { video->select(which->currentData().toInt()); });
+	}
 	auto *btns = new QHBoxLayout;
 	auto *toPvw = new QPushButton("Mandar para Prévia");
 	toPvw->setObjectName("greenButton");

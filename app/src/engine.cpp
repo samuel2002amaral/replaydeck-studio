@@ -337,6 +337,36 @@ bool ItemPos::operator==(const ItemPos &o) const
 	       eq(cropY2, o.cropY2);
 }
 
+ItemFrame itemFrame(const ItemPos &p, uint32_t sw, uint32_t sh, uint32_t W, uint32_t H)
+{
+	ItemFrame f;
+	if (!sw || !sh) {
+		sw = W;
+		sh = H;
+	}
+	const double fit = std::min((double)W / sw, (double)H / sh);
+	const double z = std::max(0.0, p.zoom);
+	f.fullW = sw * fit * z * std::max(0.0, p.zoomX);
+	f.fullH = sh * fit * z * std::max(0.0, p.zoomY);
+	f.fullCx = W / 2.0 + p.panX * W / 2.0;
+	f.fullCy = H / 2.0 - p.panY * H / 2.0;
+	f.x1 = std::clamp(std::min(p.cropX1, p.cropX2), 0.0, 1.0);
+	f.x2 = std::clamp(std::max(p.cropX1, p.cropX2), 0.0, 1.0);
+	f.y1 = std::clamp(std::min(p.cropY1, p.cropY2), 0.0, 1.0);
+	f.y2 = std::clamp(std::max(p.cropY1, p.cropY2), 0.0, 1.0);
+	f.visW = f.fullW * (f.x2 - f.x1);
+	f.visH = f.fullH * (f.y2 - f.y1);
+	f.visCx = f.fullCx + f.fullW * ((f.x1 + f.x2) / 2.0 - 0.5);
+	f.visCy = f.fullCy + f.fullH * ((f.y1 + f.y2) / 2.0 - 0.5);
+	return f;
+}
+
+void setPanFromCenter(ItemPos &p, double cx, double cy, uint32_t W, uint32_t H)
+{
+	p.panX = std::clamp((cx - W / 2.0) / (W / 2.0), -2.0, 2.0);
+	p.panY = std::clamp(-(cy - H / 2.0) / (H / 2.0), -2.0, 2.0);
+}
+
 void Engine::applyItemPos(obs_sceneitem_t *item, obs_source_t *src, const ItemPos &p, uint32_t W, uint32_t H)
 {
 	if (!item)

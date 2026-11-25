@@ -28,6 +28,16 @@ public:
 	}
 	void showProgram();
 	void clear();
+	/* desenho extra por cima da imagem (thread de vídeo), em coordenadas da imagem;
+	 * pixel = quanto vale 1 pixel da tela nessas coordenadas */
+	void setOverlay(std::function<void(float w, float h, float pixel)> fn)
+	{
+		std::lock_guard<std::mutex> l(m);
+		overlay = std::move(fn);
+	}
+	/* ponto do widget -> coordenadas da imagem (com a tarja preta descontada) */
+	QPointF toImage(const QPointF &p, float imgW, float imgH) const;
+	float imageScale(float imgW, float imgH) const; /* pixels do widget por unidade da imagem */
 
 	QPaintEngine *paintEngine() const override { return nullptr; }
 
@@ -57,5 +67,6 @@ private:
 	bool hasContent = false;
 	bool drawing = true;
 	QSize forced;
+	std::function<void(float, float, float)> overlay;
 	std::mutex m; /* o desenho roda na thread de vídeo */
 };

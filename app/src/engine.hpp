@@ -30,6 +30,17 @@ struct ItemPos {
 	bool operator!=(const ItemPos &o) const { return !(*this == o); }
 };
 
+/* Onde a imagem fica na tela (para desenhar a moldura e mexer com o mouse).
+ * full* = imagem inteira sem corte; vis* = o que sobra depois do corte (é o que aparece). */
+struct ItemFrame {
+	double fullCx = 0, fullCy = 0, fullW = 0, fullH = 0;
+	double visCx = 0, visCy = 0, visW = 0, visH = 0;
+	double x1 = 0, y1 = 0, x2 = 1, y2 = 1; /* corte efetivo (frações) */
+};
+ItemFrame itemFrame(const ItemPos &p, uint32_t imgW, uint32_t imgH, uint32_t canvasW, uint32_t canvasH);
+/* a posição que põe a imagem inteira (sem corte) com centro em (cx, cy) na tela */
+void setPanFromCenter(ItemPos &p, double fullCx, double fullCy, uint32_t canvasW, uint32_t canvasH);
+
 /* Camada (como no vMix, = fonte dentro da cena no OBS): outra entrada por cima desta, com posição própria */
 constexpr int INPUT_LAYERS = 10;
 struct InputLayer {
