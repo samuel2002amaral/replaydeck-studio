@@ -115,7 +115,7 @@ void PropertiesView::reload()
 	OBSData settings = data;
 	const QByteArray typeId = type;
 	QPointer<PropertiesView> self(this);
-	std::thread([self, src, settings, typeId]() {
+	auto job = [self, src, settings, typeId]() {
 #ifdef _WIN32
 		const HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED); /* a câmera usa COM */
 #endif
@@ -143,7 +143,15 @@ void PropertiesView::reload()
 				emit self->loaded();
 			},
 			Qt::QueuedConnection);
-	}).detach();
+	};
+#ifdef __APPLE__
+	/* Mac: as capturas de tela/janela montam as opções com o AppKit (lista de telas e apps),
+	 * que só pode ser usado na thread principal; em outra thread o programa fecha sozinho.
+	 * A janela abre primeiro ("Procurando…") e as opções vêm logo em seguida. */
+	QTimer::singleShot(0, qApp, job);
+#else
+	std::thread(job).detach();
+#endif
 }
 
 void PropertiesView::refresh()

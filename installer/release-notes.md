@@ -1,5 +1,7 @@
 ## ReplayDeck Studio — fase 6 (controle, gravação múltipla, PTZ, plugins)
 
+> 2.16.1: **ícone novo** do ReplayDeck Studio, no Windows (programa, atalhos e instalador) e no Mac. **Mac**: a **captura de tela** não fecha mais o programa (as opções dela agora são montadas na thread principal, como o Mac exige). A **entrada de página web (navegador)** chegou ao Mac. Na primeira captura de tela, o Mac pede a permissão "Gravação de Tela": permita em Ajustes do Sistema > Privacidade e Segurança e abra o programa de novo.
+>
 > 2.16.0: **montar títulos GT no editor**. No editor do título (⋮ → Editar), aba **Layout**:
 > - Botões **＋ Texto**, **＋ Imagem**, **＋ Retângulo**, **＋ Círculo**, **＋ Camada**, **Duplicar**, **Renomear**, **▲/▼** (frente/trás) e **Apagar**. Vale também nos títulos importados do vMix: os elementos originais podem ser apagados ou duplicados, e **Limpar** traz tudo de volta.
 > - Ao escolher um elemento, o texto, a imagem, a fonte, a cor, o contorno e os cantos podem ser mudados ali mesmo. Também a **animação de entrada e de saída** (esmaecer, deslizar de um dos 4 lados, zoom), com duração e atraso.

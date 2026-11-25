@@ -28,6 +28,7 @@ OutputBaseFilename=ReplayDeck-Studio-{#MyVersion}-Instalador
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=..\app\res\app.ico
 UninstallDisplayIcon={app}\bin\64bit\ReplayDeckStudio.exe
 CloseApplications=yes
 ; só pede para fechar o próprio programa: o arquivo da câmera virtual fica aberto no Chrome,

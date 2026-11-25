@@ -35,6 +35,8 @@
 #include <QMessageBox>
 #include <QTimer>
 #include <QDir>
+#include <QIcon>
+#include <QFile>
 #include <QProcess>
 #include <QMouseEvent>
 #include <QTabWidget>
@@ -126,8 +128,15 @@ static void runSelfTest(MainWindow &w)
 	step(7000, [&w] { w.close(); });
 }
 
+#ifdef __APPLE__
+void rdsMacPrepareApplication(); /* mac-app.mm */
+#endif
+
 int main(int argc, char *argv[])
 {
+#ifdef __APPLE__
+	rdsMacPrepareApplication(); /* antes do Qt: o navegador (CEF) precisa disso */
+#endif
 	QApplication::setAttribute(Qt::AA_DontCreateNativeWidgetSiblings);
 #if !defined(_WIN32) && !defined(__APPLE__)
 	qputenv("QT_QPA_PLATFORM", "xcb"); /* o motor desenha via X11 no Linux */
@@ -136,6 +145,9 @@ int main(int argc, char *argv[])
 	QApplication::setApplicationName("ReplayDeck Studio");
 	QApplication::setOrganizationName("ReplayDeck");
 	QApplication::setApplicationVersion(RDS_VERSION);
+#ifndef _WIN32
+	QApplication::setWindowIcon(QIcon(":/res/icon-256.png")); /* no Windows: o ícone do .exe (app.rc) */
+#endif
 	applyStyle(app);
 
 #if !defined(_WIN32) && !defined(__APPLE__)
@@ -231,6 +243,44 @@ int main(int argc, char *argv[])
 				w.grab().save(QDir::temp().filePath("rds-trans.png"));
 				w.close();
 			});
+		}
+		if (qEnvironmentVariableIsSet("RDS_SELFTEST_MAC")) {
+			/* Mac: página web (navegador) e as opções da captura de tela (AppKit, thread principal) */
+			QTimer::singleShot(800, [] {
+				Engine &e = Engine::get();
+				const QString html = QDir::temp().filePath("rds-teste.html");
+				QFile f(html);
+				if (f.open(QIODevice::WriteOnly))
+					f.write("<html><body style='margin:0;background:#c01020'><h1 style='color:white;font:80px sans-serif'>"
+						"NAVEGADOR OK</h1></body></html>");
+				f.close();
+				OBSDataAutoRelease s = obs_data_create();
+				obs_data_set_bool(s, "is_local_file", true);
+				obs_data_set_string(s, "local_file", html.toUtf8().constData());
+				obs_data_set_int(s, "width", 1280);
+				obs_data_set_int(s, "height", 720);
+				Input *in = e.addInput("browser_source", "PAGINA", s);
+				blog(LOG_INFO, "[teste-mac] navegador: entrada=%d", in != nullptr);
+				if (in)
+					e.cutTo(in->id);
+				obs_properties_t *p = obs_get_source_properties("screen_capture");
+				int n = 0;
+				for (obs_property_t *q = p ? obs_properties_first(p) : nullptr; q; obs_property_next(&q))
+					n++;
+				blog(LOG_INFO, "[teste-mac] captura de tela: opcoes=%d (thread principal)", n);
+				obs_properties_destroy(p);
+			});
+			QTimer::singleShot(6000, [] {
+				Input *in = Engine::get().inputByName("PAGINA");
+				blog(LOG_INFO, "[teste-mac] navegador depois de 5 s: %ux%u", in ? obs_source_get_width(in->source) : 0,
+				     in ? obs_source_get_height(in->source) : 0);
+				if (!qEnvironmentVariable("RDS_SELFTEST_MAC").isEmpty() && qEnvironmentVariable("RDS_SELFTEST_MAC") != "1") {
+#ifdef __APPLE__
+					QProcess::execute("screencapture", {"-x", qEnvironmentVariable("RDS_SELFTEST_MAC")});
+#endif
+				}
+			});
+			QTimer::singleShot(7000, [&w] { w.close(); });
 		}
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST_GTNEW")) {
 			/* título GT novo em branco: acrescenta texto, retângulo, camada e cópia pelo editor */

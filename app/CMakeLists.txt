@@ -115,7 +115,14 @@ else()
   target_compile_options(replaydeck-studio PRIVATE -Wall -Wextra)
 endif()
 
+# ícone da janela (Mac/Linux; no Windows vem do app.rc)
+qt_add_resources(replaydeck-studio "icone" PREFIX "/" FILES res/icon-256.png)
+
 if(APPLE)
+  # Mac: NSApplication compatível com o navegador (CEF) — Objective-C++
+  enable_language(OBJCXX)
+  target_sources(replaydeck-studio PRIVATE src/mac-app.mm)
+  target_link_libraries(replaydeck-studio PRIVATE "-framework AppKit")
   # Mac: o programa vai dentro do .app, ao lado dos frameworks do motor e do Qt (Contents/Frameworks)
   set_target_properties(replaydeck-studio PROPERTIES
     BUILD_RPATH "@executable_path/../Frameworks"

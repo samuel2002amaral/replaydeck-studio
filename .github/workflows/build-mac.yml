@@ -65,10 +65,10 @@ jobs:
         working-directory: obs
         env:
           CODESIGN_IDENT: "-"
-        # sem navegador (CEF) e sem câmera virtual (precisa de assinatura da Apple) por enquanto
+        # com navegador (CEF); sem câmera virtual (precisa de assinatura da Apple)
         run: |
           cmake --preset macos -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF \
-            -DOBS_VERSION_OVERRIDE="$OBS_VERSION" -DENABLE_BROWSER=OFF -DENABLE_VIRTUALCAM=OFF \
+            -DOBS_VERSION_OVERRIDE="$OBS_VERSION" -DENABLE_BROWSER=ON -DENABLE_VIRTUALCAM=OFF \
             -DENABLE_SCRIPTING=OFF -DENABLE_SPARKLE_UPDATER=OFF
 
       - name: "Motor: compilar"
@@ -138,6 +138,12 @@ jobs:
           pb() { /usr/libexec/PlistBuddy -c "$1" "$P" 2>/dev/null || true; }
           pb "Set :CFBundleExecutable ReplayDeckStudio"
           pb "Set :CFBundleIdentifier com.replaydeck.studio"
+          # ícone próprio (o do OBS vem do Assets.car pelo CFBundleIconName: sai)
+          cp studio/app/res/app.icns "$APP/Contents/Resources/ReplayDeck.icns"
+          pb "Delete :CFBundleIconName"
+          pb "Delete :CFBundleIconFile"
+          pb "Add :CFBundleIconFile string ReplayDeck"
+          rm -f "$APP/Contents/Resources/AppIcon.icns"
           pb "Set :CFBundleName ReplayDeck Studio"
           pb "Delete :CFBundleDisplayName"; pb "Add :CFBundleDisplayName string ReplayDeck Studio"
           pb "Set :CFBundleShortVersionString $STUDIO_VERSION"
@@ -170,6 +176,23 @@ jobs:
           grep "\[teste\]" teste-mac-log.txt
           grep -q "\[teste\] abrir=1" teste-mac-log.txt || { echo "::error::o teste automático não chegou ao fim"; exit 1; }
 
+      - name: Teste do Mac (página web e captura de tela)
+        run: |
+          APP="pkg/ReplayDeck Studio.app"
+          export RDS_SELFTEST_MAC="$PWD/teste-mac-navegador.png"
+          code=0
+          perl -e 'alarm shift; exec {$ARGV[0]} @ARGV or die "nao abriu: $!"' 90 "$APP/Contents/MacOS/ReplayDeckStudio" > teste-mac-nav-saida.txt 2>&1 || code=$?
+          echo "saída: $code"
+          tail -30 teste-mac-nav-saida.txt || true
+          LOGS="$HOME/Library/Application Support/ReplayDeckStudio/logs"
+          cp "$(ls -t "$LOGS"/*.txt | head -1)" teste-mac-nav-log.txt || true
+          grep -iE "teste-mac|browser|navegador|cef|obs-browser" teste-mac-nav-log.txt | head -40 || true
+          ls "$APP/Contents/Frameworks" | grep -i -E "helper|chromium" || echo "::warning::sem os ajudantes do navegador no app"
+          [ "$code" -ge 128 ] && { echo "::error::o programa fechou sozinho (sinal $((code-128)))"; exit 1; }
+          grep -q "\[teste-mac\] navegador: entrada=1" teste-mac-nav-log.txt || { echo "::error::não criou a página web"; exit 1; }
+          grep -q "\[teste-mac\] captura de tela: opcoes=" teste-mac-nav-log.txt || { echo "::error::as opções da captura de tela não abriram"; exit 1; }
+          grep -q "navegador depois de 5 s: 1280x720" teste-mac-nav-log.txt || echo "::warning::a página web não mostrou imagem no teste"
+
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -178,6 +201,9 @@ jobs:
             teste-mac.png
             teste-mac-log.txt
             teste-mac-saida.txt
+            teste-mac-navegador.png
+            teste-mac-nav-log.txt
+            teste-mac-nav-saida.txt
 
       - name: DMG
         run: |
