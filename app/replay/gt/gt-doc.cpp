@@ -266,23 +266,24 @@ bool GtTitle::load(const QString &p, QString &err)
 	const QByteArray zipData = f.readAll();
 	mz_zip_archive zip;
 	memset(&zip, 0, sizeof(zip));
-	if (!mz_zip_reader_init_mem(&zip, zipData.constData(), (size_t)zipData.size(), 0)) {
+	if (mz_zip_reader_init_mem(&zip, zipData.constData(), (size_t)zipData.size(), 0)) {
+		const mz_uint count = mz_zip_reader_get_num_files(&zip);
+		for (mz_uint i = 0; i < count; i++) {
+			mz_zip_archive_file_stat st;
+			if (!mz_zip_reader_file_stat(&zip, i, &st) || st.m_is_directory)
+				continue;
+			size_t size = 0;
+			void *data = mz_zip_reader_extract_to_heap(&zip, i, &size, 0);
+			if (!data)
+				continue;
+			files[QString::fromUtf8(st.m_filename)] = QByteArray((const char *)data, (qsizetype)size);
+			mz_free(data);
+		}
+		mz_zip_reader_end(&zip);
+	} else if (!zipData.contains("<Composition") && !zipData.contains("<\0C\0o\0m\0p")) {
 		err = tl("arquivo .gtzip inválido");
 		return false;
 	}
-	const mz_uint count = mz_zip_reader_get_num_files(&zip);
-	for (mz_uint i = 0; i < count; i++) {
-		mz_zip_archive_file_stat st;
-		if (!mz_zip_reader_file_stat(&zip, i, &st) || st.m_is_directory)
-			continue;
-		size_t size = 0;
-		void *data = mz_zip_reader_extract_to_heap(&zip, i, &size, 0);
-		if (!data)
-			continue;
-		files[QString::fromUtf8(st.m_filename)] = QByteArray((const char *)data, (qsizetype)size);
-		mz_free(data);
-	}
-	mz_zip_reader_end(&zip);
 
 	/* .gtxml solto (sem zip) também vale */
 	if (files.empty() && (zipData.contains("<Composition") || zipData.contains("<\0C\0o\0m\0p")))
@@ -377,6 +378,21 @@ bool GtTitle::load(const QString &p, QString &err)
 		}
 	}
 	return true;
+}
+
+std::shared_ptr<GtTitle> GtTitle::clone() const
+{
+	auto t = std::make_shared<GtTitle>();
+	t->path = path;
+	t->name = name;
+	t->width = width;
+	t->height = height;
+	t->layers = layers;
+	t->storyboards = storyboards;
+	t->root = root;
+	t->files = files; /* QByteArray: dados compartilhados, sem copiar */
+	t->resources = resources;
+	return t;
 }
 
 QByteArray GtTitle::resourceBytes(const QString &key) const

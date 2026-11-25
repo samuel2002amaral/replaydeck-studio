@@ -105,6 +105,8 @@ struct GtField {
 class GtTitle {
 public:
 	bool load(const QString &path, QString &err);
+	/* cópia (camadas, animações, arquivos do zip) para acrescentar elementos sem mexer no original */
+	std::shared_ptr<GtTitle> clone() const;
 
 	QString path;
 	QString name;

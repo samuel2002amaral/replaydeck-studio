@@ -7,7 +7,10 @@
 #include "../replay/overlay-channels.hpp"
 #include "../replay/gt/gt-source.hpp"
 
+#include <QDir>
+#include <QFile>
 #include <QFileInfo>
+#include <QRegularExpression>
 
 #include <cstring>
 
@@ -77,6 +80,33 @@ obs_source_t *gtLibraryAdd(const QString &file)
 	obs_data_set_int(st, "overlay", 1);
 	Input *in = Engine::get().addInput(GT_SOURCE_ID, uniqueInputName(QFileInfo(file).completeBaseName()), st);
 	return in ? obs_source_get_ref(in->source) : nullptr;
+}
+
+obs_source_t *gtLibraryNewBlank(const QString &wanted)
+{
+	Engine &e = Engine::get();
+	const QString dir = e.configDir() + "/titulos";
+	QDir().mkpath(dir);
+	QString base = uniqueInputName(wanted.trimmed().isEmpty() ? QStringLiteral("Título novo") : wanted);
+	base.replace(QRegularExpression(R"re([\\/:*?"<>|])re"), "-");
+	QString file = dir + "/" + base + ".gtxml";
+	for (int i = 2; QFile::exists(file); i++)
+		file = dir + QString("/%1 (%2).gtxml").arg(base).arg(i);
+	const int W = (int)e.baseWidth(), H = (int)e.baseHeight();
+	const QString xml = QString("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
+				    "<Composition Width=\"%1\" Height=\"%2\">\n"
+				    "  <Layer Name=\"Camada 1\" Location=\"0,0\" Dimensions=\"%1,%2\">\n"
+				    "    <Layer.Composition><Composition Width=\"%1\" Height=\"%2\" /></Layer.Composition>\n"
+				    "  </Layer>\n"
+				    "</Composition>\n")
+				    .arg(W)
+				    .arg(H);
+	QFile out(file);
+	if (!out.open(QIODevice::WriteOnly))
+		return nullptr;
+	out.write(xml.toUtf8());
+	out.close();
+	return gtLibraryAdd(file);
 }
 
 obs_source_t *gtLibraryDuplicate(obs_source_t *src, const QString &wanted)

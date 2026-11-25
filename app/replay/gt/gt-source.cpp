@@ -99,7 +99,8 @@ struct GtLayerRt {
 struct GtSource {
 	obs_source_t *source;
 	std::recursive_mutex mtx;
-	std::shared_ptr<GtTitle> title;
+	std::shared_ptr<GtTitle> base;  /* como veio do arquivo */
+	std::shared_ptr<GtTitle> title; /* com o que o editor acrescentou/apagou (ou o próprio base) */
 	QString file;
 	GtValues values;
 	std::vector<GtLayerRt> layers;
@@ -123,6 +124,7 @@ static void rebuildItems(GtSource *g)
 			g->trashTr.push_back(L.tr);
 	}
 	g->layers.clear();
+	g->title = gtStructured(g->base, g->values);
 	if (!g->title)
 		return;
 	for (auto &L : g->title->layers) {
@@ -153,7 +155,7 @@ static void loadFile(GtSource *g, const QString &file)
 		rlog(LOG_INFO, "GT: título '%s' carregado (%zu camadas)", t->name.toUtf8().constData(), t->layers.size());
 	}
 	std::lock_guard<std::recursive_mutex> lk(g->mtx);
-	g->title = t;
+	g->base = t;
 	g->file = file;
 	rebuildItems(g);
 }
@@ -635,6 +637,15 @@ void gtSetValues(obs_source_t *src, const QMap<QString, QString> &values)
 	obs_data_t *st = obs_source_get_settings(src);
 	valuesToData(st, values);
 	obs_data_release(st);
+}
+
+std::shared_ptr<GtTitle> gtBaseTitleOf(obs_source_t *src)
+{
+	GtSource *g = gtData(src);
+	if (!g)
+		return nullptr;
+	std::lock_guard<std::recursive_mutex> lk(g->mtx);
+	return g->base;
 }
 
 std::shared_ptr<GtTitle> gtTitleOf(obs_source_t *src)

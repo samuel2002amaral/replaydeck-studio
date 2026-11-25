@@ -603,6 +603,11 @@ void MainWindow::buildMenus()
 		if (auto *d = qobject_cast<GtDock *>(rightTabs->widget(2)))
 			QMetaObject::invokeMethod(d, "addTitle");
 	});
+	titles->addAction("Novo título em branco…", this, [this] {
+		rightTabs->setCurrentIndex(2);
+		if (auto *d = qobject_cast<GtDock *>(rightTabs->widget(2)))
+			d->newTitle();
+	});
 	QMenu *cfg = menuBar()->addMenu("Configurações");
 	cfg->addAction("Configurações…", this, [this] { SettingsDialog(this).exec(); });
 	cfg->addAction("Vídeo (resolução e fps)…", this, [this] { SettingsDialog(this, SettingsDialog::Video).exec(); });

@@ -296,22 +296,32 @@ public:
 	GtEditor(obs_source_t *src, QWidget *parent) : QDialog(parent)
 	{
 		source = obs_source_get_weak_source(src);
-		title = gtTitleOf(src);
+		base = gtBaseTitleOf(src);
 		values = gtValues(src);
+		title = gtStructured(base, values);
 		setAttribute(Qt::WA_DeleteOnClose);
 		ui::applyDialog(this);
 		setWindowTitle(tl("Editor de título: %1").arg(title ? title->name : QString("?")));
 		resize(820, 520);
 		build();
 		loadPresets();
-		showKind(GtField::Text);
+		/* título em branco (sem nada para editar ainda): abre direto no Layout */
+		if (title && title->fields().empty()) {
+			if (auto *b = tabGroup->button(3))
+				b->setChecked(true);
+			showLayout();
+		} else {
+			showKind(GtField::Text);
+		}
 	}
 	~GtEditor() override { obs_weak_source_release(source); }
 
 private:
 	obs_weak_source_t *source = nullptr;
-	std::shared_ptr<GtTitle> title;
+	std::shared_ptr<GtTitle> base;  /* como veio do arquivo */
+	std::shared_ptr<GtTitle> title; /* com o que foi acrescentado/apagado aqui */
 	GtValues values;
+	QButtonGroup *tabGroup = nullptr;
 	std::vector<GtField> fields;
 	GtField::Kind kind = GtField::Text;
 
@@ -373,6 +383,7 @@ private:
 		auto *tabs = new QHBoxLayout();
 		tabs->setSpacing(0);
 		auto *grp = new QButtonGroup(this);
+		tabGroup = grp;
 		const char *names[4] = {N_("Texto"), N_("Imagens"), N_("Cor"), N_("Layout")};
 		for (int i = 0; i < 4; i++) {
 			auto *b = new QPushButton(tl(names[i]), left);
@@ -511,10 +522,42 @@ private:
 
 		/* aba Layout: prévia + propriedades */
 		auto *layPage = new QSplitter(Qt::Horizontal, stack);
-		canvas = new GtCanvas(layPage);
+		auto *canvasHost = new QWidget(layPage);
+		auto *chv = new QVBoxLayout(canvasHost);
+		chv->setContentsMargins(0, 0, 0, 0);
+		chv->setSpacing(6);
+		{
+			/* acrescentar e organizar (como no GT Designer do vMix) */
+			auto *bar = new QHBoxLayout();
+			bar->setSpacing(4);
+			auto mk = [&](const QString &text, const QString &tip, std::function<void()> fn) {
+				auto *b = new QPushButton(text, canvasHost);
+				b->setToolTip(tip);
+				connect(b, &QPushButton::clicked, this, fn);
+				bar->addWidget(b);
+				return b;
+			};
+			mk(tl("＋ Texto"), tl("Novo texto (depois mude o texto, a fonte e a cor ao lado)"),
+			   [this] { addElement(GtKind::Text); });
+			mk(tl("＋ Imagem"), tl("Nova imagem (logo, escudo, foto)"), [this] { addElement(GtKind::Image); });
+			mk(tl("＋ Retângulo"), tl("Novo retângulo (tarja, fundo, barra)"), [this] { addElement(GtKind::Rectangle); });
+			mk(tl("＋ Círculo"), tl("Nova elipse/círculo"), [this] { addElement(GtKind::Ellipse); });
+			mk(tl("＋ Camada"), tl("Nova camada (grupo de elementos que se movem juntos)"), [this] { addLayer(); });
+			bar->addSpacing(10);
+			mk(tl("Duplicar"), tl("Cópia do elemento escolhido"), [this] { duplicateSelected(); });
+			mk(tl("Renomear"), tl("Muda o nome (o app externo usa o nome: NOME.Text)"), [this] { renameSelected(); });
+			mk(QString::fromUtf8("▲"), tl("Para frente (por cima dos outros da camada)"), [this] { moveOrder(+1); });
+			mk(QString::fromUtf8("▼"), tl("Para trás"), [this] { moveOrder(-1); });
+			auto *del = mk(tl("Apagar"), tl("Apaga o elemento ou a camada escolhida"), [this] { deleteSelected(); });
+			del->setProperty("kind", "out");
+			bar->addStretch(1);
+			chv->addLayout(bar);
+		}
+		canvas = new GtCanvas(canvasHost);
 		canvas->onSelect = [this](const QString &id) { selectItem(id, true); };
 		canvas->onChange = [this](const QString &id, const QRectF &abs) { moveItem(id, abs); };
-		layPage->addWidget(canvas);
+		chv->addWidget(canvas, 1);
+		layPage->addWidget(canvasHost);
 		auto *propScroll = new QScrollArea(layPage);
 		propScroll->setWidgetResizable(true);
 		propScroll->setMinimumWidth(420);
@@ -602,8 +645,18 @@ private:
 			}
 		});
 		connect(reset, &QPushButton::clicked, this, [this] {
+			if (hasStructure() &&
+			    QMessageBox::question(this, "ReplayDeck GT",
+						  tl("Limpar também apaga os elementos e camadas que você acrescentou. Continuar?")) !=
+				    QMessageBox::Yes)
+				return;
 			values.clear();
+			restructure();
 			push();
+			if (layoutMode) {
+				showLayout();
+				return;
+			}
 			if (layoutMode) {
 				refreshPreview();
 				buildForm();
@@ -612,11 +665,20 @@ private:
 		});
 		connect(presetList, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *it) {
 			const QJsonObject o = presets.value(it->text()).toObject();
-			values.clear();
+			/* o preset troca os dados; o que foi montado no Layout (elementos novos, posições) continua */
+			GtValues keep;
+			for (auto k = values.begin(); k != values.end(); ++k)
+				if (isLayoutKey(k.key()))
+					keep.insert(k.key(), k.value());
+			values = keep;
 			for (auto k = o.begin(); k != o.end(); ++k)
 				values.insert(k.key(), k.value().toString());
+			restructure();
 			push();
-			showField();
+			if (layoutMode)
+				showLayout();
+			else
+				showField();
 		});
 		connect(exp, &QPushButton::clicked, this, [this] {
 			const QString f = QFileDialog::getSaveFileName(
@@ -751,6 +813,7 @@ private:
 	void setValue(const QString &id, const QString &v)
 	{
 		values.insert(id, v);
+		restructure();
 		if (layoutMode && previewTimer)
 			previewTimer->start(60);
 		if (liveBtn->isChecked()) {
@@ -829,6 +892,320 @@ private:
 		loading = false;
 	}
 
+
+	/* ---------------- montar: acrescentar, apagar, ordem ---------------- */
+
+	static bool isStructKey(const QString &k)
+	{
+		return k.startsWith("+L:") || k.startsWith("+E:") || k.endsWith(".Removed") || k.endsWith(".Order");
+	}
+	/* chaves do Layout (posição, estilo, estrutura): ficam ao aplicar um preset de dados */
+	static bool isLayoutKey(const QString &k)
+	{
+		static const QStringList sfx = {".X", ".Y", ".Width", ".Height", ".Visible", ".Opacity", ".Rotation",
+						".FontFamily", ".FontSize", ".FontWeight", ".FontStyle", ".TextAlign",
+						".VerticalAlign", ".LineSpacing", ".StrokeThickness", ".Stroke.Color",
+						".RadiusX", ".Stretch", ".AnimIn", ".AnimOut", ".AnimDuration", ".AnimDelay"};
+		if (isStructKey(k) || k.startsWith("Layer:"))
+			return true;
+		for (const QString &x : sfx)
+			if (k.endsWith(x))
+				return true;
+		return false;
+	}
+	bool hasStructure() const
+	{
+		for (auto it = values.begin(); it != values.end(); ++it)
+			if (isStructKey(it.key()))
+				return true;
+		return false;
+	}
+	void restructure() { title = gtStructured(base, values); }
+
+	/* depois de mudar a estrutura: título, lista e seleção */
+	void structureChanged(const QString &select)
+	{
+		restructure();
+		if (liveBtn->isChecked())
+			push();
+		else {
+			pending = true;
+			applyBtn->setEnabled(true);
+		}
+		showLayout();
+		if (!select.isEmpty()) {
+			for (int i = 0; i < list->count(); i++)
+				if (list->item(i)->data(Qt::UserRole).toString() == select) {
+					list->setCurrentRow(i);
+					break;
+				}
+			selectItem(select, false);
+		}
+	}
+
+	QString targetLayer() const
+	{
+		if (!title)
+			return QString();
+		if (selId.startsWith("L:") && layerByName(selId.mid(2)))
+			return selId.mid(2);
+		const GtLayer *L = nullptr;
+		const GtElement *e = nullptr;
+		if (selId.startsWith("E:") && elementByName(selId.mid(2), &L, &e))
+			return L->name;
+		return title->layers.empty() ? QString() : title->layers.back().name;
+	}
+
+	int nextOrder() const
+	{
+		int n = 0;
+		for (auto it = values.begin(); it != values.end(); ++it)
+			if (it.key().startsWith("+E:") || it.key().startsWith("+L:"))
+				n = std::max(n, it.value().section('|', it.key().startsWith("+E:") ? 2 : 0, 2).toInt());
+		return n + 1;
+	}
+
+	void addElement(GtKind kind)
+	{
+		if (!title)
+			return;
+		QString layer = targetLayer();
+		if (layer.isEmpty()) {
+			layer = gtFreeName(*title, values, tl("Camada "));
+			values.insert("+L:" + layer, QString::number(nextOrder()));
+		}
+		const QString prefix = kind == GtKind::Text	 ? tl("Texto")
+				       : kind == GtKind::Image	 ? tl("Imagem")
+				       : kind == GtKind::Ellipse ? tl("Circulo")
+								 : tl("Retangulo");
+		const QString name = gtFreeName(*title, values, prefix);
+		values.insert("+E:" + name, QString("%1|%2|%3").arg(gtKindName(kind), layer).arg(nextOrder()));
+		/* entra e sai esmaecendo, junto com o resto do título */
+		values.insert(name + ".AnimIn", "Fade");
+		values.insert(name + ".AnimOut", "Fade");
+		if (kind == GtKind::Image) {
+			const QString file = QFileDialog::getOpenFileName(
+				this, tl("Escolher imagem"), QString(),
+				tl("Imagens (*.png *.jpg *.jpeg *.bmp *.gif *.webp *.tga)"));
+			if (!file.isEmpty()) {
+				values.insert(name + ".Source", file);
+				const QImage img(file);
+				if (!img.isNull()) {
+					/* tamanho na proporção da imagem (até 40% da altura do título) */
+					const double h = std::min<double>(img.height(), title->height * 0.4);
+					const double w = h * img.width() / std::max(1, img.height());
+					values.insert(name + ".Width", QString::number(std::round(w)));
+					values.insert(name + ".Height", QString::number(std::round(h)));
+				}
+			}
+		}
+		structureChanged("E:" + name);
+	}
+
+	void addLayer()
+	{
+		if (!title)
+			return;
+		const QString name = gtFreeName(*title, values, tl("Camada "));
+		values.insert("+L:" + name, QString::number(nextOrder()));
+		structureChanged("L:" + name);
+	}
+
+	void duplicateSelected()
+	{
+		const GtLayer *L = nullptr;
+		const GtElement *e = nullptr;
+		if (!selId.startsWith("E:") || !elementByName(selId.mid(2), &L, &e)) {
+			QMessageBox::information(this, "ReplayDeck GT", tl("Escolha um elemento (na lista ou na imagem)."));
+			return;
+		}
+		if (e->kind == GtKind::Other)
+			return;
+		const GtElement a = gtApplyValues(*e, values);
+		QString prefix = a.name;
+		prefix.remove(QRegularExpression("[0-9]+$"));
+		const QString name = gtFreeName(*title, values, prefix.isEmpty() ? QString("Elemento") : prefix);
+		values.insert("+E:" + name, QString("%1|%2|%3").arg(gtKindName(a.kind), L->name).arg(nextOrder()));
+		/* tudo o que aparece, copiado do original (um pouco deslocado para dar para ver) */
+		values.insert(name + ".X", QString::number(a.rect.x() + 20));
+		values.insert(name + ".Y", QString::number(a.rect.y() + 20));
+		values.insert(name + ".Width", QString::number(a.rect.width()));
+		values.insert(name + ".Height", QString::number(a.rect.height()));
+		values.insert(name + ".Opacity", QString::number(a.opacity));
+		values.insert(name + ".Rotation", QString::number(a.rotation));
+		if (a.fill.kind == GtBrush::Solid || a.kind == GtKind::Text)
+			values.insert(name + ".Fill.Color", gtColorString(a.fill.color));
+		if (a.fill.kind == GtBrush::Bitmap)
+			values.insert(name + ".Fill.Bitmap", a.fill.bitmap.startsWith("file:") ? a.fill.bitmap : "res:" + a.fill.bitmap);
+		if (a.strokeThickness > 0) {
+			values.insert(name + ".StrokeThickness", QString::number(a.strokeThickness));
+			values.insert(name + ".Stroke.Color", gtColorString(a.stroke.color));
+		}
+		if (a.kind == GtKind::Rectangle)
+			values.insert(name + ".RadiusX", QString::number(a.radiusX));
+		if (a.kind == GtKind::Text) {
+			values.insert(name + ".Text", a.text);
+			values.insert(name + ".FontFamily", a.fontFamily);
+			values.insert(name + ".FontSize", QString::number(a.fontSize));
+			values.insert(name + ".FontWeight", a.fontWeight);
+			values.insert(name + ".FontStyle", a.fontStyle.isEmpty() ? QString("Normal") : a.fontStyle);
+			values.insert(name + ".TextAlign", a.align);
+			values.insert(name + ".VerticalAlign", a.valign);
+			values.insert(name + ".LineSpacing", QString::number(a.lineSpacing));
+		}
+		if (a.kind == GtKind::Image) {
+			if (!a.image.isEmpty())
+				values.insert(name + ".Source", a.image.startsWith("file:") ? a.image : "res:" + a.image);
+			values.insert(name + ".Stretch", a.imageStretch);
+		}
+		for (const char *k : {".AnimIn", ".AnimOut", ".AnimDuration", ".AnimDelay"})
+			if (values.contains(a.name + k))
+				values.insert(name + k, values.value(a.name + k));
+		if (!values.contains(name + ".AnimIn")) {
+			values.insert(name + ".AnimIn", animChoiceOf(a.name, "TransitionIn"));
+			values.insert(name + ".AnimOut", animChoiceOf(a.name, "TransitionOut"));
+		}
+		structureChanged("E:" + name);
+	}
+
+	void renameSelected()
+	{
+		if (selId.isEmpty() || !title)
+			return;
+		const bool isLayer = selId.startsWith("L:");
+		const QString old = selId.mid(2);
+		const QString newKey = (isLayer ? "+L:" : "+E:") + old;
+		if (!values.contains(newKey)) {
+			QMessageBox::information(this, "ReplayDeck GT",
+						 tl("Só dá para renomear o que foi criado aqui. Os nomes do arquivo do vMix "
+						    "ficam iguais para o app externo continuar achando os campos."));
+			return;
+		}
+		bool ok = false;
+		QString name = QInputDialog::getText(this, tl("Renomear"), tl("Nome novo (o app externo usa NOME.Text):"),
+						     QLineEdit::Normal, old, &ok)
+				       .trimmed();
+		name.remove(QRegularExpression("[.|,:]"));
+		if (!ok || name.isEmpty() || name == old)
+			return;
+		if (layerByName(name) || hasElementNamed(name) || values.contains("+E:" + name) || values.contains("+L:" + name)) {
+			QMessageBox::warning(this, "ReplayDeck GT", tl("Já existe \"%1\".").arg(name));
+			return;
+		}
+		GtValues out;
+		const QString from = isLayer ? "Layer:" + old + "." : old + ".";
+		const QString to = isLayer ? "Layer:" + name + "." : name + ".";
+		for (auto it = values.begin(); it != values.end(); ++it) {
+			QString k = it.key(), v = it.value();
+			if (k == newKey)
+				k = (isLayer ? "+L:" : "+E:") + name;
+			else if (k.startsWith(from))
+				k = to + k.mid(from.size());
+			if (isLayer && k.startsWith("+E:")) {
+				QStringList p = v.split('|');
+				if (p.value(1) == old) {
+					p[1] = name;
+					v = p.join('|');
+				}
+			}
+			if (!isLayer && k.endsWith(".Order")) {
+				QStringList names = v.split(',');
+				for (QString &x : names)
+					if (x == old)
+						x = name;
+				v = names.join(',');
+			}
+			out.insert(k, v);
+		}
+		values = out;
+		structureChanged((isLayer ? "L:" : "E:") + name);
+	}
+
+	bool hasElementNamed(const QString &n) const
+	{
+		const GtLayer *L = nullptr;
+		const GtElement *e = nullptr;
+		return elementByName(n, &L, &e);
+	}
+
+	void deleteSelected()
+	{
+		if (selId.isEmpty() || !title)
+			return;
+		const bool isLayer = selId.startsWith("L:");
+		const QString name = selId.mid(2);
+		if (QMessageBox::question(this, "ReplayDeck GT",
+					  isLayer ? tl("Apagar a camada \"%1\" e tudo o que está nela?").arg(name)
+						  : tl("Apagar \"%1\"?").arg(name)) != QMessageBox::Yes)
+			return;
+		const QString addKey = (isLayer ? "+L:" : "+E:") + name;
+		if (values.contains(addKey)) {
+			/* criado aqui: some de vez, com tudo o que era dele */
+			const QString prefix = isLayer ? "Layer:" + name + "." : name + ".";
+			QStringList gone;
+			if (isLayer) {
+				for (auto it = values.begin(); it != values.end(); ++it)
+					if (it.key().startsWith("+E:") && it.value().section('|', 1, 1) == name)
+						gone << it.key().mid(3);
+			}
+			GtValues out;
+			for (auto it = values.begin(); it != values.end(); ++it) {
+				const QString &k = it.key();
+				bool drop = k == addKey || k.startsWith(prefix);
+				for (const QString &g : gone)
+					drop = drop || k == "+E:" + g || k.startsWith(g + ".");
+				if (!drop)
+					out.insert(k, it.value());
+			}
+			values = out;
+		} else {
+			/* do arquivo: fica marcado como apagado (Limpar traz de volta) */
+			values.insert(isLayer ? "Layer:" + name + ".Removed" : name + ".Removed", "True");
+		}
+		selId.clear();
+		structureChanged(QString());
+	}
+
+	void moveOrder(int dir)
+	{
+		const GtLayer *L = nullptr;
+		const GtElement *e = nullptr;
+		if (!selId.startsWith("E:") || !elementByName(selId.mid(2), &L, &e))
+			return;
+		QStringList names;
+		for (auto &x : L->elements)
+			names << x.name;
+		const int i = names.indexOf(e->name);
+		const int j = i + dir;
+		if (i < 0 || j < 0 || j >= names.size())
+			return;
+		names.swapItemsAt(i, j);
+		values.insert("Layer:" + L->name + ".Order", names.join(','));
+		structureChanged(selId);
+	}
+
+	/* animação atual de um elemento numa storyboard, no formato do editor */
+	QString animChoiceOf(const QString &name, const QString &sbType) const
+	{
+		const QString key = name + (sbType == "TransitionIn" ? ".AnimIn" : ".AnimOut");
+		if (values.contains(key))
+			return values.value(key);
+		if (!title)
+			return "None";
+		auto it = title->storyboards.find(sbType);
+		if (it == title->storyboards.end())
+			return "None";
+		for (const GtAnim &a : it->second.anims) {
+			if (a.object != name)
+				continue;
+			if (a.type.startsWith("Fly") || a.type == "Slide")
+				return "Fly" + (a.direction.isEmpty() ? QString("Left") : a.direction);
+			if (a.type.startsWith("Zoom"))
+				return "Zoom";
+			return "Fade";
+		}
+		return "None";
+	}
 
 	/* ---------------- aba Layout ---------------- */
 
@@ -1162,6 +1539,63 @@ private:
 		if (!isLayer && e.kind == GtKind::Image)
 			f->addRow(tl("Ajuste da imagem"),
 				  combo({"Uniform", "Fill", "UniformToFill", "None"}, e.imageStretch, p + ".Stretch"));
+
+		if (!isLayer && e.kind == GtKind::Text) {
+			/* o texto direto aqui (também na aba Texto) */
+			auto *txt = new QPlainTextEdit(propForm);
+			QString cur = e.text;
+			cur.replace("\r\n", "\n");
+			txt->setPlainText(cur);
+			txt->setMaximumHeight(80);
+			connect(txt, &QPlainTextEdit::textChanged, this, [this, txt, p] {
+				if (loading)
+					return;
+				QString t = txt->toPlainText();
+				t.replace("\n", "\r\n");
+				setValue(p + ".Text", t);
+			});
+			f->insertRow(1, tl("Texto"), txt);
+		}
+		if (!isLayer && e.kind == GtKind::Image) {
+			auto *pick = new QPushButton(tl("Escolher imagem…"), propForm);
+			connect(pick, &QPushButton::clicked, this, [this, p] {
+				const QString file = QFileDialog::getOpenFileName(
+					this, tl("Escolher imagem"), QString(),
+					tl("Imagens (*.png *.jpg *.jpeg *.bmp *.gif *.webp *.tga)"));
+				if (!file.isEmpty())
+					setValue(p + ".Source", file);
+			});
+			f->insertRow(1, tl("Imagem"), pick);
+		}
+		if (!isLayer) {
+			/* animação deste elemento ao entrar e ao sair */
+			static const char *animLabels[] = {N_("Nenhuma (aparece junto)"), N_("Esmaecer"), N_("Deslizar: esquerda"),
+							   N_("Deslizar: direita"), N_("Deslizar: cima"), N_("Deslizar: baixo"),
+							   N_("Zoom")};
+			const QStringList choices = gtAnimChoices();
+			auto animCombo = [&](const QString &cur, const QString &key) {
+				auto *c = new QComboBox(propForm);
+				for (int i = 0; i < choices.size(); i++)
+					c->addItem(tl(animLabels[i]), choices[i]);
+				c->setCurrentIndex(std::max(0, c->findData(cur)));
+				connect(c, &QComboBox::currentIndexChanged, this,
+					[this, c, key] { setValue(key, c->currentData().toString()); });
+				return c;
+			};
+			f->addRow(tl("Animação: entrada"), animCombo(animChoiceOf(name, "TransitionIn"), p + ".AnimIn"));
+			f->addRow(tl("Animação: saída"), animCombo(animChoiceOf(name, "TransitionOut"), p + ".AnimOut"));
+			auto *dur = dbl(values.value(p + ".AnimDuration", "0.5").toDouble(), 0.05, 10, 2);
+			dur->setSuffix(" s");
+			dur->setSingleStep(0.1);
+			onNum(dur, p + ".AnimDuration");
+			f->addRow(tl("Duração da animação"), dur);
+			auto *delay = dbl(values.value(p + ".AnimDelay", "0").toDouble(), 0, 10, 2);
+			delay->setSuffix(" s");
+			delay->setSingleStep(0.1);
+			delay->setToolTip(tl("Espera antes de entrar (para um elemento entrar depois do outro)"));
+			onNum(delay, p + ".AnimDelay");
+			f->addRow(tl("Atraso na entrada"), delay);
+		}
 
 		auto *reset = new QPushButton(tl("Restaurar posição e estilo originais"), propForm);
 		connect(reset, &QPushButton::clicked, this, [this, p] {

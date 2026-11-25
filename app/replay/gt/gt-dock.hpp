@@ -18,6 +18,9 @@ public:
 	explicit GtDock(QWidget *parent = nullptr);
 	~GtDock() override;
 
+public slots:
+	void newTitle(); /* título em branco, montado no editor */
+
 private slots:
 	void refresh();
 	void addTitle();

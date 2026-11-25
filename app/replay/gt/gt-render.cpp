@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <tuple>
 
 GtElement gtApplyValues(const GtElement &src, const GtValues &v)
 {
@@ -29,11 +30,15 @@ GtElement gtApplyValues(const GtElement &src, const GtValues &v)
 		if (e.fill.kind != GtBrush::Gradient)
 			e.fill.kind = GtBrush::Solid;
 	}
+	/* "res:" = imagem de dentro do .gtzip (cópia de um elemento); senão, arquivo */
+	auto imgKey = [](const QString &s) {
+		return s.isEmpty() ? QString() : s.startsWith("res:") ? s.mid(4) : s.startsWith("file:") ? s : "file:" + s;
+	};
 	if (e.kind == GtKind::Image && val(".Source", s))
-		e.image = s.isEmpty() ? QString() : (s.startsWith("file:") ? s : "file:" + s);
+		e.image = imgKey(s);
 	if ((e.kind == GtKind::Rectangle || e.kind == GtKind::Ellipse) && val(".Fill.Bitmap", s)) {
 		e.fill.kind = s.isEmpty() ? GtBrush::Solid : GtBrush::Bitmap;
-		e.fill.bitmap = s.isEmpty() ? QString() : (s.startsWith("file:") ? s : "file:" + s);
+		e.fill.bitmap = imgKey(s);
 	}
 
 	/* layout e estilo (aba Layout do editor) */
@@ -415,4 +420,226 @@ QImage gtRenderStill(const GtTitle &t, const GtValues &v)
 		p.restore();
 	}
 	return canvas;
+}
+
+/* ---------------- montar o título no editor ---------------- */
+
+QString gtKindName(GtKind k)
+{
+	switch (k) {
+	case GtKind::Text:
+		return "Text";
+	case GtKind::Image:
+		return "Image";
+	case GtKind::Rectangle:
+		return "Rectangle";
+	case GtKind::Ellipse:
+		return "Ellipse";
+	default:
+		return "Other";
+	}
+}
+
+GtKind gtKindFromName(const QString &s)
+{
+	if (s == "Text")
+		return GtKind::Text;
+	if (s == "Image")
+		return GtKind::Image;
+	if (s == "Rectangle")
+		return GtKind::Rectangle;
+	if (s == "Ellipse")
+		return GtKind::Ellipse;
+	return GtKind::Other;
+}
+
+GtElement gtNewElement(GtKind kind, const QString &name, int W, int H)
+{
+	GtElement e;
+	e.kind = kind;
+	e.name = name;
+	switch (kind) {
+	case GtKind::Text:
+		e.tag = "TextBlock";
+		e.rect = QRectF(W * 0.1, H * 0.42, W * 0.5, H * 0.12);
+		e.text = "Texto";
+		e.fontFamily = "Arial";
+		e.fontSize = std::max(12.0, H * 0.06);
+		e.fontWeight = "Bold";
+		e.fill.kind = GtBrush::Solid;
+		e.fill.color = Qt::white;
+		e.align = "Left";
+		e.valign = "Center";
+		break;
+	case GtKind::Image:
+		e.tag = "Image";
+		e.rect = QRectF(W * 0.1, H * 0.1, W * 0.25, H * 0.3);
+		e.imageStretch = "Uniform";
+		break;
+	case GtKind::Ellipse:
+		e.tag = "Ellipse";
+		e.rect = QRectF(W * 0.45, H * 0.4, H * 0.2, H * 0.2);
+		e.fill.kind = GtBrush::Solid;
+		e.fill.color = QColor(245, 158, 11);
+		break;
+	default:
+		e.kind = GtKind::Rectangle;
+		e.tag = "Rectangle";
+		e.rect = QRectF(W * 0.1, H * 0.72, W * 0.45, H * 0.12);
+		e.fill.kind = GtBrush::Solid;
+		e.fill.color = QColor(30, 58, 138);
+		break;
+	}
+	return e;
+}
+
+QStringList gtAnimChoices()
+{
+	return {"None", "Fade", "FlyLeft", "FlyRight", "FlyTop", "FlyBottom", "Zoom"};
+}
+
+static bool isStructural(const QString &k)
+{
+	return k.startsWith("+L:") || k.startsWith("+E:") || k.endsWith(".Removed") || k.endsWith(".Order") ||
+	       k.endsWith(".AnimIn") || k.endsWith(".AnimOut");
+}
+
+static void setAnim(GtTitle &t, const QString &sbType, const QString &object, const QString &choice, double dur,
+		    double delay)
+{
+	GtStoryboard &sb = t.storyboards[sbType];
+	sb.type = sbType;
+	sb.anims.erase(std::remove_if(sb.anims.begin(), sb.anims.end(), [&](const GtAnim &a) { return a.object == object; }),
+		       sb.anims.end());
+	if (choice.isEmpty() || choice == "None")
+		return;
+	GtAnim a;
+	a.object = object;
+	a.duration = dur;
+	a.delay = delay;
+	a.interpolation = sbType == "TransitionIn" ? "CubicEasingOut" : "CubicEasingIn";
+	if (choice.startsWith("Fly")) {
+		a.type = "FlyFade";
+		a.direction = choice.mid(3);
+	} else if (choice == "Zoom") {
+		a.type = "ZoomFade";
+	} else {
+		a.type = "Fade";
+	}
+	sb.anims.push_back(a);
+}
+
+std::shared_ptr<GtTitle> gtStructured(const std::shared_ptr<GtTitle> &base, const GtValues &v)
+{
+	if (!base)
+		return base;
+	bool any = false;
+	for (auto it = v.begin(); it != v.end() && !any; ++it)
+		any = isStructural(it.key());
+	if (!any)
+		return base;
+	std::shared_ptr<GtTitle> t = base->clone();
+	auto layerOf = [&t](const QString &n) -> GtLayer * {
+		for (auto &L : t->layers)
+			if (L.name == n)
+				return &L;
+		return nullptr;
+	};
+	auto hasElement = [&t](const QString &n) {
+		for (auto &L : t->layers)
+			for (auto &e : L.elements)
+				if (e.name == n)
+					return true;
+		return false;
+	};
+
+	/* camadas novas, na ordem em que foram criadas */
+	std::vector<std::pair<int, QString>> newLayers;
+	std::vector<std::tuple<int, QString, QString, QString>> newElements; /* ordem, nome, tipo, camada */
+	for (auto it = v.begin(); it != v.end(); ++it) {
+		if (it.key().startsWith("+L:"))
+			newLayers.push_back({it.value().toInt(), it.key().mid(3)});
+		else if (it.key().startsWith("+E:")) {
+			const QStringList p = it.value().split('|');
+			newElements.push_back({p.value(2).toInt(), it.key().mid(3), p.value(0), p.value(1)});
+		}
+	}
+	std::sort(newLayers.begin(), newLayers.end());
+	for (auto &nl : newLayers) {
+		if (nl.second.isEmpty() || layerOf(nl.second))
+			continue;
+		GtLayer L;
+		L.name = nl.second;
+		L.rect = QRectF(0, 0, t->width, t->height);
+		t->layers.push_back(L);
+	}
+	std::sort(newElements.begin(), newElements.end());
+	for (auto &ne : newElements) {
+		const QString &name = std::get<1>(ne);
+		if (name.isEmpty() || hasElement(name))
+			continue;
+		GtLayer *L = layerOf(std::get<3>(ne));
+		if (!L) {
+			if (t->layers.empty()) {
+				GtLayer nl;
+				nl.name = "Camada 1";
+				nl.rect = QRectF(0, 0, t->width, t->height);
+				t->layers.push_back(nl);
+			}
+			L = &t->layers.back();
+		}
+		L->elements.push_back(gtNewElement(gtKindFromName(std::get<2>(ne)), name, t->width, t->height));
+	}
+
+	/* apagados */
+	t->layers.erase(std::remove_if(t->layers.begin(), t->layers.end(),
+				       [&v](const GtLayer &L) { return v.value("Layer:" + L.name + ".Removed") == "True"; }),
+			t->layers.end());
+	for (auto &L : t->layers)
+		L.elements.erase(std::remove_if(L.elements.begin(), L.elements.end(),
+						[&v](const GtElement &e) {
+							return !e.name.isEmpty() && v.value(e.name + ".Removed") == "True";
+						}),
+				 L.elements.end());
+
+	/* ordem dentro da camada */
+	for (auto &L : t->layers) {
+		const QString ord = v.value("Layer:" + L.name + ".Order");
+		if (ord.isEmpty())
+			continue;
+		const QStringList names = ord.split(',');
+		std::stable_sort(L.elements.begin(), L.elements.end(), [&names](const GtElement &a, const GtElement &b) {
+			const int ia = names.indexOf(a.name), ib = names.indexOf(b.name);
+			return (ia < 0 ? 1 << 20 : ia) < (ib < 0 ? 1 << 20 : ib);
+		});
+	}
+
+	/* animações escolhidas no editor */
+	for (auto &L : t->layers)
+		for (auto &e : L.elements) {
+			if (e.name.isEmpty())
+				continue;
+			const double dur = v.value(e.name + ".AnimDuration", "0.5").toDouble();
+			const double delay = v.value(e.name + ".AnimDelay", "0").toDouble();
+			if (v.contains(e.name + ".AnimIn"))
+				setAnim(*t, "TransitionIn", e.name, v.value(e.name + ".AnimIn"), dur, delay);
+			if (v.contains(e.name + ".AnimOut"))
+				setAnim(*t, "TransitionOut", e.name, v.value(e.name + ".AnimOut"), dur, 0);
+		}
+	return t;
+}
+
+QString gtFreeName(const GtTitle &t, const GtValues &v, const QString &prefix)
+{
+	for (int i = 1;; i++) {
+		const QString n = prefix + QString::number(i);
+		bool used = v.contains("+E:" + n) || v.contains("+L:" + n);
+		for (auto &L : t.layers) {
+			used = used || L.name == n;
+			for (auto &e : L.elements)
+				used = used || e.name == n;
+		}
+		if (!used)
+			return n;
+	}
 }

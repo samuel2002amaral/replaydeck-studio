@@ -45,6 +45,10 @@ GtDock::GtDock(QWidget *parent) : QWidget(parent)
 			       this, "primary");
 	connect(add, &QPushButton::clicked, this, &GtDock::addTitle);
 	top->addWidget(add);
+	auto *blank = ui::button(tl("＋ Novo"), tl("Título novo, em branco: acrescente textos, imagens e formas no editor"),
+				 this);
+	connect(blank, &QPushButton::clicked, this, &GtDock::newTitle);
+	top->addWidget(blank);
 	search = new QLineEdit(this);
 	search->setPlaceholderText(tl("Buscar título…"));
 	search->setClearButtonEnabled(true);
@@ -471,7 +475,7 @@ void GtDock::refresh()
 void GtDock::addTitle()
 {
 	const QStringList files = QFileDialog::getOpenFileNames(this, tl("Importar títulos do vMix GT"), QString(),
-								tl("Títulos GT (*.gtzip)"));
+								tl("Títulos GT (*.gtzip *.gtxml)"));
 	QStringList failed;
 	for (const QString &file : files) {
 		obs_source_t *src = gtLibraryAdd(file);
@@ -486,6 +490,23 @@ void GtDock::addTitle()
 		QMessageBox::warning(this, "ReplayDeck GT",
 				     tl("Não foi possível ler: %1\nVeja o motivo em Ajuda → Arquivos de log (linhas \"GT:\").")
 					     .arg(failed.join(", ")));
+}
+
+void GtDock::newTitle()
+{
+	bool ok = false;
+	const QString name = QInputDialog::getText(this, tl("Título novo"), tl("Nome do título (vira o nome da entrada):"),
+						   QLineEdit::Normal, tl("Título novo"), &ok);
+	if (!ok)
+		return;
+	obs_source_t *src = gtLibraryNewBlank(name);
+	if (!src) {
+		QMessageBox::warning(this, "ReplayDeck GT", tl("Não foi possível criar o título."));
+		return;
+	}
+	refresh();
+	gtOpenEditor(src, window());
+	obs_source_release(src);
 }
 
 void GtDock::convertTitle()

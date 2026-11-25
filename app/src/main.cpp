@@ -20,6 +20,7 @@
 #include "transitions-panel.hpp"
 #include "functions.hpp"
 #include "gt/gt-source.hpp"
+#include "gt/gt-doc.hpp"
 #include "overlay-channels.hpp"
 #include "dialogs.hpp"
 #include "layout-view.hpp"
@@ -230,6 +231,75 @@ int main(int argc, char *argv[])
 				w.grab().save(QDir::temp().filePath("rds-trans.png"));
 				w.close();
 			});
+		}
+		if (qEnvironmentVariableIsSet("RDS_SELFTEST_GTNEW")) {
+			/* título GT novo em branco: acrescenta texto, retângulo, camada e cópia pelo editor */
+			QTimer::singleShot(800, [&w] {
+				Engine &e = Engine::get();
+				while (!e.inputs().isEmpty())
+					e.removeInput(e.inputs().first()->id);
+				OBSSourceAutoRelease src = gtLibraryNewBlank("PLACAR NOVO");
+				blog(LOG_INFO, "[gtnovo] criado=%d", src.Get() != nullptr);
+				if (src)
+					gtOpenEditor(src, &w);
+			});
+			auto clickBtn = [&w](const QString &text) {
+				for (QDialog *d : w.findChildren<QDialog *>())
+					for (QPushButton *b : d->findChildren<QPushButton *>())
+						if (b->text() == text && b->isVisible()) {
+							b->click();
+							return true;
+						}
+				return false;
+			};
+			QTimer::singleShot(1800, [clickBtn] {
+				const bool t = clickBtn("＋ Texto");
+				const bool r = clickBtn("＋ Retângulo");
+				const bool c = clickBtn("＋ Círculo");
+				const bool d = clickBtn("Duplicar"); /* cópia do círculo, um pouco deslocada */
+				blog(LOG_INFO, "[gtnovo] botoes texto=%d retangulo=%d circulo=%d duplicar=%d", t, r, c, d);
+			});
+			QTimer::singleShot(2600, [] {
+				QString err;
+				const bool ok = runFunction("SetText", "PLACAR NOVO", "GOL DO TIME", &err) ||
+						true; /* SetText sem SelectedName: só confere que o título existe */
+				QMap<QString, QString> p;
+				p.insert("SelectedName", "Texto1.Text");
+				p.insert("Value", "GOL DO TIME");
+				p.insert("Input", "PLACAR NOVO");
+				const bool ok2 = runFunctionParams("SetText", p, &err);
+				Input *in = Engine::get().inputByName("PLACAR NOVO");
+				QStringList names;
+				if (in)
+					if (auto t = gtTitleOf(in->source))
+						for (auto &L : t->layers)
+							for (auto &el : L.elements)
+								names << el.name;
+				blog(LOG_INFO, "[gtnovo] elementos=%s SetText(Texto1.Text)=%d %s", names.join(",").toUtf8().constData(),
+				     ok2, err.toUtf8().constData());
+				(void)ok;
+				if (in)
+					Engine::get().cutTo(in->id);
+			});
+			QTimer::singleShot(3600, [] {
+				QProcess::execute("import", {"-window", "root", QDir::temp().filePath("rds-gtnovo.png")});
+				Engine &e = Engine::get();
+				const QString proj = QDir::temp().filePath("rds-gtnovo.rdsproj");
+				e.saveProject(proj);
+				e.loadProject(proj);
+				Input *in = e.inputByName("PLACAR NOVO");
+				QString txt;
+				int n = 0;
+				if (in)
+					if (auto t = gtTitleOf(in->source)) {
+						for (auto &L : t->layers)
+							n += (int)L.elements.size();
+						txt = gtValues(in->source).value("Texto1.Text");
+					}
+				blog(LOG_INFO, "[gtnovo] reaberto: elementos=%d Texto1=%s tamanho=%ux%u", n, txt.toUtf8().constData(),
+				     in ? obs_source_get_width(in->source) : 0, in ? obs_source_get_height(in->source) : 0);
+			});
+			QTimer::singleShot(4500, [&w] { w.close(); });
 		}
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST_LAYERS")) {
 			/* abas Posição e Camadas: CÂMERA com o PLACAR como camada 1; PLACAR menor no alto */
