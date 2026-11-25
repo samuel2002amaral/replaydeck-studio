@@ -1,5 +1,5 @@
-/* Miniaturas das entradas (o "multiview" da lista): desenhadas pequenas, poucas vezes por
- * segundo, numa passada só da placa de vídeo, e mostradas como imagem comum.
+/* Miniaturas das entradas (o "multiview" da lista): desenhadas em resolução baixa, numa
+ * passada só da placa de vídeo, e mostradas como imagem comum (fluidas, 30 quadros/s).
  * Antes cada miniatura era uma janela de vídeo própria (swap chain) a 60 quadros/s —
  * o que pesava era a quantidade, não a qualidade. Programa e Prévia continuam como sempre. */
 #pragma once
@@ -21,10 +21,14 @@ public:
 	void clear();
 	void setImage(QImage img); /* chamado pelo hub (thread da interface) */
 
-	/* quadros por segundo das miniaturas (padrão 10) */
+	/* quadros por segundo das miniaturas (padrão 30) */
 	static void setFps(int fps);
 	static int fps();
+	/* resolução em % do tamanho na tela (padrão 50 = metade) */
+	static void setScale(int pct);
+	static int scale();
 	static void shutdown(); /* antes de desligar o motor */
+	static int resetDelivered(); /* teste: imagens entregues desde a última chamada */
 
 signals:
 	void clicked();

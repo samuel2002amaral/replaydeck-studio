@@ -759,11 +759,13 @@ void MainWindow::updateOutputs()
 	paint(vcamBtn, vc.active(), vc.active() ? "● Câmera virtual: " + vc.description() + " ▾" : "Câmera virtual ▾");
 	if (o.streaming()) {
 		const int total = o.streamTotalFrames(), lost = o.streamDroppedFrames();
-		outStatus->setText(QString("Transmissão: %1 quadros perdidos (%2%)")
+		outStatus->setText(QString("Transmissão (%3): %1 quadros perdidos (%2%)")
 					   .arg(lost)
-					   .arg(total ? 100.0 * lost / total : 0.0, 0, 'f', 1));
+					   .arg(total ? 100.0 * lost / total : 0.0, 0, 'f', 1)
+					   .arg(o.streamEncoderName()));
 	} else {
-		outStatus->setText(o.recording() ? "Gravando em " + o.recordingFile() : QString());
+		outStatus->setText(o.recording() ? "Gravando em " + o.recordingFile() + " (" + o.recordingEncoderName() + ")"
+						 : QString());
 	}
 }
 

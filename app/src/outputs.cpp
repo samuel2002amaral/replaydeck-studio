@@ -50,6 +50,14 @@ static const QList<QPair<QString, QString>> &encoderCandidates()
 	return list;
 }
 
+QString Outputs::encoderLabel(const QString &id)
+{
+	for (const auto &c : encoderCandidates())
+		if (c.first == id)
+			return c.second;
+	return id;
+}
+
 QList<QPair<QString, QString>> availableVideoEncoders()
 {
 	QList<QPair<QString, QString>> out;
@@ -291,6 +299,7 @@ bool Outputs::startRecording(QString &error)
 		obs_output_set_audio_encoder(recOut, recAudio, 0);
 		signal_handler_connect(obs_output_get_signal_handler(recOut), "stop", onRecStop, this);
 		if (obs_output_start(recOut)) {
+			recUsed = used;
 			recTimer.start();
 			blog(LOG_INFO, "gravando: %s (%s, %d kbps)", recFile.toUtf8().constData(), used.toUtf8().constData(),
 			     cfg.recBitrate);
@@ -427,13 +436,14 @@ bool Outputs::startStreaming(QString &error)
 
 	QString usedH, usedV;
 	streamAudio = makeAudioEncoder(cfg.audioBitrate, "transmitir-audio");
+	const QString choice = streamForce.isEmpty() ? cfg.streamEncoder : streamForce;
 	if (needH)
-		streamVideo = makeVideoEncoder(cfg.streamEncoder, cfg.streamBitrate, "transmitir-video", usedH);
+		streamVideo = makeVideoEncoder(choice, cfg.streamBitrate, "transmitir-video", usedH);
 	if (needV) {
 		if (!VerticalCanvas::get().start(cfg.verticalWidth, cfg.verticalHeight, cfg.verticalFit, cfg.verticalOffset,
 						 error))
 			return false;
-		streamVideoV = makeVideoEncoder(cfg.streamEncoder, cfg.verticalBitrate, "transmitir-vertical", usedV);
+		streamVideoV = makeVideoEncoder(choice, cfg.verticalBitrate, "transmitir-vertical", usedV);
 		if (streamVideoV)
 			obs_encoder_set_video(streamVideoV, VerticalCanvas::get().videoOutput());
 	}
@@ -479,6 +489,7 @@ bool Outputs::startStreaming(QString &error)
 	}
 	if (!failed.isEmpty())
 		emit this->failed("Transmissão", "Estes destinos não conectaram:\n" + failed.join("\n"));
+	streamUsed = usedH.isEmpty() ? usedV : usedH;
 	streamTimer.start();
 	blog(LOG_INFO, "transmissão: %d destino(s) (%s%s%s)", liveCount(), usedH.toUtf8().constData(),
 	     needH && needV ? " + " : "", usedV.toUtf8().constData());
@@ -508,7 +519,7 @@ void Outputs::onStreamStop(void *data, calldata_t *cd)
 			      : code == OBS_OUTPUT_DISCONNECTED    ? QString("A conexão caiu e não voltou.")
 							      : QString("código %1").arg(code);
 	}
-	QMetaObject::invokeMethod(self, [self, out, msg] {
+	QMetaObject::invokeMethod(self, [self, out, msg, code] {
 		Live *l = self->liveFor(out);
 		const QString name = l ? l->name : QString("destino");
 		if (l) {
@@ -516,10 +527,28 @@ void Outputs::onStreamStop(void *data, calldata_t *cd)
 			l->running = false;
 		}
 		blog(LOG_INFO, "transmissão parada: %s %s", name.toUtf8().constData(), msg.toUtf8().constData());
+		const bool gpuFailed = code == OBS_OUTPUT_ENCODE_ERROR && self->streamUsed != "obs_x264";
+		if (!self->streaming()) {
+			const QString failedEnc = self->streamUsed;
+			self->releaseStreams(); /* todos pararam: solta codificadores e o quadro vertical */
+			if (gpuFailed) {
+				/* a placa falhou ao codificar: volta ao ar sozinho pelo processador */
+				self->streamForce = "obs_x264";
+				QString err;
+				const bool ok = self->startStreaming(err);
+				self->streamForce.clear();
+				blog(LOG_WARNING, "transmissão: %s falhou ao codificar; x264 religou=%d %s",
+				     failedEnc.toUtf8().constData(), ok, err.toUtf8().constData());
+				emit self->failed("Transmissão",
+						  ok ? encoderLabel(failedEnc) +
+							       " falhou ao codificar. A transmissão voltou sozinha pelo processador (x264)."
+						     : name + ": " + msg);
+				emit self->stateChanged();
+				return;
+			}
+		}
 		if (!msg.isEmpty())
 			emit self->failed("Transmissão", name + ": " + msg);
-		if (!self->streaming())
-			self->releaseStreams(); /* todos pararam: solta codificadores e o quadro vertical */
 		emit self->stateChanged();
 	}, Qt::QueuedConnection);
 }

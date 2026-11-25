@@ -9,6 +9,7 @@
 
 #include <util/platform.h>
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 #include <atomic>
@@ -35,8 +36,9 @@ struct Hub {
 	std::mutex m;
 	std::map<ThumbView *, std::shared_ptr<Entry>> entries;
 	std::vector<std::shared_ptr<Entry>> trash; /* recursos da placa: só se apagam na thread de vídeo */
-	std::atomic<int> fps{10};
-	uint64_t lastBatch = 0;
+	std::atomic<int> fps{30};
+	std::atomic<int> scalePct{50}; /* resolução: % do tamanho da miniatura na tela */
+	uint64_t frame = 0;
 	bool installed = false;
 	QObject *ui = nullptr; /* para mandar as imagens de volta à interface */
 };
@@ -62,22 +64,23 @@ void freeGpu(Entry &e)
 void rendered(void *)
 {
 	Hub &H = hub();
-	const uint64_t now = os_gettime_ns();
-	const uint64_t every = 1000000000ULL / (uint64_t)std::max(1, H.fps.load());
-	if (now - H.lastBatch < every)
+	obs_video_info ovi;
+	if (!obs_get_video_info(&ovi) || !ovi.fps_den)
 		return;
-	H.lastBatch = now;
+	/* a cada N quadros do vídeo (ritmo regular, sem tropeço): 60 → 30 = um sim, um não */
+	const double canvasFps = (double)ovi.fps_num / (double)ovi.fps_den;
+	const uint64_t every = (uint64_t)std::max(1.0, std::round(canvasFps / std::max(1, H.fps.load())));
+	if (H.frame++ % every)
+		return;
 
-	std::lock_guard<std::mutex> lock(H.m); /* poucos ms a cada 100 ms; a interface só espera nisso */
+	std::lock_guard<std::mutex> lock(H.m); /* poucos ms; a interface só espera nisso */
 	for (auto &t : H.trash)
 		freeGpu(*t);
 	H.trash.clear();
 	if (H.entries.empty())
 		return;
-	obs_video_info ovi;
-	if (!obs_get_video_info(&ovi))
-		return;
 	const float cw = (float)ovi.base_width, ch = (float)ovi.base_height;
+	std::vector<std::pair<ThumbView *, QImage>> ready;
 
 	gs_blend_state_push();
 	gs_blend_function(GS_BLEND_ONE, GS_BLEND_ZERO);
@@ -99,15 +102,7 @@ void rendered(void *)
 				for (int y = 0; y < e.h; y++)
 					memcpy(img.scanLine(y), data + (size_t)y * line, (size_t)e.w * 4);
 				gs_stagesurface_unmap(e.stage[prev]);
-				ThumbView *view = kv.first;
-				QMetaObject::invokeMethod(
-					H.ui,
-					[view, img = std::move(img)]() mutable {
-						std::lock_guard<std::mutex> l(hub().m);
-						if (hub().entries.count(view))
-							view->setImage(std::move(img));
-					},
-					Qt::QueuedConnection);
+				ready.emplace_back(kv.first, std::move(img));
 			}
 			e.staged[prev] = false;
 		}
@@ -141,6 +136,17 @@ void rendered(void *)
 		obs_source_release(src);
 	}
 	gs_blend_state_pop();
+	/* todas de uma vez: a interface redesenha a lista numa passada só */
+	if (!ready.empty())
+		QMetaObject::invokeMethod(
+			H.ui,
+			[ready = std::move(ready)]() mutable {
+				std::lock_guard<std::mutex> l(hub().m);
+				for (auto &r : ready)
+					if (hub().entries.count(r.first))
+						r.first->setImage(std::move(r.second));
+			},
+			Qt::QueuedConnection);
 }
 
 void install()
@@ -222,8 +228,18 @@ void ThumbView::updateActive()
 		it->second->active = on;
 }
 
+static int g_delivered = 0;
+
+int ThumbView::resetDelivered()
+{
+	const int n = g_delivered;
+	g_delivered = 0;
+	return n;
+}
+
 void ThumbView::setImage(QImage i)
 {
+	g_delivered++;
 	img = std::move(i);
 	update();
 }
@@ -255,7 +271,24 @@ void ThumbView::mouseDoubleClickEvent(QMouseEvent *e)
 
 void ThumbView::setFps(int f)
 {
-	hub().fps = std::clamp(f, 1, 30);
+	hub().fps = std::clamp(f, 5, 60);
+}
+
+void ThumbView::setScale(int pct)
+{
+	pct = std::clamp(pct, 25, 100);
+	Hub &H = hub();
+	H.scalePct = pct;
+	std::lock_guard<std::mutex> l(H.m);
+	for (auto &kv : H.entries) {
+		kv.second->wantW = std::max(32, kv.first->width() * pct / 100);
+		kv.second->wantH = std::max(18, kv.first->height() * pct / 100);
+	}
+}
+
+int ThumbView::scale()
+{
+	return hub().scalePct.load();
 }
 
 int ThumbView::fps()

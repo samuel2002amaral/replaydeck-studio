@@ -88,6 +88,10 @@ public:
 	qint64 streamingMs() const { return streaming() ? streamTimer.elapsed() : 0; }
 	int streamDroppedFrames() const;
 	int streamTotalFrames() const;
+	/* nome do codificador em uso ("NVIDIA NVENC (placa de vídeo)"...), vazio se parado */
+	QString streamEncoderName() const { return streaming() ? encoderLabel(streamUsed) : QString(); }
+	QString recordingEncoderName() const { return recording() ? encoderLabel(recUsed) : QString(); }
+	static QString encoderLabel(const QString &id);
 
 	void shutdown(); /* para tudo (ao fechar) */
 
@@ -123,4 +127,6 @@ private:
 	QList<Live *> live;
 	QElapsedTimer recTimer, streamTimer;
 	QString recFile;
+	QString streamUsed, recUsed;
+	QString streamForce; /* troca para o processador quando a placa falha no meio */
 };

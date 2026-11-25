@@ -179,9 +179,12 @@ int main(int argc, char *argv[])
 	}
 
 	crash::install(Engine::get().configDir()); /* se o programa cair: guarda onde caiu */
-	ThumbView::setFps(QSettings(Engine::get().configDir() + "/interface.ini", QSettings::IniFormat)
-				  .value("miniaturas_fps", 10)
-				  .toInt());
+	{
+		/* "miniaturas_qps" (2.16.11): a 2.16.10 usava 10 por padrão e ficava travado */
+		QSettings ini(Engine::get().configDir() + "/interface.ini", QSettings::IniFormat);
+		ThumbView::setFps(ini.value("miniaturas_qps", 30).toInt());
+		ThumbView::setScale(ini.value("miniaturas_resolucao", 50).toInt());
+	}
 	perf::logState();
 	Scripts::get().load();
 	Playlist::get().load();
@@ -625,6 +628,28 @@ int main(int argc, char *argv[])
 			QTimer::singleShot(qMax(8000, qEnvironmentVariableIntValue("RDS_SELFTEST_HOLD") * 1000), [&w] {
 				w.grab().save(QDir::temp().filePath("rds-appvmix.png"));
 				w.close();
+			});
+		}
+		if (qEnvironmentVariableIsSet("RDS_SELFTEST_MINIATURA")) {
+			/* miniaturas: vídeo com detalhe em loop; conta imagens entregues em 2 s e tira foto */
+			QTimer::singleShot(800, [] {
+				Engine &e = Engine::get();
+				while (!e.inputs().isEmpty())
+					e.removeInput(e.inputs().first()->id);
+				const QByteArray file = qEnvironmentVariable("RDS_SELFTEST_MINIATURA").toUtf8();
+				OBSDataAutoRelease v = obs_data_create();
+				obs_data_set_string(v, "file", file.constData());
+				e.addInput("image_source", "IMAGEM", v);
+				OBSDataAutoRelease b = obs_data_create();
+				obs_data_set_int(b, "color", 0xFFC05020);
+				e.addInput("color_source_v3", "AZUL", b);
+			});
+			QTimer::singleShot(3000, [] { ThumbView::resetDelivered(); });
+			QTimer::singleShot(5000, [] {
+				blog(LOG_INFO, "[teste-miniatura] imagens entregues em 2 s: %d (%d quadros/s, resolução %d%%)",
+				     ThumbView::resetDelivered(), ThumbView::fps(), ThumbView::scale());
+				QProcess::execute("import", {"-window", "root", "/tmp/rds-miniatura.png"});
+				qApp->quit();
 			});
 		}
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST_PLAYLIST")) {

@@ -62,8 +62,13 @@ static QWidget *page(QTabWidget *tabs, const QString &title, QFormLayout *&form,
 static void fillEncoders(QComboBox *box, const QString &current)
 {
 	box->addItem("Automático (placa de vídeo, se houver)", "auto");
-	for (const auto &e : availableVideoEncoders())
-		box->addItem(e.second, e.first);
+	bool starred = false;
+	for (const auto &e : availableVideoEncoders()) {
+		/* a primeira da placa de vídeo é a recomendada: a CPU fica livre para o resto */
+		const bool gpu = e.first != "obs_x264";
+		box->addItem(gpu && !starred ? e.second + "  ★ recomendado" : e.second, e.first);
+		starred = starred || gpu;
+	}
 	const int i = box->findData(current);
 	box->setCurrentIndex(i < 0 ? 0 : i);
 }
@@ -126,18 +131,33 @@ SettingsDialog::SettingsDialog(QWidget *parent, int startTab) : QDialog(parent)
 	{
 		/* miniaturas das entradas: o que vale é Programa e Prévia; elas só mostram o que tem */
 		auto *thumbs = new QComboBox;
-		for (int v : {5, 10, 15, 30})
-			thumbs->addItem(QString("%1 quadros/s%2").arg(v).arg(v == 10 ? "  ★ recomendado" : v == 5 ? " (mais leve)" : ""),
-					v);
+		thumbs->addItem("15 quadros/s (mais leve)", 15);
+		thumbs->addItem("30 quadros/s  ★ fluida", 30);
+		thumbs->addItem("60 quadros/s (igual ao vídeo)", 60);
 		thumbs->setCurrentIndex(std::max(0, thumbs->findData(ThumbView::fps())));
-		thumbs->setToolTip("Quantas vezes por segundo as miniaturas das entradas são atualizadas.\n"
-				   "Programa e Prévia continuam com qualidade e quadros cheios.");
-		connect(thumbs, &QComboBox::currentIndexChanged, this, [thumbs] {
+		auto *res = new QComboBox;
+		res->addItem("Baixa (metade)  ★ mais leve", 50);
+		res->addItem("Média (3/4)", 75);
+		res->addItem("Cheia", 100);
+		res->setCurrentIndex(std::max(0, res->findData(ThumbView::scale())));
+		const QString tip = "Miniaturas das entradas. Programa, Prévia, gravação e transmissão não mudam:\n"
+				    "continuam com qualidade e quadros cheios.";
+		thumbs->setToolTip(tip);
+		res->setToolTip(tip);
+		auto save = [thumbs, res] {
 			ThumbView::setFps(thumbs->currentData().toInt());
-			QSettings(Engine::get().configDir() + "/interface.ini", QSettings::IniFormat)
-				.setValue("miniaturas_fps", ThumbView::fps());
-		});
-		f->addRow("Miniaturas", thumbs);
+			ThumbView::setScale(res->currentData().toInt());
+			QSettings ini(Engine::get().configDir() + "/interface.ini", QSettings::IniFormat);
+			ini.setValue("miniaturas_qps", ThumbView::fps());
+			ini.setValue("miniaturas_resolucao", ThumbView::scale());
+		};
+		connect(thumbs, &QComboBox::currentIndexChanged, this, save);
+		connect(res, &QComboBox::currentIndexChanged, this, save);
+		auto *row = new QHBoxLayout;
+		row->addWidget(thumbs, 1);
+		row->addWidget(new QLabel("resolução"));
+		row->addWidget(res, 1);
+		f->addRow("Miniaturas", row);
 	}
 
 	/* ---- gravação ---- */
