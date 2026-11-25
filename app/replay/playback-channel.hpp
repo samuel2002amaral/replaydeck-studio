@@ -96,7 +96,7 @@ public:
 
 private:
 	void loop();
-	void tick();
+	void tick(double ticks = 1.0); /* ticks: quantos intervalos se passaram (1 = no tempo) */
 	void showFrame(Session &s, int angle, int64_t target, bool reuse);
 	void outputAudio(Session &s, int64_t frame);
 	bool ensureDecoder(int codecId);

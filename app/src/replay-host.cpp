@@ -17,6 +17,7 @@
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QDateTime>
 #include <QFileInfo>
 #include <QMainWindow>
 #include <QPointer>
@@ -386,6 +387,24 @@ void selfTest(QMainWindow *window)
 		const bool ok = engine().startRecording(err);
 		blog(LOG_INFO, "[teste-replay] gravando=%d %s", ok, err.c_str());
 	});
+	if (qEnvironmentVariableIsSet("RDS_SELFTEST_VELOCIDADE")) {
+		/* 100% = tempo real, mesmo com a máquina lenta (RDS_REPLAY_ATRASO_MS) */
+		static double p0 = 0;
+		static qint64 t0 = 0;
+		step(2500, [] {
+			engine().seekTo(5);
+			engine().play();
+			t0 = QDateTime::currentMSecsSinceEpoch();
+		});
+		step(2700, [] { p0 = engine().channel(0).state().pos; t0 = QDateTime::currentMSecsSinceEpoch(); });
+		step(3900, [] {
+			const ChannelState st = engine().channel(0).state();
+			const double secs = (QDateTime::currentMSecsSinceEpoch() - t0) / 1000.0;
+			blog(LOG_INFO, "[teste-velocidade] andou %.1f quadros em %.2f s = %.2f quadros/s (gravação %.2f)",
+			     st.pos - p0, secs, (st.pos - p0) / secs, st.fps);
+			engine().goLive();
+		});
+	}
 	if (qEnvironmentVariableIsSet("RDS_SELFTEST_MARK")) {
 		/* Mark In/Out no replay (fora do ao vivo): marca onde o replay está, não o ao vivo */
 		step(3000, [] {

@@ -9,6 +9,7 @@
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavutil/hwcontext.h>
+#include <libavutil/pixdesc.h>
 }
 
 PlaybackChannel::PlaybackChannel(int id_) : id(id_)
@@ -391,6 +392,7 @@ void PlaybackChannel::loop()
 {
 	os_set_thread_name(id == 0 ? "replay-play-A" : "replay-play-B");
 	uint64_t next = os_gettime_ns();
+	uint64_t lastTick = next;
 
 	while (!quit) {
 		uint64_t interval = 33333333ULL;
@@ -404,12 +406,25 @@ void PlaybackChannel::loop()
 		if (now > next + interval * 5)
 			next = now + interval; /* ficou muito para trás: ressincroniza */
 		os_sleepto_ns(next);
-		integrateZoom((double)interval / 1e9);
-		tick();
+		/* 100% = tempo real: se a máquina atrasou mais de 1 quadro (decodificação lenta), pula os
+		 * quadros perdidos em vez de mostrar todos atrasados (antes o replay ficava mais lento que o real) */
+		const uint64_t t = os_gettime_ns();
+		double ticks = 1.0;
+		if (t > next + interval) {
+			const uint64_t missed = (t - next) / interval;
+			ticks += (double)std::min<uint64_t>(missed, 3);
+			next += missed * interval;
+		}
+		(void)lastTick;
+		integrateZoom((double)interval * ticks / 1e9);
+		tick(ticks);
+		static const int slowMs = getenv("RDS_REPLAY_ATRASO_MS") ? atoi(getenv("RDS_REPLAY_ATRASO_MS")) : 0;
+		if (slowMs > 0)
+			os_sleep_ms((uint32_t)slowMs); /* teste: simula uma máquina que não decodifica a tempo */
 	}
 }
 
-void PlaybackChannel::tick()
+void PlaybackChannel::tick(double ticks)
 {
 	std::shared_ptr<Session> s;
 	int64_t target;
@@ -434,7 +449,7 @@ void PlaybackChannel::tick()
 			pos = (double)live;
 		} else if (playing) {
 			const double rate = speed * mult;
-			pos += dir * rate;
+			pos += dir * rate * ticks;
 			if (!list.empty() && dir > 0 && !stingerSent && stingerLeadMs.load() > 0 && rate > 0 &&
 			    (listIdx + 1 < list.size() || (loopOn && list.size() > 1))) {
 				const double ms = ((double)list[listIdx].out - pos) / rate * 1000.0 / s->fps();
@@ -574,17 +589,27 @@ bool PlaybackChannel::ensureDecoder(int codecId)
 	dec->flags |= AV_CODEC_FLAG_LOW_DELAY;
 	dec->thread_count = 4;
 	dec->thread_type = FF_THREAD_SLICE;
+#if defined(__APPLE__) || defined(_WIN32)
+	/* decodificar na placa/chip: a 60 quadros/s a CPU não dá conta de cada quadro inteiro (intra)
+	 * a tempo e o replay a 100% anda devagar. Mac: VideoToolbox; Windows: D3D11VA (NVIDIA/AMD/Intel).
+	 * Se a placa não aceitar o formato, o FFmpeg volta sozinho para a CPU. */
 #ifdef __APPLE__
-	/* Mac: o VideoToolbox grava cada quadro numa fatia só, então a decodificação por CPU
-	 * fica numa thread e o replay engasga; o chip da Apple decodifica H.264/HEVC sem esforço */
-	if (codecId == AV_CODEC_ID_H264 || codecId == AV_CODEC_ID_HEVC) {
-		if (!hwDev && av_hwdevice_ctx_create(&hwDev, AV_HWDEVICE_TYPE_VIDEOTOOLBOX, nullptr, nullptr, 0) < 0)
+	static const AVHWDeviceType hwType = AV_HWDEVICE_TYPE_VIDEOTOOLBOX;
+#else
+	static const AVHWDeviceType hwType = AV_HWDEVICE_TYPE_D3D11VA;
+#endif
+	if ((codecId == AV_CODEC_ID_H264 || codecId == AV_CODEC_ID_HEVC) && !getenv("RDS_REPLAY_CPU")) {
+		if (!hwDev && av_hwdevice_ctx_create(&hwDev, hwType, nullptr, nullptr, 0) < 0)
 			hwDev = nullptr;
 		if (hwDev) {
 			dec->hw_device_ctx = av_buffer_ref(hwDev);
 			dec->get_format = [](AVCodecContext *, const enum AVPixelFormat *fmts) {
 				for (const enum AVPixelFormat *f = fmts; *f != AV_PIX_FMT_NONE; f++)
-					if (*f == AV_PIX_FMT_VIDEOTOOLBOX)
+					if (*f == AV_PIX_FMT_VIDEOTOOLBOX || *f == AV_PIX_FMT_D3D11)
+						return *f;
+				/* sem a placa: o primeiro formato de CPU */
+				for (const enum AVPixelFormat *f = fmts; *f != AV_PIX_FMT_NONE; f++)
+					if (!(av_pix_fmt_desc_get(*f)->flags & AV_PIX_FMT_FLAG_HWACCEL))
 						return *f;
 				return fmts[0];
 			};
@@ -597,7 +622,11 @@ bool PlaybackChannel::ensureDecoder(int codecId)
 	}
 	decCodec = codecId;
 	blog(LOG_INFO, "[ReplayDeck] canal %d: decodificando %s %s", id + 1, codec->name,
+#ifdef __APPLE__
 	     dec->hw_device_ctx ? "no chip (VideoToolbox)" : "pela CPU");
+#else
+	     dec->hw_device_ctx ? "na placa de vídeo (D3D11VA)" : "pela CPU");
+#endif
 	return true;
 }
 
@@ -661,8 +690,8 @@ bool PlaybackChannel::decodeTo(Session &s, int a, int64_t target, Pic &out)
 		return false;
 
 	AVFrame *src = frame;
-	if (frame->format == AV_PIX_FMT_VIDEOTOOLBOX) {
-		/* Mac: traz o quadro decodificado no chip para a memória (NV12) */
+	if (frame->format == AV_PIX_FMT_VIDEOTOOLBOX || frame->format == AV_PIX_FMT_D3D11) {
+		/* traz o quadro decodificado na placa/chip para a memória (NV12) */
 		av_frame_unref(swFrame);
 		if (av_hwframe_transfer_data(swFrame, frame, 0) < 0) {
 			av_frame_unref(frame);
