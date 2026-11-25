@@ -23,6 +23,7 @@ add_executable(replaydeck-studio WIN32
   src/props-cache.cpp src/props-cache.hpp
   src/input-tile.cpp src/input-tile.hpp
   src/dialogs.cpp src/dialogs.hpp
+  src/position-editor.cpp src/position-editor.hpp
   src/main-window.cpp src/main-window.hpp
   src/replay-host.cpp src/replay-host.hpp
   src/audio-mixer.cpp src/audio-mixer.hpp
@@ -143,6 +144,10 @@ if(RDS_BUILD_TESTS)
   target_link_libraries(engine-enable-test PRIVATE OBS::libobs Qt6::Core Qt6::Gui Qt6::Widgets)
   target_compile_definitions(engine-enable-test PRIVATE RDS_VERSION="teste")
   set_target_properties(engine-enable-test PROPERTIES CXX_STANDARD 17 AUTOMOC ON)
+  add_executable(engine-layers-test tests/engine-layers-test.cpp src/engine.cpp src/engine.hpp src/props-cache.cpp src/gpu.cpp)
+  target_link_libraries(engine-layers-test PRIVATE OBS::libobs Qt6::Core Qt6::Gui Qt6::Widgets)
+  target_compile_definitions(engine-layers-test PRIVATE RDS_VERSION="teste")
+  set_target_properties(engine-layers-test PROPERTIES CXX_STANDARD 17 AUTOMOC ON)
   add_executable(engine-audio-test tests/engine-audio-test.cpp src/engine.cpp src/engine.hpp src/props-cache.cpp src/gpu.cpp)
   target_link_libraries(engine-audio-test PRIVATE OBS::libobs Qt6::Core Qt6::Gui Qt6::Widgets)
   target_compile_definitions(engine-audio-test PRIVATE RDS_VERSION="teste")

@@ -128,6 +128,7 @@ void startAutosave(QObject *owner)
 	QObject::connect(&e, &Engine::transitionsChanged, owner, mark);
 	QObject::connect(&e, &Engine::transitionMsChanged, owner, mark);
 	QObject::connect(&e, &Engine::audioChanged, owner, mark);
+	QObject::connect(&e, &Engine::inputLayoutChanged, owner, mark);
 	auto *t = new QTimer(owner);
 	QObject::connect(t, &QTimer::timeout, owner, [] {
 		if (!dirty)

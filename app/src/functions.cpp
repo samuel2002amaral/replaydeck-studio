@@ -99,6 +99,27 @@ const QList<FunctionDef> &functionList()
 		{"NextItem", "Entrada", "Lista/fotos: próximo", true, false},
 		{"PreviousItem", "Entrada", "Lista/fotos: anterior", true, false},
 		{"LoopOn", "Entrada", "Loop do vídeo liga", true, false},
+		/* posição e camadas (abas Posição e Camadas da entrada) */
+		{"SetZoom", "Posição", "Ampliação da entrada (Value = 1 tela cheia; 0,5 metade)", true, true},
+		{"SetZoomX", "Posição", "Zoom X da entrada (só largura)", true, true},
+		{"SetZoomY", "Posição", "Zoom Y da entrada (só altura)", true, true},
+		{"SetPanX", "Posição", "Pan X da entrada (Value -2 a 2; 0,5 = metade direita)", true, true},
+		{"SetPanY", "Posição", "Pan Y da entrada (Value -2 a 2; 0,5 = metade de cima)", true, true},
+		{"SetRotation", "Posição", "Giro da entrada (Value = graus)", true, true},
+		{"SetCrop", "Posição", "Corte da entrada (Value = X1,Y1,X2,Y2 de 0 a 1; ex.: 0.25,0,0.75,1)", true, true, false, true},
+		{"SetCropX1", "Posição", "Corte X1 (0 a 1)", true, true},
+		{"SetCropX2", "Posição", "Corte X2 (0 a 1)", true, true},
+		{"SetCropY1", "Posição", "Corte Y1 (0 a 1)", true, true},
+		{"SetCropY2", "Posição", "Corte Y2 (0 a 1)", true, true},
+		{"ResetPosition", "Posição", "Posição da entrada volta à tela cheia", true, false},
+		{"SetLayer", "Camadas", "Camada da entrada (Value = número,entrada; ex.: 1,PLACAR; 1, vazio = tira)", true, true, false, true},
+		{"SetMultiViewOverlay", "Camadas", "Igual a SetLayer (nome antigo do vMix)", true, true, false, true},
+		{"MultiViewOverlay", "Camadas", "Camada liga/desliga (Value = número 1 a 10)", true, true},
+		{"MultiViewOverlayOn", "Camadas", "Camada liga (Value = número)", true, true},
+		{"MultiViewOverlayOff", "Camadas", "Camada desliga (Value = número)", true, true},
+		{"SetLayerZoom", "Camadas", "Ampliação de uma camada (Value = número,zoom)", true, true, false, true},
+		{"SetLayerPanX", "Camadas", "Pan X de uma camada (Value = número,pan)", true, true, false, true},
+		{"SetLayerPanY", "Camadas", "Pan Y de uma camada (Value = número,pan)", true, true, false, true},
 		{"LoopOff", "Entrada", "Loop do vídeo desliga", true, false},
 		/* scripts */
 		{"ScriptStart", "Script", "Roda um script (Value = nome)", false, true, false, true},
@@ -867,6 +888,89 @@ bool runFunction(const QString &name, const QString &inputSpec, const QString &v
 			e.toggleOverlay(ch, e.overlay(ch));
 			Engine::beforeOverlayOff = keep;
 		}
+	} else if (n == "SetZoom" || n == "SetZoomX" || n == "SetZoomY" || n == "SetPanX" || n == "SetPanY" ||
+		   n == "SetRotation" || n == "SetCropX1" || n == "SetCropX2" || n == "SetCropY1" || n == "SetCropY2" ||
+		   n == "SetCrop" || n == "ResetPosition") {
+		ItemPos p = in->pos;
+		if (n == "SetZoom")
+			p.zoom = std::clamp(v, 0.0, 5.0);
+		else if (n == "SetZoomX")
+			p.zoomX = std::clamp(v, 0.0, 5.0);
+		else if (n == "SetZoomY")
+			p.zoomY = std::clamp(v, 0.0, 5.0);
+		else if (n == "SetPanX")
+			p.panX = std::clamp(v, -2.0, 2.0);
+		else if (n == "SetPanY")
+			p.panY = std::clamp(v, -2.0, 2.0);
+		else if (n == "SetRotation")
+			p.rotation = std::clamp(v, -360.0, 360.0);
+		else if (n == "SetCropX1")
+			p.cropX1 = std::clamp(v, 0.0, 1.0);
+		else if (n == "SetCropX2")
+			p.cropX2 = std::clamp(v, 0.0, 1.0);
+		else if (n == "SetCropY1")
+			p.cropY1 = std::clamp(v, 0.0, 1.0);
+		else if (n == "SetCropY2")
+			p.cropY2 = std::clamp(v, 0.0, 1.0);
+		else if (n == "ResetPosition")
+			p = ItemPos();
+		else {
+			const QStringList parts = value.split(',');
+			if (parts.size() != 4)
+				return fail("SetCrop: Value = X1,Y1,X2,Y2 (de 0 a 1), ex.: 0.25,0,0.75,1");
+			double c[4];
+			for (int i = 0; i < 4; i++) {
+				bool ok = false;
+				c[i] = std::clamp(parts[i].trimmed().toDouble(&ok), 0.0, 1.0);
+				if (!ok)
+					return fail(QString("SetCrop: \"%1\" não é número").arg(parts[i]));
+			}
+			p.cropX1 = c[0];
+			p.cropY1 = c[1];
+			p.cropX2 = c[2];
+			p.cropY2 = c[3];
+		}
+		e.setInputPosition(in->id, p);
+	} else if (n == "SetLayer" || n == "SetMultiViewOverlay" || n == "SetLayerZoom" || n == "SetLayerPanX" ||
+		   n == "SetLayerPanY") {
+		const int comma = value.indexOf(',');
+		bool okNum = false;
+		const int idx = value.left(comma < 0 ? value.size() : comma).trimmed().toInt(&okNum);
+		if (!okNum || idx < 1 || idx > INPUT_LAYERS)
+			return fail(QString("%1: Value começa com o número da camada (1 a %2), ex.: 1,PLACAR").arg(n).arg(INPUT_LAYERS));
+		const QString rest = comma < 0 ? QString() : value.mid(comma + 1).trimmed();
+		if (n == "SetLayer" || n == "SetMultiViewOverlay") {
+			int target = 0;
+			if (!rest.isEmpty()) {
+				Input *li = resolveInput(rest);
+				if (!li)
+					return fail(QString("%1: não existe entrada \"%2\"").arg(n, rest));
+				if (e.layerWouldLoop(in->id, li->id))
+					return fail(QString("%1: \"%2\" já mostra \"%3\" dentro dela; uma não pode ficar dentro da outra")
+							    .arg(n, li->name, in->name));
+				target = li->id;
+			}
+			e.setLayer(in->id, idx - 1, target);
+		} else {
+			bool okV = false;
+			const double lv = rest.toDouble(&okV);
+			if (!okV)
+				return fail(QString("%1: Value = número,valor (ex.: 1,0.5)").arg(n));
+			ItemPos p = in->layers[idx - 1].pos;
+			if (n == "SetLayerZoom")
+				p.zoom = std::clamp(lv, 0.0, 5.0);
+			else if (n == "SetLayerPanX")
+				p.panX = std::clamp(lv, -2.0, 2.0);
+			else
+				p.panY = std::clamp(lv, -2.0, 2.0);
+			e.setLayerPosition(in->id, idx - 1, p);
+		}
+	} else if (n == "MultiViewOverlay" || n == "MultiViewOverlayOn" || n == "MultiViewOverlayOff") {
+		const int idx = (int)v;
+		if (idx < 1 || idx > INPUT_LAYERS)
+			return fail(QString("%1: Value = número da camada (1 a %2)").arg(n).arg(INPUT_LAYERS));
+		const bool on = n == "MultiViewOverlayOn" || (n == "MultiViewOverlay" && !in->layers[idx - 1].on);
+		e.setLayerOn(in->id, idx - 1, on);
 	} else if (n == "SetVolumeFade") {
 		const QStringList parts = value.split(',');
 		const double target = std::clamp(parts.value(0).trimmed().toDouble(), 0.0, 100.0);

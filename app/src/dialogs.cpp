@@ -2,6 +2,7 @@
 #include "engine.hpp"
 #include "properties-view.hpp"
 #include "video-display.hpp"
+#include "position-editor.hpp"
 
 #include <QDialogButtonBox>
 #include <QTimer>
@@ -19,6 +20,7 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QSplitter>
+#include <QTabWidget>
 #include <QVBoxLayout>
 
 #include <cstring>
@@ -37,7 +39,7 @@ InputWindow::InputWindow(int inputId, QWidget *parent) : QDialog(parent), id(inp
 	Input *in = Engine::get().input(id);
 	setWindowTitle(QString("%1 · %2").arg(Engine::get().indexOf(id) + 1).arg(in ? in->name : QString()));
 	setAttribute(Qt::WA_DeleteOnClose);
-	resize(1180, 680);
+	resize(1320, 720);
 
 	auto *root = new QVBoxLayout(this);
 	root->setContentsMargins(12, 12, 12, 12);
@@ -86,8 +88,10 @@ InputWindow::InputWindow(int inputId, QWidget *parent) : QDialog(parent), id(inp
 	lv->addLayout(btns);
 	body->addWidget(live, 1);
 
-	auto *opts = section("Opções");
-	opts->setMinimumWidth(420);
+	/* abas como no vMix: Geral (opções da fonte), Posição (a imagem dentro da entrada), Camadas */
+	auto *tabs = new QTabWidget;
+	tabs->setMinimumWidth(560);
+	auto *opts = new QWidget;
 	auto *ov = new QVBoxLayout(opts);
 	auto *form = new QFormLayout;
 	nameEdit = new QLineEdit(in ? in->name : QString());
@@ -112,7 +116,33 @@ InputWindow::InputWindow(int inputId, QWidget *parent) : QDialog(parent), id(inp
 		props = new PropertiesView(in->source, obs_source_get_id(in->source));
 		ov->addWidget(props, 1);
 	}
-	body->addWidget(opts);
+	tabs->addTab(opts, "Geral");
+	if (in) {
+		auto *posPage = new QWidget;
+		auto *pv = new QVBoxLayout(posPage);
+		auto *posNote = new QLabel("A imagem desta entrada: tamanho, lugar, corte e giro. Vale na hora e em todo lugar "
+					   "onde a entrada aparece (prévia, programa, overlay, camada de outra).");
+		posNote->setWordWrap(true);
+		posNote->setObjectName("muted");
+		pv->addWidget(posNote);
+		auto *posEd = new PositionEditor([this] {
+			Input *cur = Engine::get().input(id);
+			return cur ? QSize((int)obs_source_get_width(cur->source), (int)obs_source_get_height(cur->source))
+				   : QSize();
+		});
+		posEd->setPos(in->pos);
+		connect(posEd, &PositionEditor::changed, this,
+			[this](const ItemPos &p) { Engine::get().setInputPosition(id, p); });
+		connect(&Engine::get(), &Engine::inputLayoutChanged, posEd, [this, posEd](int changed) {
+			Input *cur = Engine::get().input(id);
+			if (changed == id && cur && cur->pos != posEd->pos())
+				posEd->setPos(cur->pos); /* mudou pela API ou por atalho */
+		});
+		pv->addWidget(posEd, 1);
+		tabs->addTab(posPage, "Posição");
+		tabs->addTab(new LayersEditor(id), "Camadas");
+	}
+	body->addWidget(tabs);
 	root->addLayout(body, 1);
 
 	auto *bb = new QDialogButtonBox;

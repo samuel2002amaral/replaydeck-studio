@@ -17,6 +17,7 @@
 #include <QSet>
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <cstdarg>
 #include <cstdio>
@@ -212,6 +213,13 @@ bool Engine::start(QString &error)
 	connect(this, &Engine::busChanged, this, &Engine::syncAudioBed);
 	connect(this, &Engine::inputsChanged, this, &Engine::syncAudioBed);
 	connect(this, &Engine::inputChanged, this, &Engine::syncAudioBed);
+	connect(this, &Engine::inputLayoutChanged, this, &Engine::syncAudioBed);
+	{
+		/* câmera que muda de resolução: a posição escolhida continua valendo */
+		auto *sizes = new QTimer(this);
+		connect(sizes, &QTimer::timeout, this, &Engine::checkSourceSizes);
+		sizes->start(500);
+	}
 	started = true;
 
 	/* prepara em segundo plano as opções dos tipos lentos (câmera, placas, áudio, capturas):
@@ -294,18 +302,105 @@ static void fitToCanvas(obs_sceneitem_t *item, uint32_t w, uint32_t h)
 	obs_sceneitem_set_bounds(item, &bounds);
 }
 
-/* a cena de cada entrada tem um item só: a fonte principal */
+/* a cena de cada entrada: a fonte principal embaixo e as camadas (outras entradas) por cima */
 static obs_sceneitem_t *mainItem(Input *in)
 {
-	obs_sceneitem_t *found = nullptr;
+	struct Find {
+		obs_source_t *src;
+		obs_sceneitem_t *found;
+	} f{in->source.Get(), nullptr};
 	obs_scene_enum_items(
 		obs_scene_from_source(in->scene),
 		[](obs_scene_t *, obs_sceneitem_t *item, void *param) {
-			*static_cast<obs_sceneitem_t **>(param) = item;
+			auto *f = static_cast<Find *>(param);
+			if (obs_sceneitem_get_source(item) != f->src)
+				return true;
+			f->found = item;
 			return false;
 		},
-		&found);
-	return found;
+		&f);
+	return f.found;
+}
+
+/* ---------- posição e camadas (como no vMix) ---------- */
+
+bool ItemPos::isDefault() const
+{
+	return *this == ItemPos();
+}
+
+bool ItemPos::operator==(const ItemPos &o) const
+{
+	auto eq = [](double a, double b) { return std::fabs(a - b) < 1e-6; };
+	return eq(zoom, o.zoom) && eq(zoomX, o.zoomX) && eq(zoomY, o.zoomY) && eq(panX, o.panX) && eq(panY, o.panY) &&
+	       eq(rotation, o.rotation) && eq(cropX1, o.cropX1) && eq(cropY1, o.cropY1) && eq(cropX2, o.cropX2) &&
+	       eq(cropY2, o.cropY2);
+}
+
+void Engine::applyItemPos(obs_sceneitem_t *item, obs_source_t *src, const ItemPos &p, uint32_t W, uint32_t H)
+{
+	if (!item)
+		return;
+	obs_sceneitem_defer_update_begin(item);
+	obs_sceneitem_crop noCrop = {};
+	if (p.isDefault()) {
+		fitToCanvas(item, W, H);
+		obs_sceneitem_set_crop(item, &noCrop);
+		obs_sceneitem_set_rot(item, 0.0f);
+		obs_sceneitem_defer_update_end(item);
+		return;
+	}
+	const double z = std::max(0.0, p.zoom);
+	const double zx = std::max(0.0, p.zoomX), zy = std::max(0.0, p.zoomY);
+	/* centro da imagem inteira (sem corte) na tela */
+	const double cx = W / 2.0 + p.panX * W / 2.0;
+	const double cy = H / 2.0 - p.panY * H / 2.0;
+	const uint32_t sw = obs_source_get_width(src), sh = obs_source_get_height(src);
+	vec2 pos, bounds;
+	obs_sceneitem_set_alignment(item, OBS_ALIGN_CENTER);
+	obs_sceneitem_set_bounds_alignment(item, OBS_ALIGN_CENTER);
+	if (!sw || !sh) {
+		/* ainda sem imagem (câmera abrindo): cabe na área; refeito quando a imagem chegar */
+		vec2_set(&bounds, (float)(W * z * zx), (float)(H * z * zy));
+		vec2_set(&pos, (float)cx, (float)cy);
+		obs_sceneitem_set_bounds_type(item, OBS_BOUNDS_SCALE_INNER);
+		obs_sceneitem_set_bounds(item, &bounds);
+		obs_sceneitem_set_pos(item, &pos);
+		obs_sceneitem_set_crop(item, &noCrop);
+		obs_sceneitem_set_rot(item, (float)p.rotation);
+		obs_sceneitem_defer_update_end(item);
+		return;
+	}
+	const double fit = std::min((double)W / sw, (double)H / sh);
+	const double fw = sw * fit * z * zx, fh = sh * fit * z * zy; /* imagem inteira na tela */
+	double x1 = std::clamp(p.cropX1, 0.0, 1.0), x2 = std::clamp(p.cropX2, 0.0, 1.0);
+	double y1 = std::clamp(p.cropY1, 0.0, 1.0), y2 = std::clamp(p.cropY2, 0.0, 1.0);
+	if (x2 < x1)
+		std::swap(x1, x2);
+	if (y2 < y1)
+		std::swap(y1, y2);
+	obs_sceneitem_crop c;
+	c.left = (int)std::lround(x1 * sw);
+	c.right = (int)std::lround((1.0 - x2) * sw);
+	c.top = (int)std::lround(y1 * sh);
+	c.bottom = (int)std::lround((1.0 - y2) * sh);
+	/* sempre sobra pelo menos 1 pixel (corte total = imagem some) */
+	if (c.left + c.right >= (int)sw)
+		c.right = std::max(0, (int)sw - c.left - 1);
+	if (c.top + c.bottom >= (int)sh)
+		c.bottom = std::max(0, (int)sh - c.top - 1);
+	const double visW = fw * (double)(sw - c.left - c.right) / sw;
+	const double visH = fh * (double)(sh - c.top - c.bottom) / sh;
+	/* o pedaço que sobra fica onde estava na imagem inteira */
+	const double midX = (c.left + (sw - c.right)) / 2.0 / sw, midY = (c.top + (sh - c.bottom)) / 2.0 / sh;
+	vec2_set(&pos, (float)(cx + fw * (midX - 0.5)), (float)(cy + fh * (midY - 0.5)));
+	vec2_set(&bounds, (float)std::max(visW, 0.0), (float)std::max(visH, 0.0));
+	obs_sceneitem_set_bounds_type(item, OBS_BOUNDS_STRETCH);
+	obs_sceneitem_set_bounds(item, &bounds);
+	obs_sceneitem_set_crop(item, &c);
+	obs_sceneitem_set_pos(item, &pos);
+	obs_sceneitem_set_rot(item, (float)p.rotation);
+	obs_sceneitem_defer_update_end(item);
 }
 
 static Input *wrapSource(int id, const QString &name, obs_source_t *src, uint32_t w, uint32_t h)
@@ -444,10 +539,10 @@ void Engine::mergeSameDevice()
 			if (old)
 				obs_sceneitem_remove(old);
 			obs_sceneitem_t *item = obs_scene_add(scene, first->source);
-			fitToCanvas(item, baseW, baseH);
 			obs_sceneitem_set_visible(item, dup->enabled);
 			obs_source_remove(dup->source);
 			dup->source = obs_source_get_ref(first->source);
+			applyLayout(dup); /* posição da entrada e principal embaixo das camadas */
 			blog(LOG_INFO, "entrada %d abria o mesmo aparelho da entrada %d: agora usa a mesma fonte", dup->id,
 			     first->id);
 			changed = true;
@@ -476,6 +571,19 @@ void Engine::removeInput(int id)
 	}
 	if (pvw == id)
 		pvw = 0;
+	/* sai das camadas das outras entradas */
+	for (Input *other : list) {
+		bool had = false;
+		for (InputLayer &l : other->layers)
+			if (l.inputId == id) {
+				l.inputId = 0;
+				had = true;
+			}
+		if (had && other->id != id) {
+			applyLayout(other);
+			emit inputLayoutChanged(other->id);
+		}
+	}
 	Input *in = list.takeAt(idx);
 	obs_source_dec_showing(in->scene);
 	bool stillUsed = false;
@@ -488,6 +596,173 @@ void Engine::removeInput(int id)
 	delete in;
 	emit inputsChanged();
 	emit busChanged();
+}
+
+void Engine::applyLayout(Input *in)
+{
+	if (!in || !in->scene)
+		return;
+	obs_scene_t *scene = obs_scene_from_source(in->scene);
+	obs_sceneitem_t *main = mainItem(in);
+	if (main) {
+		applyItemPos(main, in->source, in->pos, baseW, baseH);
+		in->fittedW = obs_source_get_width(in->source);
+		in->fittedH = obs_source_get_height(in->source);
+		obs_sceneitem_set_order_position(main, 0);
+	}
+	QSet<int64_t> keep;
+	int order = 0;
+	for (InputLayer &l : in->layers) {
+		Input *li = input(l.inputId);
+		if (!li)
+			l.inputId = 0;
+		obs_sceneitem_t *item = l.itemId ? obs_scene_find_sceneitem_by_id(scene, l.itemId) : nullptr;
+		if (item && (!li || obs_sceneitem_get_source(item) != li->scene.Get())) {
+			obs_sceneitem_remove(item);
+			item = nullptr;
+		}
+		l.itemId = 0;
+		if (!li || layerWouldLoop(in->id, li->id))
+			continue;
+		if (!item)
+			item = obs_scene_add(scene, li->scene);
+		if (!item)
+			continue; /* o motor recusou (entrada dentro dela mesma) */
+		l.itemId = obs_sceneitem_get_id(item);
+		keep << l.itemId;
+		obs_sceneitem_set_visible(item, l.on);
+		applyItemPos(item, li->scene, l.pos, baseW, baseH);
+		obs_sceneitem_set_order_position(item, ++order);
+	}
+	/* sobras (camada trocada ou tirada) */
+	QList<obs_sceneitem_t *> stale;
+	struct Ctx {
+		obs_sceneitem_t *main;
+		QSet<int64_t> *keep;
+		QList<obs_sceneitem_t *> *stale;
+	} ctx{main, &keep, &stale};
+	obs_scene_enum_items(
+		scene,
+		[](obs_scene_t *, obs_sceneitem_t *item, void *p) {
+			auto *c = static_cast<Ctx *>(p);
+			if (item != c->main && !c->keep->contains(obs_sceneitem_get_id(item)))
+				c->stale->append(item);
+			return true;
+		},
+		&ctx);
+	for (obs_sceneitem_t *item : stale)
+		obs_sceneitem_remove(item);
+}
+
+bool Engine::layerWouldLoop(int id, int candidate) const
+{
+	if (candidate == id)
+		return true;
+	QList<int> todo{candidate};
+	QSet<int> seen;
+	while (!todo.isEmpty()) {
+		const int cur = todo.takeLast();
+		if (seen.contains(cur))
+			continue;
+		seen << cur;
+		const Input *c = input(cur);
+		if (!c)
+			continue;
+		for (const InputLayer &l : c->layers) {
+			if (l.inputId == id)
+				return true;
+			if (l.inputId)
+				todo << l.inputId;
+		}
+	}
+	return false;
+}
+
+QList<int> Engine::layerInputsOf(int id) const
+{
+	QList<int> out;
+	QList<int> todo{id};
+	QSet<int> seen{id};
+	while (!todo.isEmpty()) {
+		const Input *c = input(todo.takeLast());
+		if (!c)
+			continue;
+		for (const InputLayer &l : c->layers) {
+			if (!l.inputId || !l.on || seen.contains(l.inputId) || !input(l.inputId))
+				continue;
+			seen << l.inputId;
+			out << l.inputId;
+			todo << l.inputId;
+		}
+	}
+	return out;
+}
+
+void Engine::setInputPosition(int id, const ItemPos &pos)
+{
+	Input *in = input(id);
+	if (!in || in->pos == pos)
+		return;
+	in->pos = pos;
+	if (obs_sceneitem_t *main = mainItem(in))
+		applyItemPos(main, in->source, in->pos, baseW, baseH);
+	emit inputLayoutChanged(id);
+}
+
+void Engine::setLayer(int id, int index, int layerInputId)
+{
+	Input *in = input(id);
+	if (!in || index < 0 || index >= INPUT_LAYERS)
+		return;
+	if (layerInputId && (!input(layerInputId) || layerWouldLoop(id, layerInputId)))
+		layerInputId = 0;
+	if (in->layers[index].inputId == layerInputId)
+		return;
+	in->layers[index].inputId = layerInputId;
+	applyLayout(in);
+	emit inputLayoutChanged(id);
+}
+
+void Engine::setLayerOn(int id, int index, bool on)
+{
+	Input *in = input(id);
+	if (!in || index < 0 || index >= INPUT_LAYERS || in->layers[index].on == on)
+		return;
+	in->layers[index].on = on;
+	obs_scene_t *scene = obs_scene_from_source(in->scene);
+	if (in->layers[index].itemId)
+		if (obs_sceneitem_t *item = obs_scene_find_sceneitem_by_id(scene, in->layers[index].itemId))
+			obs_sceneitem_set_visible(item, on);
+	emit inputLayoutChanged(id);
+}
+
+void Engine::setLayerPosition(int id, int index, const ItemPos &pos)
+{
+	Input *in = input(id);
+	if (!in || index < 0 || index >= INPUT_LAYERS || in->layers[index].pos == pos)
+		return;
+	InputLayer &l = in->layers[index];
+	l.pos = pos;
+	Input *li = input(l.inputId);
+	if (li && l.itemId)
+		if (obs_sceneitem_t *item = obs_scene_find_sceneitem_by_id(obs_scene_from_source(in->scene), l.itemId))
+			applyItemPos(item, li->scene, l.pos, baseW, baseH);
+	emit inputLayoutChanged(id);
+}
+
+void Engine::checkSourceSizes()
+{
+	for (Input *in : list) {
+		if (in->pos.isDefault())
+			continue; /* tela cheia: o motor já ajusta sozinho */
+		const uint32_t w = obs_source_get_width(in->source), h = obs_source_get_height(in->source);
+		if (w == in->fittedW && h == in->fittedH)
+			continue;
+		if (obs_sceneitem_t *main = mainItem(in))
+			applyItemPos(main, in->source, in->pos, baseW, baseH);
+		in->fittedW = w;
+		in->fittedH = h;
+	}
 }
 
 bool Engine::deviceActive(obs_source_t *source)
@@ -691,6 +966,17 @@ void Engine::syncAudioBed()
 	for (int ch = 1; ch <= 4; ch++)
 		if (Input *o = input(ov[ch]))
 			onAir << o->source.Get();
+	/* camadas das entradas no ar também tocam por elas (a cena leva o som junto) */
+	QList<int> airIds;
+	if (!ftb)
+		airIds << pgm;
+	for (int ch = 1; ch <= 4; ch++)
+		airIds << ov[ch];
+	for (int aid : airIds)
+		if (aid)
+			for (int lid : layerInputsOf(aid))
+				if (Input *l = input(lid))
+					onAir << l->source.Get();
 	QSet<obs_source_t *> want;
 	for (Input *in : list)
 		if (in->audioOn && !in->audioAuto && hasAudio(in) && !onAir.contains(in->source.Get()))
@@ -748,16 +1034,8 @@ bool Engine::resetVideo(uint32_t w, uint32_t h, uint32_t num, uint32_t den, QStr
 	fpsNum = num;
 	fpsDen = den;
 	/* as entradas continuam ocupando a tela inteira no tamanho novo */
-	for (Input *in : list) {
-		obs_scene_enum_items(
-			obs_scene_from_source(in->scene),
-			[](obs_scene_t *, obs_sceneitem_t *item, void *p) {
-				auto *e = static_cast<Engine *>(p);
-				fitToCanvas(item, e->baseWidth(), e->baseHeight());
-				return true;
-			},
-			this);
-	}
+	for (Input *in : list)
+		applyLayout(in);
 	blog(LOG_INFO, "vídeo: %ux%u, %u/%u fps", w, h, num, den);
 	emit videoChanged();
 	return true;
@@ -1136,6 +1414,41 @@ void Engine::clearAll()
 	list.clear();
 }
 
+static obs_data_t *posToData(const ItemPos &p)
+{
+	obs_data_t *d = obs_data_create();
+	obs_data_set_double(d, "zoom", p.zoom);
+	obs_data_set_double(d, "zoom_x", p.zoomX);
+	obs_data_set_double(d, "zoom_y", p.zoomY);
+	obs_data_set_double(d, "pan_x", p.panX);
+	obs_data_set_double(d, "pan_y", p.panY);
+	obs_data_set_double(d, "giro", p.rotation);
+	obs_data_set_double(d, "corte_x1", p.cropX1);
+	obs_data_set_double(d, "corte_y1", p.cropY1);
+	obs_data_set_double(d, "corte_x2", p.cropX2);
+	obs_data_set_double(d, "corte_y2", p.cropY2);
+	return d;
+}
+
+static ItemPos posFromData(obs_data_t *d)
+{
+	ItemPos p;
+	if (!d)
+		return p;
+	auto get = [d](const char *k, double def) { return obs_data_has_user_value(d, k) ? obs_data_get_double(d, k) : def; };
+	p.zoom = get("zoom", 1.0);
+	p.zoomX = get("zoom_x", 1.0);
+	p.zoomY = get("zoom_y", 1.0);
+	p.panX = get("pan_x", 0.0);
+	p.panY = get("pan_y", 0.0);
+	p.rotation = get("giro", 0.0);
+	p.cropX1 = get("corte_x1", 0.0);
+	p.cropY1 = get("corte_y1", 0.0);
+	p.cropX2 = get("corte_x2", 1.0);
+	p.cropY2 = get("corte_y2", 1.0);
+	return p;
+}
+
 bool Engine::saveProject(const QString &path)
 {
 	if (!started)
@@ -1156,6 +1469,25 @@ bool Engine::saveProject(const QString &path)
 		obs_data_set_string(o, "cor", in->color.toUtf8().constData());
 		obs_data_set_bool(o, "minimizada", in->collapsed);
 		obs_data_set_string(o, "chave", in->key.toUtf8().constData());
+		if (!in->pos.isDefault()) {
+			OBSDataAutoRelease pd = posToData(in->pos);
+			obs_data_set_obj(o, "posicao", pd);
+		}
+		OBSDataArrayAutoRelease layers = obs_data_array_create();
+		for (int li = 0; li < INPUT_LAYERS; li++) {
+			const InputLayer &l = in->layers[li];
+			if (!l.inputId && l.on && l.pos.isDefault())
+				continue;
+			OBSDataAutoRelease ld = obs_data_create();
+			obs_data_set_int(ld, "numero", li + 1);
+			obs_data_set_int(ld, "entrada", l.inputId);
+			obs_data_set_bool(ld, "ligada", l.on);
+			OBSDataAutoRelease pd = posToData(l.pos);
+			obs_data_set_obj(ld, "posicao", pd);
+			obs_data_array_push_back(layers, ld);
+		}
+		if (obs_data_array_count(layers))
+			obs_data_set_array(o, "camadas", layers);
 		if (const int from = sharedFrom(in->id)) {
 			obs_data_set_int(o, "mesma_fonte_de", from);
 		} else {
@@ -1237,9 +1569,28 @@ bool Engine::loadProject(const QString &path)
 			in->enabled = deviceActive(src); /* projeto antigo: câmera desativada pelo botão do driver */
 		if (obs_sceneitem_t *item = mainItem(in))
 			obs_sceneitem_set_visible(item, in->enabled);
+		{
+			OBSDataAutoRelease pd = obs_data_get_obj(o, "posicao");
+			in->pos = posFromData(pd);
+			OBSDataArrayAutoRelease layers = obs_data_get_array(o, "camadas");
+			for (size_t li = 0; li < obs_data_array_count(layers); li++) {
+				OBSDataAutoRelease ld = obs_data_array_item(layers, li);
+				const int num = (int)obs_data_get_int(ld, "numero");
+				if (num < 1 || num > INPUT_LAYERS)
+					continue;
+				InputLayer &l = in->layers[num - 1];
+				l.inputId = (int)obs_data_get_int(ld, "entrada");
+				l.on = !obs_data_has_user_value(ld, "ligada") || obs_data_get_bool(ld, "ligada");
+				OBSDataAutoRelease lp = obs_data_get_obj(ld, "posicao");
+				l.pos = posFromData(lp);
+			}
+		}
 		list.append(in);
 		nextId = std::max(nextId, id + 1);
 	}
+	/* camadas só depois de todas as entradas existirem (uma pode apontar para outra mais abaixo) */
+	for (Input *in : list)
+		applyLayout(in);
 	if (obs_data_has_user_value(root, "volume_geral"))
 		setMasterVolume((float)obs_data_get_double(root, "volume_geral"));
 	if (obs_data_has_user_value(root, "transicao_ms"))

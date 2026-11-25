@@ -102,6 +102,16 @@ QString VmixApi::stateXml()
 			     .arg(vmixType(in->source), esc(in->name), in->loop ? "True" : "False",
 				  in->audioOn ? "False" : "True")
 			     .arg(qRound(std::cbrt(in->volume) * 100.0));
+		/* como o vMix: posição (se mexida) e as camadas (index a partir de 0) */
+		if (!in->pos.isDefault())
+			x += QString("<position panX=\"%1\" panY=\"%2\" zoomX=\"%3\" zoomY=\"%4\" />")
+				     .arg(in->pos.panX)
+				     .arg(in->pos.panY)
+				     .arg(in->pos.zoom * in->pos.zoomX)
+				     .arg(in->pos.zoom * in->pos.zoomY);
+		for (int li = 0; li < INPUT_LAYERS; li++)
+			if (const Input *l = e.input(in->layers[li].inputId))
+				x += QString("<overlay index=\"%1\" key=\"%2\" />").arg(li).arg(inputKey(l->id));
 		if (gtIsSource(in->source)) {
 			int idx = 0;
 			for (const auto &t : gtFields(in->source, GtField::Text))

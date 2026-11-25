@@ -229,6 +229,69 @@ int main(int argc, char *argv[])
 				w.close();
 			});
 		}
+		if (qEnvironmentVariableIsSet("RDS_SELFTEST_LAYERS")) {
+			/* abas Posição e Camadas: CÂMERA com o PLACAR como camada 1; PLACAR menor no alto */
+			QTimer::singleShot(700, [&w] {
+				Engine &e = Engine::get();
+				while (!e.inputs().isEmpty())
+					e.removeInput(e.inputs().first()->id);
+				OBSDataAutoRelease g = obs_data_create();
+				obs_data_set_int(g, "color", 0xFF2E7D32);
+				Input *cam = e.addInput("color_source_v3", "CAMERA", g);
+				OBSDataAutoRelease b = obs_data_create();
+				obs_data_set_int(b, "color", 0xFFB04010);
+				Input *plc = e.addInput("color_source_v3", "PLACAR", b);
+				QString err;
+				bool ok = runFunction("SetZoom", "PLACAR", "0.4", &err) &&
+					  runFunction("SetPanY", "PLACAR", "0.75", &err) &&
+					  runFunction("SetCrop", "PLACAR", "0,0.3,1,0.7", &err) &&
+					  runFunction("SetLayer", "CAMERA", "1,PLACAR", &err);
+				const bool loopRefused = !runFunction("SetLayer", "PLACAR", "1,CAMERA", &err);
+				blog(LOG_INFO, "[camadas] funcoes=%d recusou_loop=%d camada1=%d pos_zoom=%.2f (%s)", ok, loopRefused,
+				     cam->layers[0].inputId == plc->id, plc->pos.zoom, err.toUtf8().constData());
+				e.cutTo(cam->id);
+				auto *iw = new InputWindow(cam->id, &w);
+				iw->setObjectName("rdsInputWindow");
+				iw->show();
+			});
+			QTimer::singleShot(2600, [&w] {
+				auto *iw = w.findChild<InputWindow *>("rdsInputWindow");
+				if (auto *tabs = iw ? iw->findChild<QTabWidget *>() : nullptr)
+					tabs->setCurrentIndex(2);
+			});
+			QTimer::singleShot(3600, [] {
+				QProcess::execute("import", {"-window", "root", QDir::temp().filePath("rds-camadas.png")});
+			});
+			QTimer::singleShot(3800, [&w] {
+				auto *iw = w.findChild<InputWindow *>("rdsInputWindow");
+				if (auto *tabs = iw ? iw->findChild<QTabWidget *>() : nullptr)
+					tabs->setCurrentIndex(1);
+				Engine &e = Engine::get();
+				if (Input *plc = e.inputByName("PLACAR"); plc && iw) {
+					iw->close();
+					auto *pw = new InputWindow(plc->id, &w);
+					pw->setObjectName("rdsInputWindow2");
+					pw->show();
+					QTimer::singleShot(600, pw, [pw] {
+						if (auto *tabs = pw->findChild<QTabWidget *>())
+							tabs->setCurrentIndex(1);
+					});
+				}
+			});
+			QTimer::singleShot(5600, [] {
+				QProcess::execute("import", {"-window", "root", QDir::temp().filePath("rds-posicao.png")});
+				Engine &e = Engine::get();
+				const QString proj = QDir::temp().filePath("rds-camadas-teste.rdsproj");
+				e.saveProject(proj);
+				e.loadProject(proj);
+				Input *cam = e.inputByName("CAMERA");
+				Input *plc = e.inputByName("PLACAR");
+				blog(LOG_INFO, "[camadas] reaberto: camada1=%d zoom=%.2f panY=%.2f corteY1=%.2f",
+				     cam && plc && cam->layers[0].inputId == plc->id, plc ? plc->pos.zoom : -1,
+				     plc ? plc->pos.panY : -1, plc ? plc->pos.cropY1 : -1);
+			});
+			QTimer::singleShot(6500, [&w] { w.close(); });
+		}
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST_APPVMIX")) {
 			/* app externo feito para o vMix: um título PLACAR e as chaves importadas da config do app */
 			QTimer::singleShot(600, [] {

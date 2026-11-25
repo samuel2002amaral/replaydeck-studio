@@ -16,6 +16,29 @@
 
 #include <functional>
 
+/* Posição de uma imagem na tela, como no vMix (aba Posição da entrada e Editar de cada camada).
+ * zoom 1 e pan 0 = ocupa a tela inteira (cabendo, sem esticar). pan em meias telas (-2..2):
+ * panX 0.5 = centro na metade direita; panY positivo SOBE. Corte em frações da imagem (0..1),
+ * no lugar: o que é cortado some, o resto não muda de lugar. Giro em graus. */
+struct ItemPos {
+	double zoom = 1.0, zoomX = 1.0, zoomY = 1.0;
+	double panX = 0.0, panY = 0.0;
+	double rotation = 0.0;
+	double cropX1 = 0.0, cropY1 = 0.0, cropX2 = 1.0, cropY2 = 1.0;
+	bool isDefault() const;
+	bool operator==(const ItemPos &o) const;
+	bool operator!=(const ItemPos &o) const { return !(*this == o); }
+};
+
+/* Camada (como no vMix, = fonte dentro da cena no OBS): outra entrada por cima desta, com posição própria */
+constexpr int INPUT_LAYERS = 10;
+struct InputLayer {
+	int inputId = 0; /* 0 = vazia */
+	bool on = true;
+	ItemPos pos;
+	int64_t itemId = 0; /* item na cena desta entrada */
+};
+
 struct Input {
 	int id = 0; /* único e estável (usado no projeto salvo) */
 	QString name;
@@ -34,6 +57,10 @@ struct Input {
 	/* aparência na lista (como no vMix): cor do cabeçalho e minimizada em barra */
 	QString color; /* chave de inputColors() ("" = padrão) */
 	bool collapsed = false;
+	/* posição da imagem principal dentro da entrada (aba Posição) e as camadas por cima (aba Camadas) */
+	ItemPos pos;
+	InputLayer layers[INPUT_LAYERS];
+	uint32_t fittedW = 0, fittedH = 0; /* tamanho da imagem na última aplicação (câmera que muda de resolução) */
 };
 
 struct InputColor {
@@ -105,6 +132,17 @@ public:
 	bool setInputKey(int id, const QString &key); /* false se outra entrada já usa */
 	Input *inputByKey(const QString &key) const;
 	void setInputCollapsed(int id, bool on);
+	/* posição e camadas (como no vMix); tudo ao vivo */
+	void setInputPosition(int id, const ItemPos &pos);
+	void setLayer(int id, int index, int layerInputId); /* index 0..9; 0 = tira a camada */
+	void setLayerOn(int id, int index, bool on);
+	void setLayerPosition(int id, int index, const ItemPos &pos);
+	/* pôr "candidate" como camada de "id" faria uma entrada aparecer dentro dela mesma? */
+	bool layerWouldLoop(int id, int candidate) const;
+	/* entradas que aparecem dentro desta como camada (todas as voltas, sem repetir) */
+	QList<int> layerInputsOf(int id) const;
+	static void applyItemPos(obs_sceneitem_t *item, obs_source_t *src, const ItemPos &pos, uint32_t canvasW,
+				 uint32_t canvasH);
 	float masterVolume() const { return master; }
 	void setMasterVolume(float mul);
 	static bool hasAudio(const Input *in);
@@ -173,12 +211,15 @@ signals:
 	void audioChanged(); /* volume geral */
 	void videoChanged(); /* resolução / fps */
 	void transitionsChanged(); /* lista da aba Transições */
+	void inputLayoutChanged(int id); /* posição ou camadas de uma entrada */
 
 private:
 	Engine() = default;
 	void setProgramScene(obs_source_t *scene, TransitionKind kind);
 	void setProgramSceneWith(obs_source_t *scene, obs_source_t *transition, int ms);
 	void applyVolume(Input *in);
+	void applyLayout(Input *in);  /* posição da principal + camadas (cria/tira itens e ordena) */
+	void checkSourceSizes();      /* câmera mudou de resolução: refaz a posição */
 	void syncAudioBed();
 	void clearAll();
 	void clearTransitions();
