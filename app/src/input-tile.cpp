@@ -1,4 +1,5 @@
 #include "input-tile.hpp"
+#include "thumbs.hpp"
 #include "interact-window.hpp"
 #include "filters-window.hpp"
 #include "vmix-keys.hpp"
@@ -125,11 +126,11 @@ InputTile::InputTile(int inputId, QWidget *parent) : QFrame(parent), id(inputId)
 	Input *in0 = Engine::get().input(id);
 	const bool hasVideo = in0 && (obs_source_get_output_flags(in0->source) & OBS_SOURCE_VIDEO);
 	if (hasVideo) {
-		video = new VideoDisplay;
+		video = new ThumbView; /* miniatura leve: pequena e 10 quadros/s */
 		video->setFixedSize(214, 120);
 		video->setToolTip("Clique: mandar para a Prévia · duplo clique: abrir");
-		connect(video, &VideoDisplay::clicked, this, [this] { Engine::get().setPreview(id); });
-		connect(video, &VideoDisplay::doubleClicked, this, [this] { emit openRequested(id); });
+		connect(video, &ThumbView::clicked, this, [this] { Engine::get().setPreview(id); });
+		connect(video, &ThumbView::doubleClicked, this, [this] { emit openRequested(id); });
 		v->addWidget(video);
 	} else {
 		/* entrada só de áudio (microfone): não tem imagem para mostrar */

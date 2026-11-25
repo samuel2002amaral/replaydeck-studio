@@ -1,5 +1,6 @@
 #include "settings-dialog.hpp"
 #include "appvmix.hpp"
+#include "thumbs.hpp"
 #include "gpu.hpp"
 #include "vmix-api.hpp"
 
@@ -24,6 +25,7 @@
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QSettings>
 #include <QDir>
 #include <QRegularExpression>
 #include <QUrl>
@@ -121,6 +123,22 @@ SettingsDialog::SettingsDialog(QWidget *parent, int startTab) : QDialog(parent)
 			    "NVIDIA direto da placa. Em uso agora: " + Engine::get().adapterName() +
 			    "\nVale ao abrir o programa de novo.");
 	f->addRow("Placa de vídeo", adapter);
+	{
+		/* miniaturas das entradas: o que vale é Programa e Prévia; elas só mostram o que tem */
+		auto *thumbs = new QComboBox;
+		for (int v : {5, 10, 15, 30})
+			thumbs->addItem(QString("%1 quadros/s%2").arg(v).arg(v == 10 ? "  ★ recomendado" : v == 5 ? " (mais leve)" : ""),
+					v);
+		thumbs->setCurrentIndex(std::max(0, thumbs->findData(ThumbView::fps())));
+		thumbs->setToolTip("Quantas vezes por segundo as miniaturas das entradas são atualizadas.\n"
+				   "Programa e Prévia continuam com qualidade e quadros cheios.");
+		connect(thumbs, &QComboBox::currentIndexChanged, this, [thumbs] {
+			ThumbView::setFps(thumbs->currentData().toInt());
+			QSettings(Engine::get().configDir() + "/interface.ini", QSettings::IniFormat)
+				.setValue("miniaturas_fps", ThumbView::fps());
+		});
+		f->addRow("Miniaturas", thumbs);
+	}
 
 	/* ---- gravação ---- */
 	page(tabs, "Gravação", f, "O botão Gravar grava o Programa (com o áudio do Master) num arquivo.");

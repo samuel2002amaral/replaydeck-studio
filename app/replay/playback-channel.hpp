@@ -94,7 +94,14 @@ public:
 
 	ChannelState state();
 
+	/* a fonte de cena foi desenhada (programa, preview, multiview ou miniatura).
+	 * No "ao vivo" o canal só decodifica quando alguém desenhou desde o último
+	 * quadro: miniatura a 10 fps custa 10 decodificações/s, não 60. */
+	void noteRender() { renders.fetch_add(1, std::memory_order_relaxed); }
+
 private:
+	std::atomic<uint64_t> renders{0};
+	uint64_t rendersSeen = ~0ull; /* thread do canal */
 	void loop();
 	void tick(double ticks = 1.0); /* ticks: quantos intervalos se passaram (1 = no tempo) */
 	void showFrame(Session &s, int angle, int64_t target, bool reuse);

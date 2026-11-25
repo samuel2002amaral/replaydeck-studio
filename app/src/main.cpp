@@ -26,6 +26,7 @@
 #include "crash.hpp"
 #include "pack.hpp"
 #include "appvmix.hpp"
+#include "thumbs.hpp"
 #include "mac-permissions.hpp"
 #include "layout-view.hpp"
 #include "style.hpp"
@@ -39,6 +40,7 @@
 #include <QMessageBox>
 #include <QTimer>
 #include <QDir>
+#include <QSettings>
 #include <QIcon>
 #include <QElapsedTimer>
 #include <QImage>
@@ -177,6 +179,9 @@ int main(int argc, char *argv[])
 	}
 
 	crash::install(Engine::get().configDir()); /* se o programa cair: guarda onde caiu */
+	ThumbView::setFps(QSettings(Engine::get().configDir() + "/interface.ini", QSettings::IniFormat)
+				  .value("miniaturas_fps", 10)
+				  .toInt());
 	perf::logState();
 	Scripts::get().load();
 	Playlist::get().load();
@@ -1030,6 +1035,7 @@ int main(int argc, char *argv[])
 		Scripts::get().stopAll();
 		Playlist::get().stop();
 		AppVmix::get().stop();
+		ThumbView::shutdown();
 		VmixApi::get().shutdown();
 		Shortcuts::get().shutdown();
 		VirtualCam::get().shutdown();

@@ -38,7 +38,7 @@ private:
 	int lastCollapsed = -1;
 	QLabel *num = nullptr;
 	QLabel *name = nullptr;
-	VideoDisplay *video = nullptr;
+	class ThumbView *video = nullptr;
 	QPushButton *ovBtn[5] = {};
 	QPushButton *audio = nullptr;
 	QPushButton *loop = nullptr;

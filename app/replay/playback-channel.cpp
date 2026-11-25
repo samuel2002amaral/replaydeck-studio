@@ -424,6 +424,11 @@ void PlaybackChannel::loop()
 	}
 }
 
+/* medição: RDS_REPLAY_SEMPRE decodifica todo quadro ao vivo (comportamento antigo) */
+static const bool demandOff = getenv("RDS_REPLAY_SEMPRE") != nullptr;
+static const bool countDecodes = getenv("RDS_REPLAY_CONTA") != nullptr;
+static std::atomic<uint64_t> g_decodes{0};
+
 void PlaybackChannel::tick(double ticks)
 {
 	std::shared_ptr<Session> s;
@@ -432,6 +437,7 @@ void PlaybackChannel::tick(double ticks)
 	bool wantAudio = false;
 	bool force;
 	bool slowBlend = false;
+	bool liveFollow = false;
 	double frac = 0;
 	int64_t liveNow = 0;
 
@@ -502,6 +508,7 @@ void PlaybackChannel::tick(double ticks)
 		frac = pos - (double)target;
 		liveNow = live;
 		slowBlend = smoothSlow.load() && playing && !liveMode && speed * mult < 0.999;
+		liveFollow = liveMode;
 		a = angle;
 		force = refresh;
 		refresh = false;
@@ -533,7 +540,15 @@ void PlaybackChannel::tick(double ticks)
 		shownAngle = a;
 		shownSession = s.get();
 	} else if (force || xfActive || target != shownFrame || a != shownAngle || s.get() != shownSession) {
-		showFrame(*s, a, target, xfActive && target == prevShown && a == shownAngle);
+		/* ao vivo e ninguém desenhou desde o último quadro: pula (quadros são
+		 * todos intra, então pular não custa nada depois) */
+		const uint64_t r = renders.load(std::memory_order_relaxed);
+		const bool idleLive = liveFollow && !force && a == shownAngle && s.get() == shownSession &&
+				      r == rendersSeen && !demandOff;
+		if (!idleLive) {
+			rendersSeen = r;
+			showFrame(*s, a, target, xfActive && target == prevShown && a == shownAngle);
+		}
 	}
 	if (holdEmit && shownFrame == target && cur.valid) {
 		const int64_t nf = target + 1;
@@ -667,6 +682,15 @@ bool PlaybackChannel::decodeTo(Session &s, int a, int64_t target, Pic &out)
 	int64_t actual = 0;
 	if (!rec->read(target, buf, actual))
 		return false;
+	if (countDecodes) {
+		static uint64_t lastLog = 0;
+		const uint64_t n = ++g_decodes, now = os_gettime_ns();
+		if (now - lastLog > 5000000000ull) {
+			if (lastLog)
+				blog(LOG_INFO, "[ReplayDeck] decodificações do replay: %llu", (unsigned long long)n);
+			lastLog = now;
+		}
+	}
 	const size_t size = buf.size();
 	buf.resize(size + AV_INPUT_BUFFER_PADDING_SIZE, 0);
 

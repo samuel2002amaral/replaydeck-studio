@@ -29,6 +29,7 @@ add_executable(replaydeck-studio WIN32
   src/crash.cpp src/crash.hpp
   src/pack.cpp src/pack.hpp
   src/appvmix.cpp src/appvmix.hpp
+  src/thumbs.cpp src/thumbs.hpp
   src/main-window.cpp src/main-window.hpp
   src/replay-host.cpp src/replay-host.hpp
   src/audio-mixer.cpp src/audio-mixer.hpp

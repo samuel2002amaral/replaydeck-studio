@@ -143,6 +143,8 @@ static uint32_t rs_height(void *data)
 static void rs_render(void *data, gs_effect_t *)
 {
 	auto *rs = static_cast<ReplaySource *>(data);
+	if (rs->channel)
+		rs->channel->noteRender();
 	if (!rs->frames)
 		return;
 	const uint32_t w = obs_source_get_width(rs->frames), h = obs_source_get_height(rs->frames);
