@@ -150,7 +150,7 @@ QDialogButtonBox QPushButton { min-width: 90px; min-height: 22px; }
 #dialogTitle { font-size: 12pt; font-weight: 700; color: #ffffff; }
 #addNewButton { min-height: 48px; background: transparent; border: 1px dashed #4b5568; border-radius: 6px; font-size: 10pt; color: #e6eaf0; }
 #addNewButton:hover { background: #161c28; border-color: #2563eb; }
-#existingCard { background: #222833; border: 1px solid #363e4c; border-radius: 6px; padding: 0; text-align: left; }
+#existingCard { background: #222833; border: 1px solid #363e4c; border-radius: 6px; padding: 0; text-align: left; min-height: 126px; max-height: 126px; min-width: 178px; max-width: 178px; }
 #existingCard:hover { border-color: #4b5568; }
 #existingCard:checked { background: #172544; border-color: #2563eb; }
 #audioPlaceholder { background: #0f1217; border: 0; border-radius: 0; color: #a3acba; font-weight: 600; }

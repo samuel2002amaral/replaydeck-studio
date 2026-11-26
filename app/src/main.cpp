@@ -27,6 +27,7 @@
 #include "pack.hpp"
 #include "appvmix.hpp"
 #include "thumbs.hpp"
+#include "merge-transition.hpp"
 #include "mac-permissions.hpp"
 #include "layout-view.hpp"
 #include "style.hpp"
@@ -175,7 +176,10 @@ int main(int argc, char *argv[])
 	Engine::loadExtraModules = plugins::loadEnabled;
 	QString error;
 	Engine::onConfigDir = pack::applyPending; /* pacote importado de outro computador */
-	Engine::beforeProjectLoad = replayhost::registerTypes; /* entradas Replay A/B do projeto */
+	Engine::beforeProjectLoad = [] {
+		replayhost::registerTypes(); /* entradas Replay A/B do projeto */
+		merge::registerTypes();      /* transição Merge e entrada Programa (PGM) */
+	};
 	if (!Engine::get().start(error)) {
 		QMessageBox::critical(nullptr, "ReplayDeck Studio", "Não foi possível iniciar.\n\n" + error +
 								     "\n\nO arquivo de log está em config\\ReplayDeckStudio\\logs.");
@@ -493,6 +497,46 @@ int main(int argc, char *argv[])
 				     in ? obs_source_get_width(in->source) : 0, in ? obs_source_get_height(in->source) : 0);
 			});
 			QTimer::singleShot(4500, [&w] { w.close(); });
+		}
+		if (qEnvironmentVariableIsSet("RDS_SELFTEST_MERGE")) {
+			/* Merge: CAM em tela cheia -> LAYOUT com a CAM pequena no canto e o PGM no outro canto */
+			QTimer::singleShot(700, [] {
+				Engine &e = Engine::get();
+				while (!e.inputs().isEmpty())
+					e.removeInput(e.inputs().first()->id);
+				OBSDataAutoRelease im = obs_data_create();
+				obs_data_set_string(im, "file", qEnvironmentVariable("RDS_SELFTEST_MERGE").toUtf8().constData());
+				Input *cam = e.addInput("image_source", "CAM", im);
+				OBSDataAutoRelease b = obs_data_create();
+				obs_data_set_int(b, "color", 0xFF603010);
+				Input *lay = e.addInput("color_source_v3", "LAYOUT", b);
+				Input *pgm = e.addInput("rds_program", "PGM");
+				e.setLayer(lay->id, 1, cam->id);
+				ItemPos p;
+				p.zoom = 0.4;
+				p.panX = 0.5;
+				p.panY = -0.5;
+				e.setLayerPosition(lay->id, 1, p);
+				if (pgm) {
+					e.setLayer(lay->id, 2, pgm->id);
+					ItemPos q;
+					q.zoom = 0.3;
+					q.panX = -0.6;
+					q.panY = 0.6;
+					e.setLayerPosition(lay->id, 2, q);
+				}
+				e.cutTo(cam->id);
+				e.setPreview(lay->id);
+				blog(LOG_INFO, "[teste-merge] pgm=%d", pgm != nullptr);
+			});
+			QTimer::singleShot(2500, [] {
+				QString err;
+				const bool ok = runFunction("Merge", QString(), "4000", &err);
+				blog(LOG_INFO, "[teste-merge] merge ok=%d %s", ok, err.toUtf8().constData());
+			});
+			QTimer::singleShot(4500, [] { QProcess::execute("import", {"-window", "root", "/tmp/merge-meio.png"}); });
+			QTimer::singleShot(9000, [] { QProcess::execute("import", {"-window", "root", "/tmp/merge-fim.png"}); });
+			QTimer::singleShot(9500, [] { qApp->quit(); });
 		}
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST_LAYERS")) {
 			/* abas Posição e Camadas: CÂMERA com o PLACAR como camada 1; PLACAR menor no alto */
@@ -1105,6 +1149,17 @@ int main(int argc, char *argv[])
 				if (auto *list = d->findChild<QListWidget *>("typeList"))
 					list->setCurrentRow(qEnvironmentVariableIntValue("RDS_SELFTEST_ROW"));
 			});
+			QTimer::singleShot(2400, [] {
+				for (QWidget *top : QApplication::topLevelWidgets())
+					for (QWidget *c : top->findChildren<QWidget *>("existingCard")) {
+						const QRect g = c->geometry();
+						QWidget *t = c->findChild<ThumbView *>();
+						blog(LOG_INFO, "[teste-add] cartão %dx%d+%d+%d min %d max %d pai %s %dx%d miniatura %dx%d", g.width(),
+						     g.height(), g.x(), g.y(), c->minimumHeight(), c->maximumHeight(),
+						     c->parentWidget()->metaObject()->className(), c->parentWidget()->width(),
+						     c->parentWidget()->height(), t ? t->width() : -1, t ? t->height() : -1);
+					}
+			});
 			QTimer::singleShot(2500, [] { QProcess::execute("import", {"-window", "root", qEnvironmentVariable("RDS_SELFTEST_ADD")}); });
 			QTimer::singleShot(3000, [&w] { w.close(); });
 		}
@@ -1114,6 +1169,7 @@ int main(int argc, char *argv[])
 		Playlist::get().stop();
 		AppVmix::get().stop();
 		ThumbView::shutdown();
+		merge::shutdown();
 		VmixApi::get().shutdown();
 		Shortcuts::get().shutdown();
 		VirtualCam::get().shutdown();

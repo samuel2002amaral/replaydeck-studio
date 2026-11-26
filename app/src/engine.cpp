@@ -265,6 +265,7 @@ void Engine::stop()
 	clearTransitions();
 	cutTr = nullptr;
 	fadeTr = nullptr;
+	mergeTr = nullptr;
 	blackScene = nullptr;
 	audioBed = nullptr;
 	activeTr = nullptr;
@@ -1128,6 +1129,10 @@ obs_source_t *Engine::transitionFor(TransitionKind kind)
 		StudioTransition *st = nthTransition(1, true);
 		return st ? st->source.Get() : fadeTr.Get();
 	}
+	case TransitionKind::Merge:
+		if (!mergeTr)
+			mergeTr = obs_source_create_private("rds_merge_transition", "Merge", nullptr);
+		return mergeTr ? mergeTr.Get() : fadeTr.Get();
 	default:
 		return fadeTr;
 	}
@@ -1225,7 +1230,8 @@ QString Engine::transitionTypeName(const char *type)
 	} names[] = {{"obs_stinger_transition", "Stinger"}, {"rds_gt_stinger", "Stinger GT"}, {"fade_transition", "Fade"},
 		     {"slide_transition", "Deslizar"},        {"swipe_transition", "Varrer"},
 		     {"wipe_transition", "Luma wipe"},         {"fade_to_color_transition", "Fade para cor"},
-		     {"cut_transition", "Corte"}};
+		     {"cut_transition", "Corte"},
+		     {"rds_merge_transition", "Merge"}};
 	for (auto &n : names)
 		if (type && strcmp(type, n.id) == 0)
 			return QString::fromUtf8(n.label);

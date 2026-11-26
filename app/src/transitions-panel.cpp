@@ -84,6 +84,7 @@ static const struct {
 	{"wipe_transition", "Luma wipe", "Revela a nova imagem com um desenho (círculo, barras, relógio...)"},
 	{"fade_to_color_transition", "Fade para cor", "Passa por uma cor (preto, branco...) no meio"},
 	{"fade_transition", "Fade", "Fade com outra duração (ex.: um fade lento)"},
+	{"rds_merge_transition", "Merge", "O que está nas duas entradas se move para o lugar novo (como no vMix)"},
 };
 
 TransitionsPanel::TransitionsPanel(QWidget *parent) : QWidget(parent)

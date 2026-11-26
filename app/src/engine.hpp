@@ -83,7 +83,7 @@ struct InputColor {
 const QList<InputColor> &inputColors();
 QString inputColorHex(const QString &key); /* cor do cabeçalho (padrão se vazio) */
 
-enum class TransitionKind { Cut, Fade, Stinger, FadeToBlack };
+enum class TransitionKind { Cut, Fade, Stinger, FadeToBlack, Merge };
 
 /* transição criada pelo operador (aba Transições): stinger, deslizar, varrer, luma... */
 struct StudioTransition {
@@ -254,7 +254,7 @@ private:
 	bool started = false;
 	bool manual = false;
 
-	OBSSourceAutoRelease cutTr, fadeTr;
+	OBSSourceAutoRelease cutTr, fadeTr, mergeTr; /* merge: criada na 1ª vez (tipo do programa) */
 	QVector<StudioTransition *> trList;
 	int nextTrId = 1;
 	OBSSourceAutoRelease blackScene;

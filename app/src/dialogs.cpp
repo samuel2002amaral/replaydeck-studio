@@ -1,4 +1,5 @@
 #include "dialogs.hpp"
+#include "thumbs.hpp"
 #include "engine.hpp"
 #include "properties-view.hpp"
 #include "video-display.hpp"
@@ -229,6 +230,7 @@ static const TypeDef typeDefs[] = {
 	{"image_source", "Imagem"},
 	{"slideshow", "Sequência de imagens"},
 	{"browser_source", "Página web (navegador)"},
+	{"rds_program", "Programa (PGM) — o que está no ar"},
 	{"instant_replay_gt", "Título GT (.gtzip do vMix)"},
 	{"text_gdiplus", "Texto"},
 	{"text_ft2_source", "Texto"},
@@ -341,8 +343,8 @@ AddInputDialog::AddInputDialog(QWidget *parent) : QDialog(parent)
 	types->setTextElideMode(Qt::ElideRight);
 	for (const TypeDef &t : typeDefs) {
 		const QString latest = latestType(t.id);
-		if (latest.isEmpty())
-			continue;
+		if (latest.isEmpty() || typeLabels.contains(QString::fromUtf8(t.label)))
+			continue; /* não existe aqui, ou já tem um com o mesmo nome (ex.: dois "Texto" no Windows) */
 		typeIds << latest;
 		typeLabels << QString::fromUtf8(t.label);
 		types->addItem(new QListWidgetItem(inputTypeIcon(latest), QString::fromUtf8(t.label)));
@@ -462,7 +464,9 @@ void AddInputDialog::selectType(int row)
 		auto *cv = new QVBoxLayout(card);
 		cv->setContentsMargins(5, 5, 5, 5);
 		cv->setSpacing(4);
-		auto *thumb = new VideoDisplay;
+		/* miniatura como imagem (não é uma janela nativa: dentro de botão com rolagem, a tela de
+		 * vídeo nativa vazava para fora do cartão no Windows) */
+		auto *thumb = new ThumbView;
 		thumb->setFixedSize(168, 94);
 		thumb->setAttribute(Qt::WA_TransparentForMouseEvents);
 		thumb->showSource(in->scene);

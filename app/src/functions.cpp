@@ -41,6 +41,7 @@ const QList<FunctionDef> &functionList()
 		/* transições */
 		{"Cut", "Transição", "Corte: a Prévia vai para o Programa", false, false},
 		{"Fade", "Transição", "Fade: a Prévia vai para o Programa", false, true},
+		{"Merge", "Transição", "Merge: a Prévia vai para o Programa movendo o que as duas têm em comum", false, true},
 		{"QuickPlay", "Transição", "Entrada direto para o Programa, com fade", true, false},
 		{"ActiveInput", "Transição", "Entrada direto para o Programa (corte)", true, false},
 		{"SetFader", "Transição", "T-bar (Value 0 a 255; 255 completa)", false, true},
@@ -873,7 +874,9 @@ bool runFunction(const QString &name, const QString &inputSpec, const QString &v
 			return fail(n + ": 1 a 4");
 		(n.startsWith("SetDynamicInput") ? g_dynInput : g_dynValue)[k] = value;
 	} else if (n == "Merge") {
-		e.transition(TransitionKind::Fade);
+		if (v > 0)
+			e.setTransitionMs((int)v);
+		e.transition(TransitionKind::Merge);
 	} else if (n.startsWith("SetTransitionDuration") && n.size() > 21) {
 		const int k = n.right(1).toInt();
 		if (StudioTransition *t = e.nthTransition(k, false))

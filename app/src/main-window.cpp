@@ -238,9 +238,12 @@ QWidget *MainWindow::buildTransitions()
 	connect(cut, &QPushButton::clicked, this, [&e] { e.transition(TransitionKind::Cut); });
 	auto *fade = transButton("Fade", "Prévia para o programa com fade");
 	connect(fade, &QPushButton::clicked, this, [&e] { e.transition(TransitionKind::Fade); });
+	auto *merge = transButton("Merge", "Prévia para o programa com Merge: o que está nas duas entradas se move\n"
+					   "para o lugar novo (ex.: a câmera em tela cheia encolhe até a camada do canto)");
+	connect(merge, &QPushButton::clicked, this, [&e] { e.transition(TransitionKind::Merge); });
 	ftbBtn = transButton("FTB", "Fade para o preto (e volta)");
 	connect(ftbBtn, &QPushButton::clicked, this, [&e] { e.transition(TransitionKind::FadeToBlack); });
-	for (QPushButton *b : {quick, cut, fade})
+	for (QPushButton *b : {quick, cut, fade, merge})
 		v->addWidget(b);
 	/* stingers e outras transições criadas na aba Transições */
 	userTrBox = new QVBoxLayout;
