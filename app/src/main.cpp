@@ -498,6 +498,35 @@ int main(int argc, char *argv[])
 			});
 			QTimer::singleShot(4500, [&w] { w.close(); });
 		}
+		if (qEnvironmentVariableIsSet("RDS_SELFTEST_PGMNOME")) {
+			/* SetLayer 1,PGM pega a câmera que está no ar; OverlayInput3 liga e desliga */
+			QTimer::singleShot(700, [] {
+				Engine &e = Engine::get();
+				while (!e.inputs().isEmpty())
+					e.removeInput(e.inputs().first()->id);
+				OBSDataAutoRelease a = obs_data_create();
+				obs_data_set_int(a, "color", 0xFF2020C0);
+				Input *arg = e.addInput("color_source_v3", "ARGENTINA", a);
+				OBSDataAutoRelease b = obs_data_create();
+				obs_data_set_int(b, "color", 0xFF20A040);
+				Input *cam = e.addInput("color_source_v3", "CAM 1", b);
+				OBSDataAutoRelease c = obs_data_create();
+				obs_data_set_int(c, "color", 0xFF603010);
+				Input *l = e.addInput("color_source_v3", "ANUNCIO EM L", c);
+				QString err;
+				e.cutTo(arg->id);
+				bool ok = runFunction("SetLayer", "ANUNCIO EM L", "1,PGM", &err) && runFunction("OverlayInput3", "ANUNCIO EM L", "", &err);
+				const bool r1 = l->layers[0].inputId == arg->id && e.overlay(3) == l->id;
+				ok = runFunction("SetLayer", "ANUNCIO EM L", "1,PGM", &err) && runFunction("OverlayInput3", "ANUNCIO EM L", "", &err) && ok;
+				const bool r2 = e.overlay(3) == 0;
+				e.cutTo(cam->id);
+				ok = runFunction("SetLayer", "ANUNCIO EM L", "1,PGM", &err) && ok;
+				const bool r3 = l->layers[0].inputId == cam->id;
+				blog(LOG_INFO, "[teste-pgmnome] funcoes=%d camada_argentina+ligou=%d desligou=%d camada_cam1=%d %s", ok, r1, r2, r3,
+				     err.toUtf8().constData());
+				QTimer::singleShot(500, [] { qApp->quit(); });
+			});
+		}
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST_MERGE")) {
 			/* Merge: CAM em tela cheia -> LAYOUT com a CAM pequena no canto e o PGM no outro canto */
 			QTimer::singleShot(700, [] {

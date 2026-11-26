@@ -320,6 +320,13 @@ static Input *resolveInput(const QString &spec)
 	for (Input *in : e.inputs())
 		if (in->name.compare(s, Qt::CaseInsensitive) == 0)
 			return in;
+	/* palavras especiais (uma entrada com esse nome vale primeiro): a que está no ar / na prévia,
+	 * para um script servir para qualquer câmera (ex.: SetLayer Value=1,PGM) */
+	const QString up = s.toUpper();
+	if (up == "PGM" || up == "PROGRAMA" || up == "PROGRAM")
+		return e.input(e.programId());
+	if (up == "PVW" || up == "PREVIA" || up == "PRÉVIA" || up == "PREVIEW")
+		return e.input(e.previewId());
 	return nullptr;
 }
 
@@ -944,9 +951,9 @@ bool runFunction(const QString &name, const QString &inputSpec, const QString &v
 		const QString rest = comma < 0 ? QString() : value.mid(comma + 1).trimmed();
 		if (n == "SetLayer" || n == "SetMultiViewOverlay") {
 			int target = 0;
-			const QString up = rest.toUpper();
-			if (up == "PGM" || up == "PROGRAMA" || up == "PROGRAM" || up == "OUTPUT") {
-				e.setLayer(in->id, idx - 1, PROGRAM_LAYER); /* o Programa direto como camada */
+			/* OUTPUT = a camada "★ Programa (PGM)" (a saída inteira); PGM/PROGRAMA = a câmera no ar */
+			if (rest.compare("OUTPUT", Qt::CaseInsensitive) == 0) {
+				e.setLayer(in->id, idx - 1, PROGRAM_LAYER);
 				return true;
 			}
 			if (!rest.isEmpty()) {
