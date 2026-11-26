@@ -267,6 +267,8 @@ void Engine::stop()
 	fadeTr = nullptr;
 	mergeTr = nullptr;
 	programLayer = nullptr;
+	for (int ch = 1; ch <= 4; ch++)
+		ovTr[ch] = nullptr;
 	blackScene = nullptr;
 	audioBed = nullptr;
 	activeTr = nullptr;
@@ -1444,16 +1446,70 @@ int Engine::overlay(int channel) const
 	return channel >= 1 && channel <= 4 ? ov[channel] : 0;
 }
 
+void Engine::setOverlayFx(int channel, OverlayFx fx)
+{
+	if (channel < 1 || channel > 4 || ovFx[channel] == fx)
+		return;
+	ovFx[channel] = fx;
+	emit busChanged();
+}
+
+/* a transição do canal, do tipo escolhido (Fade ou Merge); recriada se o tipo mudou */
+obs_source_t *Engine::overlayTransition(int channel)
+{
+	const char *type = ovFx[channel] == OverlayFx::Merge ? "rds_merge_transition" : "fade_transition";
+	if (ovTr[channel] && strcmp(obs_source_get_unversioned_id(ovTr[channel]), type) != 0) {
+		OBSSourceAutoRelease cur = obs_get_output_source(channel);
+		if (cur.Get() == ovTr[channel].Get())
+			obs_set_output_source(channel, nullptr);
+		ovTr[channel] = nullptr;
+	}
+	if (!ovTr[channel]) {
+		ovTr[channel] = obs_source_create_private(type, QString("Overlay %1").arg(channel).toUtf8().constData(), nullptr);
+	}
+	return ovTr[channel];
+}
+
+/* merge no overlay: o lado que é o programa não toca de novo (ele já sai no canal 0) */
+static void setOverlayMute(obs_source_t *tr, bool a, bool b)
+{
+	if (strcmp(obs_source_get_unversioned_id(tr), "rds_merge_transition") != 0)
+		return;
+	OBSDataAutoRelease st = obs_data_create();
+	obs_data_set_bool(st, "mudo_a", a);
+	obs_data_set_bool(st, "mudo_b", b);
+	obs_source_update(tr, st);
+}
+
 void Engine::toggleOverlay(int channel, int id)
 {
 	if (channel < 1 || channel > 4)
 		return;
 	const unsigned gen = ++ovGen[channel];
+	const OverlayFx fx = ovFx[channel];
+	OBSSourceAutoRelease curOut = obs_get_output_source(channel);
+	Input *prog = input(pgm);
+	obs_source_t *progScene = prog && !ftb ? prog->scene.Get() : nullptr;
 	if (ov[channel] == id || !input(id)) {
 		Input *was = input(ov[channel]);
 		const int wait = was && beforeOverlayOff ? beforeOverlayOff(was->source) : 0;
 		ov[channel] = 0;
-		if (wait > 0) {
+		if (wait <= 0 && fx != OverlayFx::Cut && curOut && curOut.Get() == ovTr[channel].Get()) {
+			/* sai com fade (para o nada) ou merge (de volta para o programa) e só então limpa */
+			obs_source_t *tr = ovTr[channel];
+			setOverlayMute(tr, false, fx == OverlayFx::Merge); /* volta para o programa: ele já toca no canal 0 */
+			const bool started = obs_transition_start(tr, OBS_TRANSITION_MODE_AUTO, (uint32_t)durationMs,
+								  fx == OverlayFx::Merge ? progScene : nullptr);
+			blog(LOG_INFO, "overlay %d sai com %s (%d ms) %s", channel, fx == OverlayFx::Merge ? "merge" : "fade",
+			     durationMs, started ? "" : "— não começou");
+			QTimer::singleShot(durationMs + 80, this, [this, channel, gen] {
+				if (ovGen[channel] != gen)
+					return;
+				obs_set_output_source(channel, nullptr);
+				if (ovTr[channel])
+					obs_transition_set(ovTr[channel], nullptr);
+			});
+		} else if (wait > 0) {
 			/* continua na tela até a animação de saída acabar */
 			QTimer::singleShot(wait, this, [this, channel, gen] {
 				if (ovGen[channel] == gen)
@@ -1462,8 +1518,19 @@ void Engine::toggleOverlay(int channel, int id)
 		} else {
 			obs_set_output_source(channel, nullptr);
 		}
-	} else {
+	} else if (fx == OverlayFx::Cut || !overlayTransition(channel)) {
 		obs_set_output_source(channel, input(id)->scene);
+		ov[channel] = id;
+	} else {
+		/* entra com fade (do nada) ou merge (do programa: o que as duas têm em comum se move) */
+		obs_source_t *tr = ovTr[channel];
+		const bool showing = curOut && curOut.Get() == tr && ov[channel];
+		setOverlayMute(tr, fx == OverlayFx::Merge && !showing, false); /* sai do programa: ele já toca no canal 0 */
+		if (!showing) {
+			obs_transition_set(tr, fx == OverlayFx::Merge ? progScene : nullptr);
+			obs_set_output_source(channel, tr);
+		}
+		obs_transition_start(tr, OBS_TRANSITION_MODE_AUTO, (uint32_t)durationMs, input(id)->scene);
 		ov[channel] = id;
 	}
 	emit busChanged();
@@ -1476,6 +1543,8 @@ void Engine::clearAll()
 	for (int ch = 1; ch <= 4; ch++) {
 		obs_set_output_source(ch, nullptr);
 		ov[ch] = 0;
+		if (ovTr[ch])
+			obs_transition_set(ovTr[ch], nullptr);
 	}
 	if (activeTr)
 		obs_transition_set(activeTr, nullptr);
@@ -1575,6 +1644,16 @@ bool Engine::saveProject(const QString &path)
 	obs_data_set_int(root, "previa", pvw);
 	obs_data_set_int(root, "programa", pgm);
 	obs_data_set_int(root, "transicao_ms", durationMs);
+	{
+		OBSDataArrayAutoRelease ofx = obs_data_array_create();
+		for (int ch = 1; ch <= 4; ch++) {
+			OBSDataAutoRelease o = obs_data_create();
+			obs_data_set_int(o, "canal", ch);
+			obs_data_set_int(o, "tipo", (int)ovFx[ch]);
+			obs_data_array_push_back(ofx, o);
+		}
+		obs_data_set_array(root, "overlay_transicoes", ofx);
+	}
 	OBSDataArrayAutoRelease trs = obs_data_array_create();
 	for (StudioTransition *t : trList) {
 		OBSDataAutoRelease o = obs_data_create();
@@ -1671,6 +1750,15 @@ bool Engine::loadProject(const QString &path)
 		setMasterVolume((float)obs_data_get_double(root, "volume_geral"));
 	if (obs_data_has_user_value(root, "transicao_ms"))
 		setTransitionMs((int)obs_data_get_int(root, "transicao_ms"));
+	{
+		OBSDataArrayAutoRelease ofx = obs_data_get_array(root, "overlay_transicoes");
+		for (size_t i = 0; i < obs_data_array_count(ofx); i++) {
+			OBSDataAutoRelease o = obs_data_array_item(ofx, i);
+			const int ch = (int)obs_data_get_int(o, "canal"), t = (int)obs_data_get_int(o, "tipo");
+			if (ch >= 1 && ch <= 4 && t >= 0 && t <= 2)
+				ovFx[ch] = (OverlayFx)t;
+		}
+	}
 	clearTransitions();
 	{
 		OBSDataArrayAutoRelease trs = obs_data_get_array(root, "transicoes");

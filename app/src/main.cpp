@@ -531,12 +531,29 @@ int main(int argc, char *argv[])
 			});
 			QTimer::singleShot(2500, [] {
 				QString err;
+				if (qEnvironmentVariableIsSet("RDS_SELFTEST_MERGE_OV")) {
+					/* overlay 3 com Merge: o programa (CAM) encolhe para a janela do LAYOUT */
+					Engine &e = Engine::get();
+					e.setTransitionMs(4000);
+					e.setOverlayFx(3, OverlayFx::Merge);
+					e.toggleOverlay(3, e.previewId());
+					blog(LOG_INFO, "[teste-merge] overlay3=%d", e.overlay(3));
+					QTimer::singleShot(4600, [] { Engine::get().toggleOverlay(3, Engine::get().overlay(3)); });
+					return;
+				}
 				const bool ok = runFunction("Merge", QString(), "4000", &err);
 				blog(LOG_INFO, "[teste-merge] merge ok=%d %s", ok, err.toUtf8().constData());
 			});
 			QTimer::singleShot(4500, [] { QProcess::execute("import", {"-window", "root", "/tmp/merge-meio.png"}); });
-			QTimer::singleShot(9000, [] { QProcess::execute("import", {"-window", "root", "/tmp/merge-fim.png"}); });
-			QTimer::singleShot(9500, [] { qApp->quit(); });
+			QTimer::singleShot(7000, [] { QProcess::execute("import", {"-window", "root", "/tmp/merge-fim.png"}); });
+			QTimer::singleShot(8200, [] {
+				OBSSourceAutoRelease o = obs_get_output_source(3);
+				blog(LOG_INFO, "[teste-merge] saida3=%s t=%.2f", o ? obs_source_get_name(o) : "-",
+				     o ? obs_transition_get_time(o) : -1.0f);
+				QProcess::execute("import", {"-window", "root", "/tmp/merge-volta.png"});
+			});
+			QTimer::singleShot(12500, [] { QProcess::execute("import", {"-window", "root", "/tmp/merge-depois.png"}); });
+			QTimer::singleShot(13000, [] { qApp->quit(); });
 		}
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST_LAYERS")) {
 			/* abas Posição e Camadas: CÂMERA com o PLACAR como camada 1; PLACAR menor no alto */

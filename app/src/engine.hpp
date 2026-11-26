@@ -87,6 +87,8 @@ const QList<InputColor> &inputColors();
 QString inputColorHex(const QString &key); /* cor do cabeçalho (padrão se vazio) */
 
 enum class TransitionKind { Cut, Fade, Stinger, FadeToBlack, Merge };
+/* como o overlay entra e sai (cada canal 1-4 tem a sua, como no vMix) */
+enum class OverlayFx { Cut = 0, Fade = 1, Merge = 2 };
 
 /* transição criada pelo operador (aba Transições): stinger, deslizar, varrer, luma... */
 struct StudioTransition {
@@ -201,6 +203,8 @@ public:
 	/* overlays 1..4 (por cima do programa) */
 	int overlay(int channel) const;
 	void toggleOverlay(int channel, int id);
+	OverlayFx overlayFx(int channel) const { return channel >= 1 && channel <= 4 ? ovFx[channel] : OverlayFx::Cut; }
+	void setOverlayFx(int channel, OverlayFx fx);
 
 	/* projeto */
 	bool saveProject(const QString &path);
@@ -252,6 +256,9 @@ private:
 	int pvw = 0, pgm = 0;
 	int ov[5] = {0, 0, 0, 0, 0};
 	unsigned ovGen[5] = {0, 0, 0, 0, 0}; /* muda a cada troca: a saída animada só limpa se nada mudou */
+	OverlayFx ovFx[5] = {OverlayFx::Cut, OverlayFx::Cut, OverlayFx::Cut, OverlayFx::Cut, OverlayFx::Cut};
+	OBSSourceAutoRelease ovTr[5]; /* transição de cada canal de overlay (Fade/Merge) */
+	obs_source_t *overlayTransition(int channel);
 	int durationMs = 500;
 	bool ftb = false;
 	bool started = false;

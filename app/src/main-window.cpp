@@ -260,7 +260,28 @@ QWidget *MainWindow::buildTransitions()
 		ovBtn[ch] = new QPushButton(QString::number(ch));
 		ovBtn[ch]->setObjectName("ovButton");
 		ovBtn[ch]->setFixedHeight(22);
-		ovBtn[ch]->setToolTip(QString("Overlay %1: liga/desliga a entrada da prévia por cima do programa").arg(ch));
+		ovBtn[ch]->setToolTip(QString("Overlay %1: liga/desliga a entrada da prévia por cima do programa\n"
+					      "Botão direito: como entra e sai (Corte, Fade ou Merge)")
+					      .arg(ch));
+		ovBtn[ch]->setContextMenuPolicy(Qt::CustomContextMenu);
+		connect(ovBtn[ch], &QWidget::customContextMenuRequested, this, [this, &e, ch](const QPoint &pos) {
+			QMenu menu(this);
+			menu.addAction(QString("Overlay %1 entra e sai com:").arg(ch))->setEnabled(false);
+			const struct {
+				OverlayFx fx;
+				const char *label;
+			} opts[] = {{OverlayFx::Cut, "Corte (na hora)"},
+				    {OverlayFx::Fade, "Fade"},
+				    {OverlayFx::Merge, "Merge — o que está no programa e no overlay se move (ex.: jogo encolhendo para o L)"}};
+			for (const auto &o : opts) {
+				QAction *a = menu.addAction(QString::fromUtf8(o.label), this, [&e, ch, fx = o.fx] { e.setOverlayFx(ch, fx); });
+				a->setCheckable(true);
+				a->setChecked(e.overlayFx(ch) == o.fx);
+			}
+			menu.addSeparator();
+			menu.addAction(QString("Duração: a mesma das transições (%1 ms)").arg(e.transitionMs()))->setEnabled(false);
+			menu.exec(ovBtn[ch]->mapToGlobal(pos));
+		});
 		connect(ovBtn[ch], &QPushButton::clicked, this, [&e, ch] {
 			const int cur = e.overlay(ch);
 			e.toggleOverlay(ch, cur ? cur : e.previewId());
@@ -681,6 +702,10 @@ void MainWindow::updateBus()
 	for (int ch = 1; ch <= 4; ch++) {
 		const int id = e.overlay(ch);
 		ovBtn[ch]->setProperty("on", id != 0);
+		{
+			const OverlayFx fx = Engine::get().overlayFx(ch);
+			ovBtn[ch]->setText(QString::number(ch) + (fx == OverlayFx::Merge ? " M" : fx == OverlayFx::Fade ? " F" : ""));
+		}
 		repolish(ovBtn[ch]);
 		if (Input *in = e.input(id))
 			ovs << QString("%1: %2").arg(ch).arg(in->name);

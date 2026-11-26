@@ -76,6 +76,8 @@ struct Merge {
 	gs_eparam_t *pImage = nullptr, *pOpacity = nullptr;
 	std::vector<gs_texrender_t *> pool;
 	size_t poolUsed = 0;
+	/* num canal de overlay o programa já toca no canal 0: o lado que é o programa fica mudo */
+	std::atomic<bool> muteA{false}, muteB{false};
 };
 
 } // namespace
@@ -199,15 +201,18 @@ static void drawElem(Merge *m, const Elem &e, const struct matrix4 &n, float cl,
 	gs_enable_framebuffer_srgb(prevSrgb);
 }
 
+static void mergeUpdate(void *data, obs_data_t *settings);
+
 static const char *mergeName(void *)
 {
 	return "Merge";
 }
 
-static void *mergeCreate(obs_data_t *, obs_source_t *source)
+static void *mergeCreate(obs_data_t *settings, obs_source_t *source)
 {
 	auto *m = new Merge;
 	m->source = source;
+	mergeUpdate(m, settings);
 	obs_enter_graphics();
 	char *err = nullptr;
 	m->fx = gs_effect_create(kMergeEffect, "rds_merge.effect", &err);
@@ -238,6 +243,12 @@ static void mergeRender(void *data, gs_effect_t *)
 {
 	auto *m = static_cast<Merge *>(data);
 	const float t = obs_transition_get_time(m->source);
+	if (t >= 1.0f) {
+		/* terminou (ou parada): o motor desenha a de destino e encerra a transição. Sem isso
+		 * ela ficaria "andando" para sempre e a próxima não começaria do zero */
+		obs_transition_video_render_direct(m->source, OBS_TRANSITION_SOURCE_B);
+		return;
+	}
 	obs_source_t *a = obs_transition_get_source(m->source, OBS_TRANSITION_SOURCE_A);
 	obs_source_t *b = obs_transition_get_source(m->source, OBS_TRANSITION_SOURCE_B);
 
@@ -295,14 +306,21 @@ static void mergeRender(void *data, gs_effect_t *)
 	obs_source_release(b);
 }
 
-static float mixA(void *, float t)
+static float mixA(void *data, float t)
 {
-	return 1.0f - t;
+	return static_cast<Merge *>(data)->muteA ? 0.0f : 1.0f - t;
 }
 
-static float mixB(void *, float t)
+static float mixB(void *data, float t)
 {
-	return t;
+	return static_cast<Merge *>(data)->muteB ? 0.0f : t;
+}
+
+static void mergeUpdate(void *data, obs_data_t *settings)
+{
+	auto *m = static_cast<Merge *>(data);
+	m->muteA = obs_data_get_bool(settings, "mudo_a");
+	m->muteB = obs_data_get_bool(settings, "mudo_b");
 }
 
 static bool mergeAudio(void *data, uint64_t *ts_out, struct obs_source_audio_mix *audio, uint32_t mixers,
@@ -399,6 +417,7 @@ void registerTypes()
 	tr.get_name = mergeName;
 	tr.create = mergeCreate;
 	tr.destroy = mergeDestroy;
+	tr.update = mergeUpdate;
 	tr.video_render = mergeRender;
 	tr.audio_render = mergeAudio;
 	tr.video_get_color_space = mergeSpace;
