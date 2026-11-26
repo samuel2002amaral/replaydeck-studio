@@ -38,6 +38,7 @@ private:
 	void refresh(); /* só redesenha os campos com as opções que já temos */
 	void addProperty(QFormLayout *form, obs_property_t *p);
 	void apply(obs_property_t *p);
+	void addEditableList(class QFormLayout *form, obs_property_t *p, const QString &label);
 
 	OBSWeakSourceAutoRelease weak;
 	OBSSourceAutoRelease tempSrc; /* Mac: as capturas só montam as opções com uma fonte de verdade */

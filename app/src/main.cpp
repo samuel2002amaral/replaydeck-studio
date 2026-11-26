@@ -46,6 +46,9 @@
 #include <QImage>
 #include <QFile>
 #include <QProcess>
+#include <QMimeData>
+#include <QDropEvent>
+#include <QUrl>
 #include <QScreen>
 #include <QGuiApplication>
 #include <QTcpSocket>
@@ -1069,8 +1072,30 @@ int main(int argc, char *argv[])
 				auto *d = new NewInputDialog(qEnvironmentVariable("RDS_SELFTEST_NEW"), "Teste", &w);
 				d->show();
 			});
-			QTimer::singleShot(2100, [] { QProcess::execute("import", {"-window", "root", qEnvironmentVariable("RDS_SELFTEST_SHOT")}); });
-			QTimer::singleShot(3500, [&w] { QApplication::closeAllWindows(); w.close(); });
+			if (qEnvironmentVariableIsSet("RDS_SELFTEST_NEW_FILES")) {
+				/* solta arquivos na lista editável como se viessem do Explorer */
+				QTimer::singleShot(2600, [] {
+					for (QWidget *top : QApplication::topLevelWidgets())
+						if (auto *list = top->findChild<QListWidget *>("editList")) {
+							auto *mime = new QMimeData;
+							QList<QUrl> urls;
+							for (const QString &f : qEnvironmentVariable("RDS_SELFTEST_NEW_FILES").split(';'))
+								urls << QUrl::fromLocalFile(f);
+							mime->setUrls(urls);
+							QDragEnterEvent enter(QPoint(10, 10), Qt::CopyAction, mime, Qt::LeftButton, Qt::NoModifier);
+							QApplication::sendEvent(list->viewport(), &enter);
+							QDropEvent ev(QPointF(10, 10), Qt::CopyAction, mime, Qt::LeftButton, Qt::NoModifier);
+							const bool ok = enter.isAccepted() && QApplication::sendEvent(list->viewport(), &ev);
+							blog(LOG_INFO, "[teste-lista] entregue=%d aceito=%d itens na lista: %d", ok,
+							     ev.isAccepted(), list->count());
+							break;
+						}
+				});
+			}
+			QTimer::singleShot(qEnvironmentVariableIsSet("RDS_SELFTEST_NEW_FILES") ? 4500 : 2100,
+					   [] { QProcess::execute("import", {"-window", "root", qEnvironmentVariable("RDS_SELFTEST_SHOT")}); });
+			QTimer::singleShot(qEnvironmentVariableIsSet("RDS_SELFTEST_NEW_FILES") ? 5500 : 3500,
+					   [&w] { QApplication::closeAllWindows(); w.close(); });
 		}
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST_ADD")) {
 			/* teste visual da janela Adicionar entrada (tipo pelo número da linha) */

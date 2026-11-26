@@ -24,6 +24,13 @@
 #include <QVBoxLayout>
 #include <QApplication>
 #include <QPointer>
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QInputDialog>
+#include <QListWidget>
+#include <QMimeData>
+#include <QUrl>
+#include <functional>
 
 #include <thread>
 
@@ -228,6 +235,181 @@ void PropertiesView::applyToSource(obs_source_t *source)
 static QString text(const char *s)
 {
 	return QString::fromUtf8(s ? s : "");
+}
+
+
+/* Lista editável (Sequência de imagens, playlist do VLC...): arrastar para reordenar e soltar
+ * arquivos do Explorer direto na lista. */
+namespace {
+class EditList : public QListWidget {
+public:
+	std::function<void(const QStringList &)> onFiles; /* arquivos soltos de fora */
+	std::function<void()> onReorder;
+	bool acceptFiles = false;
+	EditList()
+	{
+		setDragDropMode(QAbstractItemView::DragDrop);
+		setDefaultDropAction(Qt::MoveAction);
+		setSelectionMode(QAbstractItemView::ExtendedSelection);
+		setAcceptDrops(true);
+		setMinimumHeight(150);
+		setObjectName("editList");
+	}
+
+protected:
+	void dragEnterEvent(QDragEnterEvent *e) override
+	{
+		if (e->source() != this && acceptFiles && e->mimeData()->hasUrls())
+			e->acceptProposedAction();
+		else
+			QListWidget::dragEnterEvent(e);
+	}
+	void dragMoveEvent(QDragMoveEvent *e) override
+	{
+		if (e->source() != this && acceptFiles && e->mimeData()->hasUrls())
+			e->acceptProposedAction();
+		else
+			QListWidget::dragMoveEvent(e);
+	}
+	void dropEvent(QDropEvent *e) override
+	{
+		if (e->source() != this) {
+			QStringList files;
+			for (const QUrl &u : e->mimeData()->urls())
+				files << (u.isLocalFile() ? u.toLocalFile() : u.toString());
+			if (onFiles && !files.isEmpty())
+				onFiles(files);
+			e->acceptProposedAction();
+			return;
+		}
+		e->setDropAction(Qt::MoveAction);
+		QListWidget::dropEvent(e);
+		if (onReorder)
+			QTimer::singleShot(0, onReorder);
+	}
+};
+} // namespace
+
+static QString text(const char *s);
+
+void PropertiesView::addEditableList(QFormLayout *form, obs_property_t *p, const QString &label)
+{
+	const char *name = obs_property_name(p);
+	const auto kind = obs_property_editable_list_type(p);
+	const bool files = kind != OBS_EDITABLE_LIST_TYPE_STRINGS;
+	const bool urls = kind == OBS_EDITABLE_LIST_TYPE_FILES_AND_URLS;
+
+	auto *box = new QWidget;
+	auto *v = new QVBoxLayout(box);
+	v->setContentsMargins(0, 0, 0, 0);
+	auto *list = new EditList;
+	list->acceptFiles = files;
+	{
+		OBSDataArrayAutoRelease arr = obs_data_get_array(data, name);
+		const size_t n = obs_data_array_count(arr);
+		for (size_t i = 0; i < n; i++) {
+			OBSDataAutoRelease it = obs_data_array_item(arr, i);
+			auto *item = new QListWidgetItem(text(obs_data_get_string(it, "value")));
+			item->setFlags(item->flags() | Qt::ItemIsDragEnabled);
+			item->setToolTip(item->text());
+			list->addItem(item);
+		}
+	}
+	/* a lista na tela vira a lista da fonte (na mesma ordem) */
+	auto save = [this, list, p, name] {
+		OBSDataArrayAutoRelease arr = obs_data_array_create();
+		for (int i = 0; i < list->count(); i++) {
+			OBSDataAutoRelease it = obs_data_create();
+			obs_data_set_string(it, "value", list->item(i)->text().toUtf8().constData());
+			obs_data_set_bool(it, "selected", false);
+			obs_data_set_bool(it, "hidden", false);
+			obs_data_array_push_back(arr, it);
+		}
+		obs_data_set_array(data, name, arr);
+		apply(p);
+	};
+	auto addValues = [list, save](const QStringList &vals) {
+		for (const QString &s : vals) {
+			if (s.trimmed().isEmpty())
+				continue;
+			auto *item = new QListWidgetItem(s);
+			item->setToolTip(s);
+			list->addItem(item);
+		}
+		save();
+	};
+	list->onFiles = addValues;
+	list->onReorder = save;
+	v->addWidget(list);
+
+	auto *row = new QHBoxLayout;
+	auto button = [&](const QString &t, const QString &tip) {
+		auto *b = new QPushButton(t);
+		b->setToolTip(tip);
+		row->addWidget(b);
+		return b;
+	};
+	const QString filter = text(obs_property_editable_list_filter(p));
+	const QString start = text(obs_property_editable_list_default_path(p));
+	if (files) {
+		connect(button("+ Arquivos…", "Escolha uma ou várias imagens (Ctrl/Shift para várias)"), &QPushButton::clicked, this,
+			[this, filter, start, addValues] {
+				const QStringList f = QFileDialog::getOpenFileNames(this, "Escolher arquivos", start, filter);
+				if (!f.isEmpty())
+					addValues(f);
+			});
+		connect(button("+ Pasta…", "Todas as imagens da pasta, em ordem de nome"), &QPushButton::clicked, this,
+			[this, start, addValues] {
+				const QString d = QFileDialog::getExistingDirectory(this, "Escolher pasta", start);
+				if (!d.isEmpty())
+					addValues({d});
+			});
+	}
+	if (!files || urls) {
+		connect(button(files ? "+ Link…" : "+ Adicionar…", QString()), &QPushButton::clicked, this, [this, files, addValues] {
+			bool ok = false;
+			const QString t = QInputDialog::getText(this, files ? "Adicionar link" : "Adicionar",
+								files ? "Endereço (http://, rtsp://...):" : "Texto:",
+								QLineEdit::Normal, QString(), &ok);
+			if (ok && !t.trimmed().isEmpty())
+				addValues({t.trimmed()});
+		});
+	}
+	auto move = [list, save](int d) {
+		const int r = list->currentRow();
+		if (r < 0 || r + d < 0 || r + d >= list->count())
+			return;
+		QListWidgetItem *it = list->takeItem(r);
+		list->insertItem(r + d, it);
+		list->setCurrentRow(r + d);
+		save();
+	};
+	connect(button("▲", "Subir"), &QPushButton::clicked, this, [move] { move(-1); });
+	connect(button("▼", "Descer"), &QPushButton::clicked, this, [move] { move(1); });
+	connect(button("Remover", "Tira os itens selecionados da lista (o arquivo não é apagado)"), &QPushButton::clicked, this,
+		[list, save] {
+			const auto sel = list->selectedItems();
+			if (sel.isEmpty())
+				return;
+			for (QListWidgetItem *it : sel)
+				delete it;
+			save();
+		});
+	row->addStretch(1);
+	v->addLayout(row);
+	if (files) {
+		auto *hint = new QLabel("Dica: arraste imagens ou pastas do Explorer para a lista; arraste os itens para mudar a ordem.");
+		hint->setObjectName("muted");
+		hint->setWordWrap(true);
+		v->addWidget(hint);
+	}
+	box->setEnabled(obs_property_enabled(p));
+
+	auto *l = new QLabel(label);
+	l->setWordWrap(true);
+	l->setMinimumWidth(110);
+	l->setMaximumWidth(150);
+	form->addRow(l, box);
 }
 
 void PropertiesView::addProperty(QFormLayout *form, obs_property_t *p)
@@ -462,8 +644,11 @@ void PropertiesView::addProperty(QFormLayout *form, obs_property_t *p)
 		form->addRow(box);
 		return;
 	}
+	case OBS_PROPERTY_EDITABLE_LIST:
+		addEditableList(form, p, label);
+		return;
 	default:
-		return; /* tipos raros (fonte, lista editável...) ficam para depois */
+		return; /* tipos raros (fonte de letra, quadros por segundo) ficam para depois */
 	}
 
 	if (w) {
