@@ -11,6 +11,10 @@
 #include <QMessageBox>
 #include <QMenu>
 #include <QScreen>
+#include <QTimer>
+#include <QWindow>
+
+#include <obs.h>
 #include <QVBoxLayout>
 
 static QList<ExternalOutput *> g_outputs;
@@ -30,10 +34,7 @@ ExternalOutput::ExternalOutput(What w, int inputId, QScreen *screen) : QWidget(n
 	setWindowTitle("ReplayDeck Studio — " + description());
 
 	if (screen) {
-		/* tela cheia: sem bordas, ocupando o monitor escolhido */
-		setGeometry(screen->geometry());
-		setScreen(screen);
-		showFullScreen();
+		goFullScreen(screen, 0);
 	} else {
 		/* janela normal (com título): dá para mover, mudar o tamanho e fechar */
 		setMinimumSize(320, 180);
@@ -47,6 +48,48 @@ ExternalOutput::ExternalOutput(What w, int inputId, QScreen *screen) : QWidget(n
 			close();
 	});
 	refresh();
+}
+
+/* Tela cheia noutro monitor. No Windows, com escalas diferentes entre os monitores (100% e
+ * 150%), pedir a tela cheia antes da janela existir faz ela abrir no monitor principal. Por isso:
+ * cria a janela, prende ao monitor, ocupa a área dele e só então pede a tela cheia; depois confere
+ * e, se o sistema puxou para outro lugar, coloca de novo (sem bordas, do tamanho do monitor). */
+void ExternalOutput::goFullScreen(QScreen *screen, int attempt)
+{
+	if (!screen || !QGuiApplication::screens().contains(screen))
+		return;
+	const QRect g = screen->geometry();
+	if (!windowHandle())
+		create();
+	if (windowHandle())
+		windowHandle()->setScreen(screen);
+	if (attempt == 0) {
+		setGeometry(g);
+		show();
+	}
+	if (attempt < 2) {
+		move(g.topLeft());
+		resize(g.size());
+		showFullScreen();
+	} else {
+		/* último recurso: janela sem bordas exatamente sobre o monitor */
+		showNormal();
+		setGeometry(g);
+		raise();
+	}
+	QTimer::singleShot(400, this, [this, screen, attempt] {
+		if (!QGuiApplication::screens().contains(screen))
+			return;
+		const QRect want = screen->geometry();
+		const QRect got = frameGeometry();
+		const bool ok = window()->screen() == screen && got.contains(want.center());
+		blog(LOG_INFO, "[externo] %s em %s: janela %dx%d+%d+%d (monitor %dx%d+%d+%d) cheia=%d %s",
+		     description().toUtf8().constData(), screen->name().toUtf8().constData(), got.width(), got.height(),
+		     got.x(), got.y(), want.width(), want.height(), want.x(), want.y(), isFullScreen(),
+		     ok ? "ok" : "fora do lugar: corrigindo");
+		if (!ok && attempt < 2)
+			goFullScreen(screen, attempt + 1);
+	});
 }
 
 ExternalOutput::~ExternalOutput()
@@ -179,27 +222,34 @@ static QString screenLabel(QScreen *s, int index)
 		.arg(s == QGuiApplication::primaryScreen() ? "  · principal" : "");
 }
 
+void ExternalOutput::addScreenActions(QMenu *m, What w, int inputId, QWidget *parent)
+{
+	const QList<QScreen *> screens = QGuiApplication::screens();
+	QScreen *own = parent ? parent->window()->screen() : nullptr;
+	for (int i = 0; i < screens.size(); i++) {
+		QScreen *s = screens[i];
+		QString label = screenLabel(s, i);
+		if (s == own && screens.size() > 1)
+			label += "  · onde está o programa";
+		m->addAction(label, parent, [w, inputId, s, parent] {
+			/* a mesma tela do programa fica coberta: avisa como sair */
+			if (parent && parent->window()->screen() == s &&
+			    QMessageBox::question(parent, "Tela cheia",
+						  "Essa é a tela onde o programa está: ela vai ficar coberta.\n\n"
+						  "Para sair: Esc, duplo clique ou botão direito → Fechar.\n\nContinuar?") !=
+				    QMessageBox::Yes)
+				return;
+			new ExternalOutput(w, inputId, s);
+		});
+	}
+	m->addSeparator();
+	m->addAction("Numa janela", parent, [w, inputId] { new ExternalOutput(w, inputId, nullptr); });
+}
+
 void ExternalOutput::fillMenu(QMenu *menu, QWidget *parent)
 {
 	menu->clear();
-	const QList<QScreen *> screens = QGuiApplication::screens();
-	auto addTarget = [&](QMenu *m, What w, int inputId) {
-		for (int i = 0; i < screens.size(); i++) {
-			QScreen *s = screens[i];
-			m->addAction(screenLabel(s, i), parent, [w, inputId, s, parent] {
-				/* a mesma tela do programa fica coberta: avisa como sair */
-				if (parent && parent->screen() == s &&
-				    QMessageBox::question(parent, "Externo",
-							  "Essa é a tela onde o programa está: ela vai ficar coberta.\n\n"
-							  "Para sair: Esc, duplo clique ou botão direito → Fechar.\n\nContinuar?") !=
-					    QMessageBox::Yes)
-					return;
-				new ExternalOutput(w, inputId, s);
-			});
-		}
-		m->addSeparator();
-		m->addAction("Numa janela (para testar)", parent, [w, inputId] { new ExternalOutput(w, inputId, nullptr); });
-	};
+	auto addTarget = [&](QMenu *m, What w, int inputId) { addScreenActions(m, w, inputId, parent); };
 	menu->addSection("Mostrar em outra tela / TV");
 	addTarget(menu->addMenu("Programa"), What::Program, 0);
 	addTarget(menu->addMenu("Prévia"), What::Preview, 0);

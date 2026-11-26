@@ -46,6 +46,8 @@
 #include <QImage>
 #include <QFile>
 #include <QProcess>
+#include <QScreen>
+#include <QGuiApplication>
 #include <QTcpSocket>
 #include <QProcessEnvironment>
 #include <QMouseEvent>
@@ -649,6 +651,32 @@ int main(int argc, char *argv[])
 				blog(LOG_INFO, "[teste-miniatura] imagens entregues em 2 s: %d (%d quadros/s, resolução %d%%)",
 				     ThumbView::resetDelivered(), ThumbView::fps(), ThumbView::scale());
 				QProcess::execute("import", {"-window", "root", "/tmp/rds-miniatura.png"});
+				qApp->quit();
+			});
+		}
+		if (qEnvironmentVariableIsSet("RDS_SELFTEST_EXTERNO")) {
+			/* Externo: Programa em tela cheia na segunda tela */
+			QTimer::singleShot(800, [] {
+				Engine &e = Engine::get();
+				OBSDataAutoRelease c = obs_data_create();
+				obs_data_set_int(c, "color", 0xFF2050C0);
+				if (Input *in = e.addInput("color_source_v3", "AZUL", c))
+					e.cutTo(in->id);
+				const auto screens = QGuiApplication::screens();
+				blog(LOG_INFO, "[teste-externo] telas: %d", (int)screens.size());
+				for (QScreen *s : screens)
+					blog(LOG_INFO, "[teste-externo]   %s %dx%d+%d+%d", s->name().toUtf8().constData(), s->geometry().width(),
+					     s->geometry().height(), s->geometry().x(), s->geometry().y());
+				new ExternalOutput(ExternalOutput::What::Program, 0, screens.last());
+			});
+			QTimer::singleShot(3500, [] {
+				for (QWidget *w : QApplication::topLevelWidgets())
+					if (auto *x = qobject_cast<ExternalOutput *>(w))
+						blog(LOG_INFO, "[teste-externo] janela %dx%d+%d+%d tela=%s cheia=%d visivel=%d",
+						     x->geometry().width(), x->geometry().height(), x->geometry().x(), x->geometry().y(),
+						     x->screen() ? x->screen()->name().toUtf8().constData() : "?", x->isFullScreen(),
+						     x->isVisible());
+				QProcess::execute("import", {"-window", "root", qEnvironmentVariable("RDS_SELFTEST_EXTERNO")});
 				qApp->quit();
 			});
 		}

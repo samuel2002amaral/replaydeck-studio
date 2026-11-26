@@ -169,6 +169,18 @@ QWidget *MainWindow::buildVideoArea()
 	});
 	h->addWidget(buildTransitions());
 	h->addWidget(busPanel("program", program, pgmTitle, pgmFooter), 1);
+	/* botão direito no Programa / na Prévia: tela cheia noutro monitor */
+	auto screenMenu = [this](VideoDisplay *d, ExternalOutput::What what, const QString &label) {
+		d->setContextMenuPolicy(Qt::CustomContextMenu);
+		connect(d, &QWidget::customContextMenuRequested, this, [this, d, what, label](const QPoint &pos) {
+			QMenu menu(this);
+			menu.addAction(label + " em tela cheia:")->setEnabled(false);
+			ExternalOutput::addScreenActions(&menu, what, 0, this);
+			menu.exec(d->mapToGlobal(pos));
+		});
+	};
+	screenMenu(program, ExternalOutput::What::Program, "Programa");
+	screenMenu(preview, ExternalOutput::What::Preview, "Prévia");
 	return w;
 }
 

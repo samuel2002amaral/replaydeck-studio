@@ -19,6 +19,8 @@ public:
 
 	/* menu do botão Externo (o que mostrar e em qual tela) */
 	static void fillMenu(QMenu *menu, QWidget *parent);
+	/* "Tela 1 / Tela 2 / Numa janela" para mostrar isto (botão direito no Programa, na Prévia, na entrada) */
+	static void addScreenActions(QMenu *menu, What what, int inputId, QWidget *parent);
 	static void closeAll();
 	static int openCount();
 	/* API (StartStopExternal / Fullscreen): o Programa na outra tela (ou numa janela, se só há uma) */
@@ -33,6 +35,7 @@ protected:
 
 private:
 	void refresh();
+	void goFullScreen(QScreen *screen, int attempt);
 	What what;
 	int id;
 	VideoDisplay *video = nullptr;

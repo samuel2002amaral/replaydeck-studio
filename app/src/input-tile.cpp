@@ -1,4 +1,5 @@
 #include "input-tile.hpp"
+#include "external-output.hpp"
 #include "thumbs.hpp"
 #include "interact-window.hpp"
 #include "filters-window.hpp"
@@ -131,6 +132,21 @@ InputTile::InputTile(int inputId, QWidget *parent) : QFrame(parent), id(inputId)
 		video->setToolTip("Clique: mandar para a Prévia · duplo clique: abrir");
 		connect(video, &ThumbView::clicked, this, [this] { Engine::get().setPreview(id); });
 		connect(video, &ThumbView::doubleClicked, this, [this] { emit openRequested(id); });
+		/* botão direito na imagem: tela cheia noutro monitor (fora da imagem continua minimizando) */
+		video->setContextMenuPolicy(Qt::CustomContextMenu);
+		connect(video, &QWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
+			Input *in = Engine::get().input(id);
+			if (!in)
+				return;
+			QMenu menu(this);
+			menu.addAction(in->name + " em tela cheia:")->setEnabled(false);
+			ExternalOutput::addScreenActions(&menu, ExternalOutput::What::Input, id, window());
+			menu.addSeparator();
+			menu.addAction("Mandar para a Prévia", this, [this] { Engine::get().setPreview(id); });
+			menu.addAction(in->collapsed ? "Expandir" : "Minimizar", this,
+				       [this, on = !in->collapsed] { Engine::get().setInputCollapsed(id, on); });
+			menu.exec(video->mapToGlobal(pos));
+		});
 		v->addWidget(video);
 	} else {
 		/* entrada só de áudio (microfone): não tem imagem para mostrar */
@@ -281,6 +297,8 @@ void InputTile::optionsMenu(const QPoint &globalPos)
 	QMenu menu(this);
 	menu.addAction("Abrir (ver ao vivo e ajustar)…", this, [this] { emit openRequested(id); });
 	menu.addAction("Mandar para a Prévia", this, [this] { Engine::get().setPreview(id); });
+	ExternalOutput::addScreenActions(menu.addMenu("Tela cheia em outro monitor"), ExternalOutput::What::Input, id,
+					 window());
 	menu.addAction("Chave do vMix (para apps externos)…", this, [this] { editVmixKey(window(), id); });
 	menu.addAction("Filtros (chroma key, cor, LUT, ruído do microfone…)…", this, [this] {
 		if (Input *in = Engine::get().input(id))
