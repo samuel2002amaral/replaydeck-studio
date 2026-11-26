@@ -61,8 +61,28 @@ void logState()
 {
 #ifdef _WIN32
 	blog(LOG_INFO, "desempenho: prioridade %s, economia de energia do Windows %s, relógio 1 ms %s, sem suspender",
-	     GetPriorityClass(GetCurrentProcess()) == ABOVE_NORMAL_PRIORITY_CLASS ? "acima do normal" : "normal",
+	     GetPriorityClass(GetCurrentProcess()) == HIGH_PRIORITY_CLASS           ? "alta"
+	     : GetPriorityClass(GetCurrentProcess()) == ABOVE_NORMAL_PRIORITY_CLASS ? "acima do normal"
+										    : "normal",
 	     g_throttleOff ? "desligada" : "não deu para desligar", g_timer ? "sim" : "não");
+#endif
+}
+
+void setReplayRecording(bool on)
+{
+#ifdef _WIN32
+	static int last = -1;
+	if (last == (int)on)
+		return;
+	last = on;
+	/* Alta (não "tempo real"): câmeras, render e disco do replay passam na frente dos navegadores
+	 * (YouTube, páginas), antivírus e outros programas; mouse e Windows continuam respondendo. */
+	const DWORD cls = on ? HIGH_PRIORITY_CLASS : ABOVE_NORMAL_PRIORITY_CLASS;
+	const bool ok = SetPriorityClass(GetCurrentProcess(), cls) != FALSE;
+	blog(LOG_INFO, "desempenho: replay %s, prioridade %s%s", on ? "gravando" : "parado", on ? "alta" : "acima do normal",
+	     ok ? "" : " (não deu para mudar)");
+#else
+	(void)on;
 #endif
 }
 

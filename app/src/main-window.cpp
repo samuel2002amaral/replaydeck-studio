@@ -12,6 +12,7 @@
 #include "gt/gt-dock.hpp"
 #include "transitions-panel.hpp"
 #include "replay-host.hpp"
+#include "perf.hpp"
 #include "flow-layout.hpp"
 #include "audio-mixer.hpp"
 #include "external-output.hpp"
@@ -704,7 +705,20 @@ void MainWindow::updateStatus()
 	status[3]->setToolTip("Placa de vídeo: " + Engine::get().adapterName() +
 			      "\nAtrasados: quadros que a placa não desenhou a tempo"
 			      "\nCodificação: quadros que o codificador (gravação/transmissão) não deu conta");
-	status[4]->setText(QString("%1 entradas").arg(Engine::get().inputs().size()));
+	{
+		/* replay do VAR: sempre à vista se está gravando inteiro; vermelho se perdeu quadro */
+		bool alarm = false, rec = false;
+		const QString r = replayhost::statusText(alarm, rec);
+		perf::setReplayRecording(rec);
+		QString text = QString("%1 entradas").arg(Engine::get().inputs().size());
+		if (rec)
+			text = r + "    " + text;
+		status[4]->setText(text);
+		status[4]->setStyleSheet(alarm ? "color: #ff5a5a; font-weight: bold;" : QString());
+		status[4]->setToolTip(rec ? "Quadros do replay que não foram gravados (o VAR precisa de 0).\n"
+					    "Disco atrasado: a gravação está esperando o disco (antivírus, disco cheio ou lento)."
+					  : QString());
+	}
 	/* uma linha por minuto no log: com o log dá para ver como o programa rodou no PC de quem usa */
 	static int perfTick = 0;
 	static const int perfEvery = qEnvironmentVariableIsSet("RDS_PERF_LOG") ? 2 : 60;

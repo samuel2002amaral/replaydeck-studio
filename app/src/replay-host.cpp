@@ -23,6 +23,7 @@
 #include <QPointer>
 #include <QProcess>
 #include <QTimer>
+#include <QString>
 
 #include <algorithm>
 #include <cstring>
@@ -460,6 +461,22 @@ void runWizard()
 {
 	if (g_dock)
 		g_dock->runWizard();
+}
+
+QString statusText(bool &alarm, bool &recording)
+{
+	ReplayEngine &e = engine();
+	recording = e.recording();
+	alarm = false;
+	if (!recording)
+		return QString();
+	const uint64_t lost = e.droppedFrames();
+	const size_t backlog = e.diskBacklogMB();
+	QString t = lost ? QString("⚠ Replay perdeu %1 quadros").arg(lost) : QString("● Replay gravando · 0 perdidos");
+	if (backlog >= 64)
+		t += QString(" · disco atrasado (%1 MB na fila)").arg(backlog);
+	alarm = lost > 0 || backlog >= 256;
+	return t;
 }
 
 void toggleRecording()

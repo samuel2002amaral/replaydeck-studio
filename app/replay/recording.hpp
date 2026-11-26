@@ -1,8 +1,11 @@
 #pragma once
 #include "common.hpp"
 #include <atomic>
+#include <condition_variable>
 #include <cstdio>
+#include <deque>
 #include <mutex>
+#include <thread>
 #include <vector>
 
 /* Armazenamento em disco de UM ângulo de câmera.
@@ -22,6 +25,10 @@ public:
 	/* Reabre uma gravação antiga (só leitura) a partir do .idx */
 	bool openExisting(const std::string &videoPath, const std::string &indexPath);
 	uint64_t bytesWritten() const { return writePos.load(); }
+	/* quadros que nunca chegaram (buraco na numeração): perdidos de verdade */
+	uint64_t gapFrames() const { return gaps.load(); }
+	/* quanto está na fila esperando o disco (MB) — o disco engasgando aparece aqui */
+	size_t pendingMB() const { return wqBytes.load() >> 20; }
 
 	/* Lê o quadro pedido ou o quadro válido imediatamente anterior
 	 * (se a câmera perdeu aquele quadro). */
@@ -59,4 +66,22 @@ private:
 	FILE *rf = nullptr;
 	std::atomic<uint64_t> writePos{0};
 	int idxFlushCounter = 0;
+
+	/* Disco num fio próprio: a câmera (codificador) só entrega o quadro na fila e volta.
+	 * Um engasgo do disco (antivírus, SSD ocupado) é absorvido pela fila (até 1 GB,
+	 * ~15 s com 4 câmeras 1080p60) em vez de segurar a gravação. */
+	struct Pending {
+		int64_t frameNo;
+		std::vector<uint8_t> data;
+	};
+	void writerLoop();
+	void writeOne(Pending &p);
+	std::thread writer;
+	std::mutex wqMtx;
+	std::condition_variable wqCv, wqRoom;
+	std::deque<Pending> wq;
+	std::atomic<size_t> wqBytes{0};
+	bool wqStop = false;
+	int64_t lastQueued = -1;
+	std::atomic<uint64_t> gaps{0};
 };

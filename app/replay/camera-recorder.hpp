@@ -29,8 +29,14 @@ public:
 	bool start(std::string &err);
 	void stop();
 
-	uint64_t droppedFrames() const { return dropped.load(); }
+	/* perdidos: os que a fila descartou ou os que nunca chegaram (buraco na numeração) */
+	uint64_t droppedFrames() const
+	{
+		const uint64_t g = rec ? rec->gapFrames() : 0, d = dropped.load();
+		return g > d ? g : d;
+	}
 	const std::string &encoderName() const { return encName; }
+	size_t pendingMB() const { return rec ? rec->pendingMB() : 0; }
 	void rawFrame(struct video_data *frame) { onRawFrame(frame); }
 	void encodedPacket(struct encoder_packet *pkt); /* Studio: caminho da placa de vídeo */
 

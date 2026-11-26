@@ -1,6 +1,17 @@
 #include "recording.hpp"
 #include <util/platform.h>
+#include <util/threading.h>
+#include <cstdlib>
 #include <cstring>
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
+static constexpr size_t kMaxPending = (size_t)1 << 30; /* 1 GB esperando o disco, no máximo */
 
 Recording::~Recording()
 {
@@ -25,31 +36,80 @@ bool Recording::open(const std::string &videoPath, const std::string &indexPath)
 		const char magic[8] = {'R', 'P', 'L', 'I', 'D', 'X', '0', '1'};
 		fwrite(magic, 1, sizeof(magic), xf);
 	}
+	wqStop = false;
+	writer = std::thread(&Recording::writerLoop, this);
 	return true;
+}
+
+void Recording::writerLoop()
+{
+	os_set_thread_name("replay-disco");
+#ifdef _WIN32
+	/* gravação do replay (VAR) na frente de tudo que não é vídeo */
+	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
+#endif
+	std::deque<Pending> batch;
+	for (;;) {
+		{
+			std::unique_lock<std::mutex> lk(wqMtx);
+			wqCv.wait(lk, [&] { return wqStop || !wq.empty(); });
+			if (wq.empty())
+				break; /* parando e tudo escrito */
+			batch.swap(wq);
+		}
+		/* teste: disco lento/engasgado (RDS_DISCO_LENTO_MS por lote) */
+		static const int slowMs = getenv("RDS_DISCO_LENTO_MS") ? atoi(getenv("RDS_DISCO_LENTO_MS")) : 0;
+		if (slowMs > 0)
+			os_sleep_ms((uint32_t)slowMs);
+		size_t done = 0;
+		for (Pending &p : batch) {
+			writeOne(p);
+			done += p.data.size();
+		}
+		/* flush uma vez por lote: o replay enxerga o quadro na hora, sem custo por quadro */
+		if (wf)
+			fflush(wf);
+		batch.clear();
+		wqBytes -= done;
+		wqRoom.notify_all();
+	}
 }
 
 void Recording::append(int64_t frameNo, const uint8_t *data, size_t size)
 {
 	if (!wf || frameNo < 0 || !size)
 		return;
-	{
-		std::lock_guard<std::mutex> lk(idxMtx);
-		if (frameNo <= last)
-			return; /* quadro duplicado/atrasado */
+	std::unique_lock<std::mutex> lk(wqMtx);
+	if (wqStop || frameNo <= lastQueued)
+		return; /* quadro duplicado/atrasado */
+	if (lastQueued >= 0 && frameNo > lastQueued + 1)
+		gaps += (uint64_t)(frameNo - lastQueued - 1);
+	lastQueued = frameNo;
+	/* disco parado há muito tempo: aí sim espera (nunca descarta quadro) */
+	if (wqBytes.load() + size > kMaxPending) {
+		rlog(LOG_WARNING, "%s: o disco não está dando conta (%zu MB na fila)", path.c_str(), wqBytes.load() >> 20);
+		wqRoom.wait(lk, [&] { return wqStop || wqBytes.load() + size <= kMaxPending; });
+		if (wqStop)
+			return;
 	}
+	wq.push_back(Pending{frameNo, std::vector<uint8_t>(data, data + size)});
+	wqBytes += size;
+	lk.unlock();
+	wqCv.notify_one();
+}
 
-	if (fwrite(data, 1, size, wf) != size) {
+void Recording::writeOne(Pending &p)
+{
+	const size_t size = p.data.size();
+	if (fwrite(p.data.data(), 1, size, wf) != size) {
 		rlog(LOG_ERROR, "falha de escrita em %s (disco cheio?)", path.c_str());
 		return;
 	}
-	/* flush para que os canais de playback enxerguem o quadro na hora */
-	fflush(wf);
-
 	Entry e{writePos.load(), (uint32_t)size, 0};
 	writePos += size;
 
 	if (xf) {
-		DiskEntry d{frameNo, e.offset, e.size, 0};
+		DiskEntry d{p.frameNo, e.offset, e.size, 0};
 		fwrite(&d, sizeof(d), 1, xf);
 		if (++idxFlushCounter >= 30) {
 			idxFlushCounter = 0;
@@ -58,12 +118,12 @@ void Recording::append(int64_t frameNo, const uint8_t *data, size_t size)
 	}
 
 	std::lock_guard<std::mutex> lk(idxMtx);
-	if ((size_t)frameNo >= index.size())
-		index.resize((size_t)frameNo + 1, Entry{0, 0, 0});
-	index[(size_t)frameNo] = e;
+	if ((size_t)p.frameNo >= index.size())
+		index.resize((size_t)p.frameNo + 1, Entry{0, 0, 0});
+	index[(size_t)p.frameNo] = e;
 	if (first < 0)
-		first = frameNo;
-	last = frameNo;
+		first = p.frameNo;
+	last = p.frameNo;
 }
 
 bool Recording::openExisting(const std::string &videoPath, const std::string &indexPath)
@@ -100,6 +160,15 @@ bool Recording::openExisting(const std::string &videoPath, const std::string &in
 
 void Recording::closeWriter()
 {
+	/* escreve o que ainda está na fila antes de fechar */
+	{
+		std::lock_guard<std::mutex> lk(wqMtx);
+		wqStop = true;
+	}
+	wqCv.notify_all();
+	wqRoom.notify_all();
+	if (writer.joinable())
+		writer.join();
 	if (wf) {
 		fclose(wf);
 		wf = nullptr;

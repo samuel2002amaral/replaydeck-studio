@@ -39,6 +39,8 @@ struct Hub {
 	std::atomic<int> fps{30};
 	std::atomic<int> scalePct{50}; /* resolução: % do tamanho da miniatura na tela */
 	uint64_t frame = 0;
+	uint64_t lastLag = UINT64_MAX; /* atrasados + perdidos na codificação, no último quadro */
+	uint64_t reliefUntil = 0;      /* até este quadro as miniaturas cedem a vez */
 	bool installed = false;
 	QObject *ui = nullptr; /* para mandar as imagens de volta à interface */
 };
@@ -69,7 +71,14 @@ void rendered(void *)
 		return;
 	/* a cada N quadros do vídeo (ritmo regular, sem tropeço): 60 → 30 = um sim, um não */
 	const double canvasFps = (double)ovi.fps_num / (double)ovi.fps_den;
-	const uint64_t every = (uint64_t)std::max(1.0, std::round(canvasFps / std::max(1, H.fps.load())));
+	/* a placa ou o codificador atrasou um quadro: as miniaturas caem para 10/s por 10 s, para o
+	 * Programa e a gravação do replay terem a placa toda */
+	const uint64_t lag = (uint64_t)obs_get_lagged_frames() + video_output_get_skipped_frames(obs_get_video());
+	if (H.lastLag != UINT64_MAX && lag > H.lastLag)
+		H.reliefUntil = H.frame + (uint64_t)(canvasFps * 10);
+	H.lastLag = lag;
+	const int target = H.frame < H.reliefUntil ? std::min(10, H.fps.load()) : H.fps.load();
+	const uint64_t every = (uint64_t)std::max(1.0, std::round(canvasFps / std::max(1, target)));
 	if (H.frame++ % every)
 		return;
 

@@ -19,25 +19,19 @@
 
 static QList<ExternalOutput *> g_outputs;
 
-ExternalOutput::ExternalOutput(What w, int inputId, QScreen *screen) : QWidget(nullptr), what(w), id(inputId)
+ExternalOutput::ExternalOutput(What w, int inputId, QScreen *screen) : VideoDisplay(nullptr), what(w), id(inputId)
 {
+	setWindowFlags(Qt::Window); /* janela comum, como o projetor do OBS (sem "sem bordas") */
 	setAttribute(Qt::WA_DeleteOnClose);
-	/* bordas definidas ANTES da tela de vídeo existir (no Windows mudar depois recria a janela) */
-	setWindowFlags(screen ? Qt::Window | Qt::FramelessWindowHint : Qt::Window);
-	setStyleSheet("background: #000000;");
-	auto *v = new QVBoxLayout(this);
-	v->setContentsMargins(0, 0, 0, 0);
-	video = new VideoDisplay;
-	video->setToolTip(QString());
-	v->addWidget(video);
-	connect(video, &VideoDisplay::doubleClicked, this, &QWidget::close);
+	setAttribute(Qt::WA_QuitOnClose, false);
+	setBackgroundColor(0xFF000000);
+	setToolTip(QString());
 	setWindowTitle("ReplayDeck Studio — " + description());
-
+	setMinimumSize(320, 180);
 	if (screen) {
 		goFullScreen(screen, 0);
 	} else {
 		/* janela normal (com título): dá para mover, mudar o tamanho e fechar */
-		setMinimumSize(320, 180);
 		resize(960, 540);
 		show();
 	}
@@ -50,44 +44,29 @@ ExternalOutput::ExternalOutput(What w, int inputId, QScreen *screen) : QWidget(n
 	refresh();
 }
 
-/* Tela cheia noutro monitor. No Windows, com escalas diferentes entre os monitores (100% e
- * 150%), pedir a tela cheia antes da janela existir faz ela abrir no monitor principal. Por isso:
- * cria a janela, prende ao monitor, ocupa a área dele e só então pede a tela cheia; depois confere
- * e, se o sistema puxou para outro lugar, coloca de novo (sem bordas, do tamanho do monitor). */
+/* Tela cheia noutro monitor, do jeito do projetor do OBS: ocupa a área do monitor e pede tela
+ * cheia. Depois confere; se o Windows deixou em outro monitor (escalas diferentes), põe de novo. */
 void ExternalOutput::goFullScreen(QScreen *screen, int attempt)
 {
 	if (!screen || !QGuiApplication::screens().contains(screen))
 		return;
-	const QRect g = screen->geometry();
-	if (!windowHandle())
-		create();
-	if (windowHandle())
-		windowHandle()->setScreen(screen);
-	if (attempt == 0) {
-		setGeometry(g);
-		show();
-	}
-	if (attempt < 2) {
-		move(g.topLeft());
-		resize(g.size());
-		showFullScreen();
-	} else {
-		/* último recurso: janela sem bordas exatamente sobre o monitor */
+	if (isFullScreen())
 		showNormal();
-		setGeometry(g);
-		raise();
-	}
-	QTimer::singleShot(400, this, [this, screen, attempt] {
+	if (attempt > 0 && windowHandle())
+		windowHandle()->setScreen(screen);
+	setGeometry(screen->geometry());
+	showFullScreen();
+	QTimer::singleShot(500, this, [this, screen, attempt] {
 		if (!QGuiApplication::screens().contains(screen))
 			return;
 		const QRect want = screen->geometry();
-		const QRect got = frameGeometry();
-		const bool ok = window()->screen() == screen && got.contains(want.center());
+		const QRect got = geometry();
+		const bool ok = this->screen() == screen && want.contains(got.center());
 		blog(LOG_INFO, "[externo] %s em %s: janela %dx%d+%d+%d (monitor %dx%d+%d+%d) cheia=%d %s",
 		     description().toUtf8().constData(), screen->name().toUtf8().constData(), got.width(), got.height(),
 		     got.x(), got.y(), want.width(), want.height(), want.x(), want.y(), isFullScreen(),
 		     ok ? "ok" : "fora do lugar: corrigindo");
-		if (!ok && attempt < 2)
+		if (!ok && attempt < 1)
 			goFullScreen(screen, attempt + 1);
 	});
 }
@@ -117,20 +96,20 @@ void ExternalOutput::refresh()
 {
 	Engine &e = Engine::get();
 	if (what == What::Program) {
-		video->showProgram();
+		showProgram();
 	} else if (what == What::Vertical) {
 		const StudioSettings s = Outputs::get().settings();
 		VerticalCanvas &vc = VerticalCanvas::get();
 		if (vc.ensureScene(s.verticalWidth, s.verticalHeight, s.verticalFit, s.verticalOffset)) {
-			video->setCanvasSize(QSize(vc.width(), vc.height()));
-			video->showSource(vc.scene());
+			setCanvasSize(QSize(vc.width(), vc.height()));
+			showSource(vc.scene());
 		}
 	} else {
 		Input *in = e.input(what == What::Preview ? e.previewId() : id);
 		if (in)
-			video->showSource(in->scene);
+			showSource(in->scene);
 		else
-			video->clear();
+			clear();
 	}
 }
 
@@ -139,15 +118,11 @@ void ExternalOutput::contextMenuEvent(QContextMenuEvent *e)
 	QMenu menu(this);
 	if (isFullScreen())
 		menu.addAction("Em janela", this, [this] {
-			setWindowFlags(Qt::Window);
 			showNormal();
 			resize(960, 540);
 		});
 	else
-		menu.addAction("Tela cheia aqui", this, [this] {
-			setWindowFlags(Qt::Window | Qt::FramelessWindowHint);
-			showFullScreen();
-		});
+		menu.addAction("Tela cheia aqui", this, [this] { showFullScreen(); });
 	menu.addSeparator();
 	menu.addAction("Fechar (Esc)", this, &QWidget::close);
 	menu.exec(e->globalPos());

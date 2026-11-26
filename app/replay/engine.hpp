@@ -111,6 +111,7 @@ public:
 	bool recording() const { return isRecording.load(); }
 	std::string sessionDir();
 	uint64_t droppedFrames();
+	size_t diskBacklogMB(); /* maior fila esperando o disco entre as câmeras */
 
 	/* canais */
 	PlaybackChannel &channel(int i) { return *channels[i]; }

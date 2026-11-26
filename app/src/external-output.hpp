@@ -2,13 +2,15 @@
  * Serve para telão, monitor de retorno e o monitor do VAR (Replay A/B para o árbitro). */
 #pragma once
 
-#include <QWidget>
+#include "video-display.hpp"
 
 class QMenu;
 class QScreen;
-class VideoDisplay;
 
-class ExternalOutput : public QWidget {
+/* A janela É a tela de vídeo (como o projetor do OBS): a imagem é desenhada direto na janela
+ * de tela cheia. Com a tela de vídeo como "filha" de uma janela sem bordas, o Windows travava
+ * a imagem em tela cheia noutro monitor (em janela funcionava). */
+class ExternalOutput : public VideoDisplay {
 	Q_OBJECT
 
 public:
@@ -38,5 +40,4 @@ private:
 	void goFullScreen(QScreen *screen, int attempt);
 	What what;
 	int id;
-	VideoDisplay *video = nullptr;
 };

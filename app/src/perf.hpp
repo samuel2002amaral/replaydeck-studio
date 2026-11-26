@@ -9,6 +9,8 @@ namespace perf {
 void tuneProcess(); /* antes de iniciar o motor */
 void logState();    /* depois: escreve no log o que ficou valendo */
 void restore();     /* ao sair */
+/* replay gravando (VAR): prioridade Alta para o programa; parado: volta para acima do normal */
+void setReplayRecording(bool on);
 void startAutosave(QObject *owner); /* salva o projeto 1x por minuto se algo mudou */
 /* vigia: se a interface ficar parada mais de 2 s, escreve no log (para achar a causa de um travamento) */
 void startHangWatch();

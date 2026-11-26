@@ -28,6 +28,8 @@ public:
 	}
 	void showProgram();
 	void clear();
+	/* cor fora da imagem (0xAABBGGRR); padrão = a cor do painel */
+	void setBackgroundColor(uint32_t abgr);
 	/* desenho extra por cima da imagem (thread de vídeo), em coordenadas da imagem;
 	 * pixel = quanto vale 1 pixel da tela nessas coordenadas */
 	void setOverlay(std::function<void(float w, float h, float pixel)> fn)
@@ -62,6 +64,8 @@ private:
 	static void checkAll();
 
 	obs_display_t *display = nullptr;
+	uint32_t background = 0xFF2A211C;
+	bool screenHooked = false;
 	OBSWeakSourceAutoRelease weak;
 	Mode mode = Mode::Source;
 	bool hasContent = false;

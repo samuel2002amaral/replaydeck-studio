@@ -9,6 +9,7 @@
 
 class QMainWindow;
 class QWidget;
+class QString;
 
 namespace replayhost {
 
@@ -21,5 +22,7 @@ void selfTest(QMainWindow *window); /* RDS_SELFTEST_REPLAY */
 void openSettings();
 void runWizard();
 void toggleRecording();
+/* rodapé: "Replay gravando · 0 perdidos" (alarm = perdeu quadro ou disco atrasado) */
+QString statusText(bool &alarm, bool &recording);
 
 } // namespace replayhost

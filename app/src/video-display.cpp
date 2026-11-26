@@ -103,7 +103,7 @@ void VideoDisplay::createDisplay()
 	info.window.display = obs_get_nix_platform_display();
 #endif
 	/* fora da imagem: a cor do painel (#1c212a, em 0xAABBGGRR); preto só onde é vídeo */
-	display = obs_display_create(&info, 0xFF2A211C);
+	display = obs_display_create(&info, background);
 	if (display) {
 		obs_display_add_draw_callback(display, draw, this);
 		drawing = true;
@@ -127,9 +127,28 @@ bool VideoDisplay::event(QEvent *e)
 	return QWidget::event(e);
 }
 
+void VideoDisplay::setBackgroundColor(uint32_t abgr)
+{
+	background = abgr;
+	if (display)
+		obs_display_set_background_color(display, abgr);
+}
+
 void VideoDisplay::showEvent(QShowEvent *e)
 {
 	QWidget::showEvent(e);
+	/* mudou de monitor (outra escala: 100%, 150%): o tamanho em pixels muda sem mudar o da janela */
+	if (!screenHooked && window()->windowHandle()) {
+		screenHooked = true;
+		connect(window()->windowHandle(), &QWindow::screenChanged, this, [this] {
+			createDisplay();
+			if (display) {
+				const QSize s = pixelSize(this);
+				obs_display_resize(display, (uint32_t)s.width(), (uint32_t)s.height());
+				obs_display_update_color_space(display);
+			}
+		});
+	}
 	createDisplay();
 	updateEnabled();
 }

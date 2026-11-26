@@ -396,6 +396,15 @@ uint64_t ReplayEngine::droppedFrames()
 	return n;
 }
 
+size_t ReplayEngine::diskBacklogMB()
+{
+	std::lock_guard<std::recursive_mutex> lk(mtx);
+	size_t n = 0;
+	for (auto &r : recorders)
+		n = std::max(n, r->pendingMB());
+	return n;
+}
+
 /* ---------------- transporte ---------------- */
 
 void ReplayEngine::play()
