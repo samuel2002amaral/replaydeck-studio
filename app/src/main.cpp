@@ -510,7 +510,7 @@ int main(int argc, char *argv[])
 				OBSDataAutoRelease b = obs_data_create();
 				obs_data_set_int(b, "color", 0xFF603010);
 				Input *lay = e.addInput("color_source_v3", "LAYOUT", b);
-				Input *pgm = e.addInput("rds_program", "PGM");
+				const bool pgm = true; /* o Programa direto como camada */
 				e.setLayer(lay->id, 1, cam->id);
 				ItemPos p;
 				p.zoom = 0.4;
@@ -518,7 +518,7 @@ int main(int argc, char *argv[])
 				p.panY = -0.5;
 				e.setLayerPosition(lay->id, 1, p);
 				if (pgm) {
-					e.setLayer(lay->id, 2, pgm->id);
+					e.setLayer(lay->id, 2, PROGRAM_LAYER);
 					ItemPos q;
 					q.zoom = 0.3;
 					q.panX = -0.6;
@@ -527,7 +527,7 @@ int main(int argc, char *argv[])
 				}
 				e.cutTo(cam->id);
 				e.setPreview(lay->id);
-				blog(LOG_INFO, "[teste-merge] pgm=%d", pgm != nullptr);
+				blog(LOG_INFO, "[teste-merge] camada2=%d", lay->layers[1].inputId);
 			});
 			QTimer::singleShot(2500, [] {
 				QString err;

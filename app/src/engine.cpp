@@ -266,6 +266,7 @@ void Engine::stop()
 	cutTr = nullptr;
 	fadeTr = nullptr;
 	mergeTr = nullptr;
+	programLayer = nullptr;
 	blackScene = nullptr;
 	audioBed = nullptr;
 	activeTr = nullptr;
@@ -651,25 +652,25 @@ void Engine::applyLayout(Input *in)
 	QSet<int64_t> keep;
 	QList<obs_sceneitem_t *> back, front; /* de baixo para cima */
 	for (InputLayer &l : in->layers) {
-		Input *li = input(l.inputId);
-		if (!li)
+		obs_source_t *ls = layerSource(l.inputId);
+		if (!ls)
 			l.inputId = 0;
 		obs_sceneitem_t *item = l.itemId ? obs_scene_find_sceneitem_by_id(scene, l.itemId) : nullptr;
-		if (item && (!li || obs_sceneitem_get_source(item) != li->scene.Get())) {
+		if (item && (!ls || obs_sceneitem_get_source(item) != ls)) {
 			obs_sceneitem_remove(item);
 			item = nullptr;
 		}
 		l.itemId = 0;
-		if (!li || layerWouldLoop(in->id, li->id))
+		if (!ls || (l.inputId > 0 && layerWouldLoop(in->id, l.inputId)))
 			continue;
 		if (!item)
-			item = obs_scene_add(scene, li->scene);
+			item = obs_scene_add(scene, ls);
 		if (!item)
 			continue; /* o motor recusou (entrada dentro dela mesma) */
 		l.itemId = obs_sceneitem_get_id(item);
 		keep << l.itemId;
 		obs_sceneitem_set_visible(item, l.on);
-		applyItemPos(item, li->scene, l.pos, baseW, baseH);
+		applyItemPos(item, ls, l.pos, baseW, baseH);
 		(l.behind ? back : front) << item;
 	}
 	/* ordem: camadas de trás, a principal, camadas da frente (cada grupo na ordem 1..10) */
@@ -697,6 +698,17 @@ void Engine::applyLayout(Input *in)
 		&ctx);
 	for (obs_sceneitem_t *item : stale)
 		obs_sceneitem_remove(item);
+}
+
+obs_source_t *Engine::layerSource(int inputId)
+{
+	if (inputId == PROGRAM_LAYER) {
+		if (!programLayer) /* tipo do programa: não existe nos testes do motor */
+			programLayer = obs_source_create_private("rds_program", "Programa (PGM)", nullptr);
+		return programLayer;
+	}
+	Input *li = input(inputId);
+	return li ? li->scene.Get() : nullptr;
 }
 
 bool Engine::layerWouldLoop(int id, int candidate) const
@@ -759,7 +771,9 @@ void Engine::setLayer(int id, int index, int layerInputId)
 	Input *in = input(id);
 	if (!in || index < 0 || index >= INPUT_LAYERS)
 		return;
-	if (layerInputId && (!input(layerInputId) || layerWouldLoop(id, layerInputId)))
+	if (layerInputId > 0 && (!input(layerInputId) || layerWouldLoop(id, layerInputId)))
+		layerInputId = 0;
+	if (layerInputId < 0 && (layerInputId != PROGRAM_LAYER || !layerSource(PROGRAM_LAYER)))
 		layerInputId = 0;
 	if (in->layers[index].inputId == layerInputId)
 		return;
@@ -798,10 +812,10 @@ void Engine::setLayerPosition(int id, int index, const ItemPos &pos)
 		return;
 	InputLayer &l = in->layers[index];
 	l.pos = pos;
-	Input *li = input(l.inputId);
-	if (li && l.itemId)
+	obs_source_t *ls = layerSource(l.inputId);
+	if (ls && l.itemId)
 		if (obs_sceneitem_t *item = obs_scene_find_sceneitem_by_id(obs_scene_from_source(in->scene), l.itemId))
-			applyItemPos(item, li->scene, l.pos, baseW, baseH);
+			applyItemPos(item, ls, l.pos, baseW, baseH);
 	emit inputLayoutChanged(id);
 }
 

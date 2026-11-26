@@ -319,13 +319,7 @@ LayersEditor::LayersEditor(int inputId, QWidget *parent) : QWidget(parent), id(i
 		connect(combo[i], &QComboBox::currentIndexChanged, this, [this, i] {
 			if (updating)
 				return;
-			int pick = combo[i]->currentData().toInt();
-			if (pick == -1) {
-				/* "Programa (PGM)": cria a entrada que mostra o que está no ar e usa como camada */
-				Input *pg = Engine::get().addInput("rds_program", "PROGRAMA");
-				pick = pg ? pg->id : 0;
-			}
-			Engine::get().setLayer(id, i, pick);
+			Engine::get().setLayer(id, i, combo[i]->currentData().toInt());
 		});
 		connect(editBtn[i], &QPushButton::clicked, this, [this, i] { editLayer(i); });
 	}
@@ -385,11 +379,8 @@ void LayersEditor::fillCombos()
 		combo[i]->clear();
 		combo[i]->addItem("Nenhuma", 0);
 		int n = 0;
-		bool hasPgm = false;
-		for (Input *o : e.inputs())
-			hasPgm = hasPgm || strcmp(obs_source_get_unversioned_id(o->source), "rds_program") == 0;
-		if (!hasPgm)
-			combo[i]->addItem("Programa (PGM) — o que está no ar", -1);
+		/* o Programa direto como camada (sem precisar de uma entrada para ele) */
+		combo[i]->addItem("★ Programa (PGM) — o que está no ar", PROGRAM_LAYER);
 		for (Input *o : e.inputs()) {
 			n++;
 			if (o->id == id || e.layerWouldLoop(id, o->id))
@@ -432,7 +423,9 @@ void LayersEditor::editLayer(int index)
 	Input *li = Engine::get().input(in->layers[index].inputId);
 	auto *d = new QDialog(window());
 	d->setAttribute(Qt::WA_DeleteOnClose);
-	d->setWindowTitle(QString("Camada %1 de %2: %3").arg(index + 1).arg(in->name, li ? li->name : QString("vazia")));
+	const QString what = in->layers[index].inputId == PROGRAM_LAYER ? QString("Programa (PGM)")
+							   : li ? li->name : QString("vazia");
+	d->setWindowTitle(QString("Camada %1 de %2: %3").arg(index + 1).arg(in->name, what));
 	auto *v = new QVBoxLayout(d);
 	auto *note = new QLabel("Vale na hora: veja na imagem da entrada.");
 	note->setObjectName("muted");

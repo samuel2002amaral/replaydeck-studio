@@ -43,8 +43,11 @@ void setPanFromCenter(ItemPos &p, double fullCx, double fullCy, uint32_t canvasW
 
 /* Camada (como no vMix, = fonte dentro da cena no OBS): outra entrada por cima desta, com posição própria */
 constexpr int INPUT_LAYERS = 10;
+/* camada especial: o Programa (o que está no ar), sem precisar de uma entrada para ele */
+constexpr int PROGRAM_LAYER = -1;
+
 struct InputLayer {
-	int inputId = 0; /* 0 = vazia */
+	int inputId = 0; /* 0 = vazia; PROGRAM_LAYER = o Programa */
 	bool on = true;
 	bool behind = false; /* atrás da imagem principal (ex.: o replay por trás de uma arte com janela transparente) */
 	ItemPos pos;
@@ -254,6 +257,8 @@ private:
 	bool started = false;
 	bool manual = false;
 
+	OBSSourceAutoRelease programLayer; /* fonte "Programa (PGM)" usada pelas camadas (uma só, criada na 1ª vez) */
+	obs_source_t *layerSource(int inputId); /* o que a camada mostra (cena da entrada ou o Programa) */
 	OBSSourceAutoRelease cutTr, fadeTr, mergeTr; /* merge: criada na 1ª vez (tipo do programa) */
 	QVector<StudioTransition *> trList;
 	int nextTrId = 1;

@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cstring>
 #include <mutex>
 #include <vector>
 
@@ -104,7 +105,9 @@ static void collect(obs_source_t *sceneSrc, std::vector<Elem> &out)
 			const float ch = (float)std::max(1, (int)h - crop.top - crop.bottom);
 			Elem e;
 			e.src = s;
-			e.key = obs_scene_from_source(s) ? s : c->sceneSrc; /* camada = a entrada dela; principal = esta entrada */
+			/* camada = a entrada dela (ou o Programa); principal = esta entrada */
+			const bool own = obs_scene_from_source(s) || strcmp(obs_source_get_unversioned_id(s), PROGRAM_INPUT_ID) == 0;
+			e.key = own ? s : c->sceneSrc;
 			e.w = w;
 			e.h = h;
 			e.cl = (float)crop.left / (float)w;

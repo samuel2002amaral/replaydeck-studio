@@ -230,7 +230,6 @@ static const TypeDef typeDefs[] = {
 	{"image_source", "Imagem"},
 	{"slideshow", "Sequência de imagens"},
 	{"browser_source", "Página web (navegador)"},
-	{"rds_program", "Programa (PGM) — o que está no ar"},
 	{"instant_replay_gt", "Título GT (.gtzip do vMix)"},
 	{"text_gdiplus", "Texto"},
 	{"text_ft2_source", "Texto"},

@@ -113,7 +113,7 @@ const QList<FunctionDef> &functionList()
 		{"SetCropY1", "Posição", "Corte Y1 (0 a 1)", true, true},
 		{"SetCropY2", "Posição", "Corte Y2 (0 a 1)", true, true},
 		{"ResetPosition", "Posição", "Posição da entrada volta à tela cheia", true, false},
-		{"SetLayer", "Camadas", "Camada da entrada (Value = número,entrada; ex.: 1,PLACAR; 1, vazio = tira)", true, true, false, true},
+		{"SetLayer", "Camadas", "Camada da entrada (Value = número,entrada; ex.: 1,PLACAR; 1,PGM = o Programa; 1, vazio = tira)", true, true, false, true},
 		{"SetMultiViewOverlay", "Camadas", "Igual a SetLayer (nome antigo do vMix)", true, true, false, true},
 		{"MultiViewOverlay", "Camadas", "Camada liga/desliga (Value = número 1 a 10)", true, true},
 		{"MultiViewOverlayOn", "Camadas", "Camada liga (Value = número)", true, true},
@@ -136,7 +136,6 @@ const QList<FunctionDef> &functionList()
 		{"SetDynamicValue3", "Script", "Variável DynamicValue3", false, true, false, true},
 		{"SetDynamicValue4", "Script", "Variável DynamicValue4", false, true, false, true},
 		/* outros do vMix */
-		{"Merge", "Transição", "Merge (aqui: fade)", true, false},
 		{"SetTransitionDuration1", "Transição", "Duração da transição 1 (Value = ms)", false, true},
 		{"SetTransitionDuration2", "Transição", "Duração da transição 2", false, true},
 		{"SetTransitionDuration3", "Transição", "Duração da transição 3", false, true},
@@ -945,6 +944,11 @@ bool runFunction(const QString &name, const QString &inputSpec, const QString &v
 		const QString rest = comma < 0 ? QString() : value.mid(comma + 1).trimmed();
 		if (n == "SetLayer" || n == "SetMultiViewOverlay") {
 			int target = 0;
+			const QString up = rest.toUpper();
+			if (up == "PGM" || up == "PROGRAMA" || up == "PROGRAM" || up == "OUTPUT") {
+				e.setLayer(in->id, idx - 1, PROGRAM_LAYER); /* o Programa direto como camada */
+				return true;
+			}
 			if (!rest.isEmpty()) {
 				Input *li = resolveInput(rest);
 				if (!li)
