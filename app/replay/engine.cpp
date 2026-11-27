@@ -141,6 +141,11 @@ void ReplayEngine::loadConfig()
 		char key[16];
 		snprintf(key, sizeof(key), "cam%d", i + 1);
 		cfg.cameras[i] = obs_data_get_string(d, key);
+		char k2[24];
+		snprintf(k2, sizeof(k2), "cam%d_div", i + 1);
+		cfg.camDivisor[i] = (int)obs_data_get_int(d, k2);
+		snprintf(k2, sizeof(k2), "cam%d_enc", i + 1);
+		cfg.camEncoder[i] = obs_data_get_string(d, k2);
 	}
 	cfg.outputDir = obs_data_get_string(d, "output_dir");
 	cfg.rec.encoder = obs_data_get_string(d, "encoder");
@@ -201,6 +206,11 @@ void ReplayEngine::saveConfig()
 		char key[16];
 		snprintf(key, sizeof(key), "cam%d", i + 1);
 		obs_data_set_string(d, key, cfg.cameras[i].c_str());
+		char k2[24];
+		snprintf(k2, sizeof(k2), "cam%d_div", i + 1);
+		obs_data_set_int(d, k2, cfg.camDivisor[i]);
+		snprintf(k2, sizeof(k2), "cam%d_enc", i + 1);
+		obs_data_set_string(d, k2, cfg.camEncoder[i].c_str());
 	}
 	obs_data_set_string(d, "output_dir", cfg.outputDir.c_str());
 	obs_data_set_string(d, "encoder", cfg.rec.encoder.c_str());
@@ -303,7 +313,11 @@ bool ReplayEngine::startRecording(std::string &err)
 		auto rec = std::make_shared<Recording>();
 		char base[32];
 		snprintf(base, sizeof(base), "/cam%d", i + 1);
-		auto cr = std::make_unique<CameraRecorder>(i, src, cfg.rec, s->startTs, rec, s->dir + base);
+		RecConfig rc = cfg.rec;
+		if (!cfg.camEncoder[i].empty())
+			rc.encoder = cfg.camEncoder[i];
+		rc.fpsDivisor = cfg.camDivisor[i] >= 2 ? 2 : 1;
+		auto cr = std::make_unique<CameraRecorder>(i, src, rc, s->startTs, rec, s->dir + base);
 		obs_source_release(src);
 
 		std::string e;

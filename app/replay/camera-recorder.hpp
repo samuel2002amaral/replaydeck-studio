@@ -16,6 +16,7 @@ struct RecConfig {
 	int bitrateMbps = 80;
 	int mjpegQuality = 3; /* 2 (melhor) .. 10 */
 	int cq = 0;           /* >0: qualidade constante (QP); 0: taxa fixa (bitrateMbps) */
+	int fpsDivisor = 1;   /* 2: câmera que só manda 30 fps num vídeo de 60 -> grava 1 de cada 2 quadros */
 };
 
 /* Grava continuamente uma fonte do OBS: obs_view dedicado -> quadros crus ->

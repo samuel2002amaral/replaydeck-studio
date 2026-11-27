@@ -25,6 +25,7 @@
 #include <QSplitter>
 #include <QTabWidget>
 #include <QComboBox>
+#include <QCheckBox>
 #include <QSignalBlocker>
 #include <QVBoxLayout>
 
@@ -176,6 +177,43 @@ InputWindow::InputWindow(int inputId, QWidget *parent) : QDialog(parent), id(inp
 		pv->addWidget(posEd, 1);
 		tabs->addTab(posPage, "Posição");
 		tabs->addTab(new LayersEditor(id), "Camadas");
+
+		/* No ar: o que acontece quando esta entrada vai para o Programa (como os gatilhos do vMix) */
+		auto *airPage = new QWidget;
+		auto *av = new QVBoxLayout(airPage);
+		auto *airNote = new QLabel("Quando esta entrada for para o Programa, esconder os overlays marcados. "
+					   "Ex.: no Replay e no VAR, esconder o placar. Vale para qualquer jeito de pôr no ar "
+					   "(corte, transição, replay, painel, atalho).");
+		airNote->setWordWrap(true);
+		airNote->setObjectName("muted");
+		av->addWidget(airNote);
+		auto *chkRow = new QHBoxLayout;
+		QCheckBox *chk[4];
+		for (int ch = 0; ch < 4; ch++) {
+			QString who;
+			if (Input *o = Engine::get().input(Engine::get().overlay(ch + 1)))
+				who = " (agora: " + o->name + ")";
+			chk[ch] = new QCheckBox(QString("Overlay %1").arg(ch + 1) + who);
+			chk[ch]->setChecked(in->hideOverlays & (1 << ch));
+			chkRow->addWidget(chk[ch]);
+		}
+		chkRow->addStretch(1);
+		av->addLayout(chkRow);
+		auto *back = new QCheckBox("Mostrar de novo quando esta entrada sair do Programa");
+		back->setChecked(in->restoreOverlays);
+		av->addWidget(back);
+		av->addStretch(1);
+		auto apply = [this, chk, back] {
+			int mask = 0;
+			for (int ch = 0; ch < 4; ch++)
+				if (chk[ch]->isChecked())
+					mask |= 1 << ch;
+			Engine::get().setInputHideOverlays(id, mask, back->isChecked());
+		};
+		for (QCheckBox *c : chk)
+			connect(c, &QCheckBox::toggled, this, apply);
+		connect(back, &QCheckBox::toggled, this, apply);
+		tabs->addTab(airPage, "No ar");
 	}
 	body->addWidget(tabs);
 	root->addLayout(body, 1);

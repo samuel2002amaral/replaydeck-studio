@@ -33,6 +33,10 @@ const std::vector<ZoomPreset> &zoomPresets();
 
 struct ReplayConfig {
 	std::string cameras[MAX_CAMERAS]; /* nomes das fontes do OBS */
+	/* por câmera: 2 = só manda 30 fps (grava metade dos quadros, sem comprimir o repetido);
+	 * codificador próprio ("" = o geral; "h264_qsv" = placa Intel do notebook) */
+	int camDivisor[MAX_CAMERAS] = {};
+	std::string camEncoder[MAX_CAMERAS];
 	std::string outputDir;
 	RecConfig rec;
 	int trackA = 1;

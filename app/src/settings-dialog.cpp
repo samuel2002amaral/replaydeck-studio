@@ -18,7 +18,6 @@
 #include <QSlider>
 #include <algorithm>
 
-#include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFileDialog>
@@ -158,6 +157,22 @@ SettingsDialog::SettingsDialog(QWidget *parent, int startTab) : QDialog(parent)
 		row->addWidget(new QLabel("resolução"));
 		row->addWidget(res, 1);
 		f->addRow("Miniaturas", row);
+		{
+			/* páginas web pela placa (aceleração do navegador do OBS) */
+			QSettings ini(Engine::get().configDir() + "/interface.ini", QSettings::IniFormat);
+			auto *hw = new QCheckBox("Páginas web pela placa de vídeo (VDO.Ninja, YouTube…)  ★ recomendado");
+			hw->setChecked(ini.value("navegador_placa", true).toBool());
+			hw->setToolTip("Desenha as páginas web na placa de vídeo, como o OBS: bem menos processador.\n"
+				       "Se alguma página ficar preta (alguns notebooks com duas placas), desmarque.\n"
+				       "Vale quando abrir o programa de novo.");
+			connect(hw, &QCheckBox::toggled, this, [hw](bool on) {
+				QSettings ini2(Engine::get().configDir() + "/interface.ini", QSettings::IniFormat);
+				ini2.setValue("navegador_placa", on);
+				hw->setText(QString("Páginas web pela placa de vídeo (VDO.Ninja, YouTube…)  ★ recomendado") +
+					    "  — vale ao reabrir o programa");
+			});
+			f->addRow("Navegador", hw);
+		}
 	}
 
 	/* ---- gravação ---- */
@@ -251,6 +266,13 @@ SettingsDialog::SettingsDialog(QWidget *parent, int startTab) : QDialog(parent)
 		streamKbps = kbpsBox(s.streamBitrate);
 		streamKbps->setToolTip("YouTube 1080p30: 6000 a 9000. Some os destinos e deixe folga na internet de subida.");
 		ff->addRow("Qualidade horizontal", streamKbps);
+		streamFps = new QComboBox;
+		streamFps->addItem("Iguais ao vídeo", 1);
+		streamFps->addItem("Metade (ex.: 30 com o vídeo a 60) — alivia a placa", 2);
+		streamFps->setCurrentIndex(s.streamFpsDivisor >= 2 ? 1 : 0);
+		streamFps->setToolTip("Metade: a transmissão sai com metade dos quadros e o codificador trabalha a metade.\n"
+				      "O replay, a câmera lenta e a gravação continuam com todos os quadros.");
+		ff->addRow("Quadros da transmissão", streamFps);
 		verticalKbps = kbpsBox(s.verticalBitrate);
 		auto *vrow = new QHBoxLayout;
 		verticalSize = new QComboBox;
@@ -604,6 +626,7 @@ bool SettingsDialog::apply()
 	}
 	s.streamEncoder = streamEncoder->currentData().toString();
 	s.streamBitrate = streamKbps->value();
+	s.streamFpsDivisor = streamFps->currentData().toInt();
 	s.verticalBitrate = verticalKbps->value();
 	const QSize vs = verticalSize->currentData().toSize();
 	s.verticalWidth = vs.width();

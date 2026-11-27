@@ -112,6 +112,7 @@ void Outputs::load()
 		num("gravar_kbps", s.recBitrate);
 		str("transmitir_codificador", s.streamEncoder);
 		num("transmitir_kbps", s.streamBitrate);
+		num("transmitir_divisor_quadros", s.streamFpsDivisor);
 		num("vertical_kbps", s.verticalBitrate);
 		num("vertical_largura", s.verticalWidth);
 		num("vertical_altura", s.verticalHeight);
@@ -163,6 +164,7 @@ void Outputs::save()
 	obs_data_set_int(d, "gravar_kbps", cfg.recBitrate);
 	obs_data_set_string(d, "transmitir_codificador", cfg.streamEncoder.toUtf8().constData());
 	obs_data_set_int(d, "transmitir_kbps", cfg.streamBitrate);
+	obs_data_set_int(d, "transmitir_divisor_quadros", cfg.streamFpsDivisor);
 	obs_data_set_int(d, "vertical_kbps", cfg.verticalBitrate);
 	obs_data_set_int(d, "vertical_largura", cfg.verticalWidth);
 	obs_data_set_int(d, "vertical_altura", cfg.verticalHeight);
@@ -439,6 +441,9 @@ bool Outputs::startStreaming(QString &error)
 	const QString choice = streamForce.isEmpty() ? cfg.streamEncoder : streamForce;
 	if (needH)
 		streamVideo = makeVideoEncoder(choice, cfg.streamBitrate, "transmitir-video", usedH);
+	/* transmite a metade dos quadros (ex.: 30 com o vídeo a 60): o codificador trabalha a metade */
+	if (streamVideo && cfg.streamFpsDivisor >= 2 && !obs_encoder_set_frame_rate_divisor(streamVideo, 2))
+		blog(LOG_WARNING, "transmissão: não deu para transmitir a metade dos quadros");
 	if (needV) {
 		if (!VerticalCanvas::get().start(cfg.verticalWidth, cfg.verticalHeight, cfg.verticalFit, cfg.verticalOffset,
 						 error))

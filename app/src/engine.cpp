@@ -12,6 +12,7 @@
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
+#include <QSettings>
 #include <QFile>
 #include <QFileInfo>
 #include <QSet>
@@ -66,6 +67,12 @@ QString Engine::defaultProjectPath() const
 
 bool Engine::start(QString &error)
 {
+	/* depois de cada mudança no ar: esconde/devolve overlays (fila: nunca no meio de uma troca) */
+	static bool hooked = false;
+	if (!hooked) {
+		hooked = true;
+		connect(this, &Engine::busChanged, this, &Engine::applyAutoHide, Qt::QueuedConnection);
+	}
 	/* o motor procura módulos e dados a partir da pasta do programa (bin/64bit) */
 	const QString exeDir = QCoreApplication::applicationDirPath();
 	QDir::setCurrent(exeDir);
@@ -187,6 +194,17 @@ bool Engine::start(QString &error)
 	if (qEnvironmentVariableIsSet("RDS_SEM_NAVEGADOR"))
 		obs_add_disabled_module("obs-browser");
 #endif
+	{
+		/* páginas web (VDO.Ninja, YouTube...) desenhadas pela placa de vídeo, como no OBS.
+		 * Sem isto o módulo do navegador desenhava tudo pelo processador e copiava cada quadro
+		 * para a placa. Desligável em Configurações → Vídeo (vale ao reabrir). */
+		QSettings ini(cfgDir + "/interface.ini", QSettings::IniFormat);
+		const bool hw = ini.value("navegador_placa", true).toBool() && !qEnvironmentVariableIsSet("RDS_NAVEGADOR_CPU");
+		OBSDataAutoRelease priv = obs_data_create();
+		obs_data_set_bool(priv, "BrowserHWAccel", hw);
+		obs_apply_private_data(priv);
+		blog(LOG_INFO, "[desempenho] páginas web pela placa de vídeo: %s", hw ? "sim" : "não");
+	}
 #if LIBOBS_API_MAJOR_VER >= 32
 	obs_load_core_modules();
 #else
@@ -1446,6 +1464,47 @@ int Engine::overlay(int channel) const
 	return channel >= 1 && channel <= 4 ? ov[channel] : 0;
 }
 
+void Engine::setInputHideOverlays(int id, int mask, bool restore)
+{
+	Input *in = input(id);
+	if (!in || (in->hideOverlays == (mask & 15) && in->restoreOverlays == restore))
+		return;
+	in->hideOverlays = mask & 15;
+	in->restoreOverlays = restore;
+	if (pgm == id)
+		autoPgm = -1; /* vale na hora para a entrada que já está no ar */
+	applyAutoHide();
+	emit inputChanged(id);
+}
+
+/* Entrada nova no Programa: esconde os overlays que ela pede e devolve os que a anterior escondeu.
+ * Só devolve se o canal ainda estiver vazio (se o operador pôs outra coisa nele, fica a dele). */
+void Engine::applyAutoHide()
+{
+	if (pgm == autoPgm)
+		return;
+	autoPgm = pgm;
+	Input *p = input(pgm);
+	const int mask = p ? p->hideOverlays : 0;
+	for (int ch = 1; ch <= 4; ch++) {
+		if (mask & (1 << (ch - 1))) {
+			if (ov[ch]) {
+				autoSaved[ch] = ov[ch];
+				autoRestore[ch] = p->restoreOverlays;
+				blog(LOG_INFO, "overlay %d escondido: '%s' foi ao ar", ch, p->name.toUtf8().constData());
+				toggleOverlay(ch, ov[ch]);
+			}
+		} else if (autoSaved[ch]) {
+			const int back = autoSaved[ch];
+			autoSaved[ch] = 0;
+			if (autoRestore[ch] && !ov[ch] && input(back)) {
+				blog(LOG_INFO, "overlay %d de volta", ch);
+				toggleOverlay(ch, back);
+			}
+		}
+	}
+}
+
 void Engine::setOverlayFx(int channel, OverlayFx fx)
 {
 	if (channel < 1 || channel > 4 || ovFx[channel] == fx)
@@ -1545,10 +1604,12 @@ void Engine::clearAll()
 		ov[ch] = 0;
 		if (ovTr[ch])
 			obs_transition_set(ovTr[ch], nullptr);
+		autoSaved[ch] = 0;
 	}
 	if (activeTr)
 		obs_transition_set(activeTr, nullptr);
 	pvw = pgm = 0;
+	autoPgm = -1;
 	for (Input *in : list) {
 		obs_source_dec_showing(in->scene);
 		obs_source_remove(in->source);
@@ -1611,6 +1672,8 @@ bool Engine::saveProject(const QString &path)
 		obs_data_set_bool(o, "fone", in->monitor);
 		obs_data_set_string(o, "cor", in->color.toUtf8().constData());
 		obs_data_set_bool(o, "minimizada", in->collapsed);
+		obs_data_set_int(o, "esconde_overlays", in->hideOverlays);
+		obs_data_set_bool(o, "devolve_overlays", in->restoreOverlays);
 		obs_data_set_string(o, "chave", in->key.toUtf8().constData());
 		if (!in->pos.isDefault()) {
 			OBSDataAutoRelease pd = posToData(in->pos);
@@ -1712,6 +1775,8 @@ bool Engine::loadProject(const QString &path)
 		in->monitor = obs_data_get_bool(o, "fone");
 		in->color = QString::fromUtf8(obs_data_get_string(o, "cor"));
 		in->collapsed = obs_data_get_bool(o, "minimizada");
+		in->hideOverlays = (int)obs_data_get_int(o, "esconde_overlays") & 15;
+		in->restoreOverlays = !obs_data_has_user_value(o, "devolve_overlays") || obs_data_get_bool(o, "devolve_overlays");
 		if (const char *k = obs_data_get_string(o, "chave"); k && *k)
 			in->key = QString::fromUtf8(k);
 		if (in->monitor)

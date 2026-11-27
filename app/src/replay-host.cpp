@@ -376,11 +376,24 @@ void selfTest(QMainWindow *window)
 		}
 		const QString made = rdsEnsureReplayInputs();
 		blog(LOG_INFO, "[teste-replay] entradas do replay criadas: %s", made.toUtf8().constData());
+		if (qEnvironmentVariableIsSet("RDS_REPLAY_PLACAR")) {
+			/* placar no overlay 1; o Replay A esconde e devolve */
+			OBSDataAutoRelease pc = obs_data_create();
+			obs_data_set_int(pc, "color", 0xFF00FFFF);
+			obs_data_set_int(pc, "width", 400);
+			obs_data_set_int(pc, "height", 100);
+			Input *placar = e.addInput("color_source_v3", "PLACAR", pc);
+			e.toggleOverlay(1, placar->id);
+			if (Input *ra = e.inputByName("Replay A"))
+				e.setInputHideOverlays(ra->id, 1, true);
+		}
 		ReplayConfig cfg = engine().config();
 		for (int i = 0; i < MAX_CAMERAS; i++)
 			cfg.cameras[i].clear();
 		cfg.cameras[0] = "CAM 1";
 		cfg.cameras[1] = "CAM 2";
+		if (qEnvironmentVariableIsSet("RDS_REPLAY_METADE"))
+			cfg.camDivisor[1] = 2; /* teste: CAM 2 "manda 30 fps" */
 		cfg.outputDir = (QDir::tempPath() + "/rds-replay-teste").toUtf8().constData();
 		engine().setConfig(cfg);
 		e.cutTo(e.inputs().first()->id);
@@ -435,13 +448,17 @@ void selfTest(QMainWindow *window)
 		blog(LOG_INFO, "[teste-replay] eventos na lista: %d", (int)engine().events(engine().activeList()).size());
 	});
 	step(4300, [] { AirControl::instance()->toggleLast(); });
-	step(5200, [pgmName] { blog(LOG_INFO, "[teste-replay] no ar durante o replay: %s", pgmName().constData()); });
+	step(5200, [pgmName] {
+		blog(LOG_INFO, "[teste-replay] no ar durante o replay: %s overlay1=%d", pgmName().constData(),
+		     Engine::get().overlay(1));
+	});
 	step(5300, [] {
 		if (qEnvironmentVariableIsSet("RDS_SELFTEST_REPLAY"))
 			QProcess::execute("import", {"-window", "root", qEnvironmentVariable("RDS_SELFTEST_REPLAY")});
 	});
 	step(10000, [pgmName] {
-		blog(LOG_INFO, "[teste-replay] no ar depois do replay: %s", pgmName().constData());
+		blog(LOG_INFO, "[teste-replay] no ar depois do replay: %s overlay1=%d", pgmName().constData(),
+		     Engine::get().overlay(1));
 		uint64_t bytes = 0;
 		double sec = 0;
 		engine().recordingStats(bytes, sec);

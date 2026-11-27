@@ -515,6 +515,20 @@ int main(int argc, char *argv[])
 				Input *l = e.addInput("color_source_v3", "ANUNCIO EM L", c);
 				QString err;
 				e.cutTo(arg->id);
+				if (qEnvironmentVariableIsSet("RDS_SELFTEST_PGMNOME_MERGE")) {
+					ItemPos p;
+					p.zoom = 0.6;
+					p.panX = 0.4;
+					p.panY = 0.4;
+					e.setLayerPosition(l->id, 0, p);
+					e.setOverlayFx(3, OverlayFx::Merge);
+					e.setTransitionMs(4000);
+					runFunction("SetLayer", "ANUNCIO EM L", "1,PGM", &err);
+					runFunction("OverlayInput3", "ANUNCIO EM L", "", &err);
+					QTimer::singleShot(2000, [] { QProcess::execute("import", {"-window", "root", "/tmp/pn-meio.png"}); });
+					QTimer::singleShot(5000, [] { QProcess::execute("import", {"-window", "root", "/tmp/pn-fim.png"}); qApp->quit(); });
+					return;
+				}
 				bool ok = runFunction("SetLayer", "ANUNCIO EM L", "1,PGM", &err) && runFunction("OverlayInput3", "ANUNCIO EM L", "", &err);
 				const bool r1 = l->layers[0].inputId == arg->id && e.overlay(3) == l->id;
 				ok = runFunction("SetLayer", "ANUNCIO EM L", "1,PGM", &err) && runFunction("OverlayInput3", "ANUNCIO EM L", "", &err) && ok;
@@ -1091,6 +1105,8 @@ int main(int argc, char *argv[])
 					e.setInputAudioAuto(in->id, false);
 				StudioSettings s = Outputs::get().settings();
 				s.recFolder = qEnvironmentVariable("RDS_SELFTEST_OUTPUTS");
+				if (qEnvironmentVariableIsSet("RDS_TRANSMITIR_METADE"))
+					s.streamFpsDivisor = 2;
 				s.destinations.clear();
 				StreamDestination hd;
 				hd.name = "Horizontal";

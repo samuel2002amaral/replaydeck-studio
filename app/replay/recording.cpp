@@ -82,8 +82,14 @@ void Recording::append(int64_t frameNo, const uint8_t *data, size_t size)
 	std::unique_lock<std::mutex> lk(wqMtx);
 	if (wqStop || frameNo <= lastQueued)
 		return; /* quadro duplicado/atrasado */
-	if (lastQueued >= 0 && frameNo > lastQueued + 1)
-		gaps += (uint64_t)(frameNo - lastQueued - 1);
+	int64_t fillFrom = -1;
+	if (lastQueued >= 0 && frameNo > lastQueued + 1) {
+		const int64_t missing = frameNo - lastQueued - 1;
+		if (missing <= repeatFill)
+			fillFrom = lastQueued + 1; /* câmera de 30 fps: repete o quadro anterior */
+		else
+			gaps += (uint64_t)missing;
+	}
 	lastQueued = frameNo;
 	/* disco parado há muito tempo: aí sim espera (nunca descarta quadro) */
 	if (wqBytes.load() + size > kMaxPending) {
@@ -92,7 +98,7 @@ void Recording::append(int64_t frameNo, const uint8_t *data, size_t size)
 		if (wqStop)
 			return;
 	}
-	wq.push_back(Pending{frameNo, std::vector<uint8_t>(data, data + size)});
+	wq.push_back(Pending{frameNo, std::vector<uint8_t>(data, data + size), fillFrom});
 	wqBytes += size;
 	lk.unlock();
 	wqCv.notify_one();
@@ -108,7 +114,13 @@ void Recording::writeOne(Pending &p)
 	Entry e{writePos.load(), (uint32_t)size, 0};
 	writePos += size;
 
+	/* quadros repetidos (câmera de 30 fps): apontam para o quadro anterior, sem gravar nada */
+	const int64_t from = p.fillFrom >= 0 && haveLastEntry ? p.fillFrom : p.frameNo;
 	if (xf) {
+		for (int64_t f = from; f < p.frameNo; f++) {
+			DiskEntry r{f, lastEntry.offset, lastEntry.size, 0};
+			fwrite(&r, sizeof(r), 1, xf);
+		}
 		DiskEntry d{p.frameNo, e.offset, e.size, 0};
 		fwrite(&d, sizeof(d), 1, xf);
 		if (++idxFlushCounter >= 30) {
@@ -120,7 +132,11 @@ void Recording::writeOne(Pending &p)
 	std::lock_guard<std::mutex> lk(idxMtx);
 	if ((size_t)p.frameNo >= index.size())
 		index.resize((size_t)p.frameNo + 1, Entry{0, 0, 0});
+	for (int64_t f = from; f < p.frameNo; f++)
+		index[(size_t)f] = lastEntry;
 	index[(size_t)p.frameNo] = e;
+	lastEntry = e;
+	haveLastEntry = true;
 	if (first < 0)
 		first = p.frameNo;
 	last = p.frameNo;

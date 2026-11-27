@@ -33,6 +33,7 @@ private:
 	class QCheckBox *globalKeys = nullptr;
 	QComboBox *streamEncoder = nullptr;
 	QSpinBox *streamKbps = nullptr;
+	QComboBox *streamFps = nullptr;
 	QSpinBox *verticalKbps = nullptr;
 	QComboBox *verticalSize = nullptr;
 	QComboBox *verticalFit = nullptr;

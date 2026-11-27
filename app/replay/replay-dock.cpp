@@ -1148,6 +1148,8 @@ static bool showConfigDialog(QWidget *parent)
 		names << QString::fromUtf8(n.c_str());
 
 	QComboBox *cams[MAX_CAMERAS];
+	QComboBox *camFps[MAX_CAMERAS];
+	QComboBox *camEnc[MAX_CAMERAS];
 	auto *camGrid = new QGridLayout();
 	camGrid->setHorizontalSpacing(6);
 	for (int i = 0; i < MAX_CAMERAS; i++) {
@@ -1165,12 +1167,26 @@ static bool showConfigDialog(QWidget *parent)
 		auto *num = new QLabel(QString("<b>%1</b>").arg(i + 1), &dlg);
 		num->setAlignment(Qt::AlignCenter);
 		num->setFixedWidth(22);
-		const int rowI = i % 4, colI = (i / 4) * 2;
-		camGrid->addWidget(num, rowI, colI);
-		camGrid->addWidget(cams[i], rowI, colI + 1);
+		/* por câmera: quantos quadros ela manda e em qual placa grava */
+		camFps[i] = new QComboBox(&dlg);
+		camFps[i]->addItem(tl("Todos os quadros"), 1);
+		camFps[i]->addItem(tl("Manda 30 fps"), 2);
+		camFps[i]->setCurrentIndex(cfg.camDivisor[i] >= 2 ? 1 : 0);
+		camFps[i]->setToolTip(tl("Celular ou câmera que só manda 30 quadros por segundo num vídeo de 60:\n"
+					 "grava 1 de cada 2 quadros (o outro seria igual). O replay fica igual\n"
+					 "e a placa comprime a metade dessa câmera."));
+		camEnc[i] = new QComboBox(&dlg);
+		camEnc[i]->addItem(tl("Placa padrão"), QString());
+		camEnc[i]->addItem(tl("Placa Intel (Quick Sync)"), QString("h264_qsv"));
+		camEnc[i]->setCurrentIndex(cfg.camEncoder[i] == "h264_qsv" ? 1 : 0);
+		camEnc[i]->setToolTip(tl("Notebook com duas placas: grava esta câmera na placa Intel e alivia a NVIDIA\n"
+					 "(que fica com a transmissão e as outras câmeras). Mesma qualidade do replay."));
+		camGrid->addWidget(num, i, 0);
+		camGrid->addWidget(cams[i], i, 1);
+		camGrid->addWidget(camFps[i], i, 2);
+		camGrid->addWidget(camEnc[i], i, 3);
 	}
 	camGrid->setColumnStretch(1, 1);
-	camGrid->setColumnStretch(3, 1);
 	fCam->addRow(tl("Câmeras"), camGrid);
 	{
 		auto *wiz = new QPushButton(tl("Configuração rápida…"), &dlg);
@@ -1478,8 +1494,11 @@ static bool showConfigDialog(QWidget *parent)
 		return false;
 	}
 
-	for (int i = 0; i < MAX_CAMERAS; i++)
+	for (int i = 0; i < MAX_CAMERAS; i++) {
 		cfg.cameras[i] = cams[i]->currentData().toString().toUtf8().constData();
+		cfg.camDivisor[i] = camFps[i]->currentData().toInt();
+		cfg.camEncoder[i] = camEnc[i]->currentData().toString().toUtf8().constData();
+	}
 	cfg.outputDir = dirEdit->text().toUtf8().constData();
 	cfg.rec.encoder = enc->currentData().toString().toUtf8().constData();
 	{
@@ -1521,8 +1540,11 @@ static bool showConfigDialog(QWidget *parent)
 	cfg.minFreeGB = minFree->value();
 	if (recording) {
 		const ReplayConfig live = engine().config();
-		for (int i = 0; i < MAX_CAMERAS; i++)
+		for (int i = 0; i < MAX_CAMERAS; i++) {
 			cfg.cameras[i] = live.cameras[i];
+			cfg.camDivisor[i] = live.camDivisor[i];
+			cfg.camEncoder[i] = live.camEncoder[i];
+		}
 		cfg.outputDir = live.outputDir;
 		cfg.rec = live.rec;
 		cfg.trackA = live.trackA;

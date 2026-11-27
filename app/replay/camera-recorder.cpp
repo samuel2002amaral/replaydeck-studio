@@ -252,6 +252,7 @@ bool CameraRecorder::start(std::string &err)
 		err = "não foi possível criar " + basePath + ext;
 		return false;
 	}
+	rec->repeatFill = cfg.fpsDivisor > 1 ? cfg.fpsDivisor - 1 : 0;
 	pkt = av_packet_alloc();
 
 	/* --- view dedicado para esta câmera --- */
@@ -463,9 +464,11 @@ bool CameraRecorder::startGpu(const char *id, std::string &err)
 			obs_data_set_string(s, "rate_control", "CQP");
 			obs_data_set_int(s, "cqp", q);
 		} else {
+			/* câmera de 30 fps: metade dos quadros com a mesma qualidade por quadro = metade da taxa */
+			const int kbps = cfg.bitrateMbps * 1000 / std::max(1, cfg.fpsDivisor);
 			obs_data_set_string(s, "rate_control", "CBR");
-			obs_data_set_int(s, "bitrate", cfg.bitrateMbps * 1000);
-			obs_data_set_int(s, "max_bitrate", cfg.bitrateMbps * 1000);
+			obs_data_set_int(s, "bitrate", kbps);
+			obs_data_set_int(s, "max_bitrate", kbps);
 		}
 		obs_data_set_string(s, "preset", "p4");
 		obs_data_set_string(s, "tune", "ll");
@@ -482,6 +485,13 @@ bool CameraRecorder::startGpu(const char *id, std::string &err)
 	if (!obsEnc) {
 		err = std::string(id) + ": não criou";
 		return false;
+	}
+	if (cfg.fpsDivisor > 1) {
+		/* a câmera só manda 30 fps: o codificador pega 1 de cada 2 quadros (o outro seria igual) */
+		if (obs_encoder_set_frame_rate_divisor(obsEnc, (uint32_t)cfg.fpsDivisor))
+			rec->repeatFill = cfg.fpsDivisor - 1;
+		else
+			rlog(LOG_WARNING, "cam %d: não deu para gravar a metade dos quadros; grava todos", index + 1);
 	}
 
 	/* visão própria desta câmera, já convertida na placa (NV12) */
@@ -575,6 +585,9 @@ void CameraRecorder::onRawFrame(struct video_data *frame)
 	/* Todas as câmeras usam o mesmo relógio (o do render do OBS), então o
 	 * mesmo nº de quadro = o mesmo instante em todos os ângulos. */
 	const int64_t frameNo = (int64_t)((frame->timestamp - startTs + frameIntervalNs / 2) / frameIntervalNs);
+	/* câmera de 30 fps: só os quadros pares; os ímpares repetem o anterior no índice */
+	if (cfg.fpsDivisor > 1 && (frameNo % cfg.fpsDivisor) != 0)
+		return;
 
 	AVFrame *f;
 	{

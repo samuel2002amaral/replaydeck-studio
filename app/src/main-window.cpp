@@ -13,6 +13,7 @@
 #include "transitions-panel.hpp"
 #include "replay-host.hpp"
 #include "perf.hpp"
+#include "gpu-monitor.hpp"
 #include "flow-layout.hpp"
 #include "audio-mixer.hpp"
 #include "external-output.hpp"
@@ -722,7 +723,35 @@ void MainWindow::updateStatus()
 	const uint32_t total = obs_get_total_frames();
 	const uint32_t skipped = obs_get_lagged_frames();
 	status[0]->setText(QString("%1x%2  %3 fps").arg(ovi.base_width).arg(ovi.base_height).arg(obs_get_active_fps(), 0, 'f', 2));
-	status[1]->setText(QString("Render %1 ms").arg(obs_get_average_frame_time_ns() / 1000000.0, 0, 'f', 1));
+	{
+		/* placa NVIDIA: desenho, codificador (transmissão + câmeras do replay) e temperatura */
+		QString t = QString("Render %1 ms").arg(obs_get_average_frame_time_ns() / 1000000.0, 0, 'f', 1);
+		const GpuStatus g = gpumon::read();
+		QString css;
+		if (g.ok) {
+			t += QString("  ·  placa: desenho %1% · codificador %2% · %3 °C").arg(g.gpu).arg(g.encoder).arg(g.tempC);
+			if (g.hot) {
+				t += "  ·  QUENTE: reduzindo a velocidade";
+				css = "color: #ff5a5a; font-weight: bold;";
+			} else if (g.encoder >= 95 || g.gpu >= 95) {
+				css = "color: #ffb340; font-weight: bold;";
+			}
+		}
+		status[1]->setText(t);
+		status[1]->setStyleSheet(css);
+		/* no registro a cada 30 s: depois de um jogo dá para ver quando e por que travou */
+		static int tick = 0;
+		if (g.ok && ++tick % 30 == 0)
+			blog(LOG_INFO, "[placa] desenho %d%% codificador %d%% %d °C%s%s · atrasados %u · codificação perdeu %u",
+			     g.gpu, g.encoder, g.tempC, g.hot ? " QUENTE" : "", g.power ? " (limite de energia)" : "",
+			     obs_get_lagged_frames(), video_output_get_skipped_frames(obs_get_video()));
+		status[1]->setToolTip(g.ok ? "Placa NVIDIA (pelo driver):\n"
+					     "desenho = imagem, páginas web, efeitos\n"
+					     "codificador = transmissão, gravação e câmeras do replay (chip separado)\n"
+					     "Perto de 100% começa a travar. QUENTE = o notebook está esquentando e a placa\n"
+					     "baixou a velocidade (ventilação, base, tomada, modo de desempenho)."
+					   : QString());
+	}
 	status[2]->setText(QString("CPU %1%").arg(os_cpu_usage_info_query(cpu), 0, 'f', 0));
 	/* atrasados = a placa de vídeo não deu conta de desenhar; codificação = o codificador não deu conta */
 	const uint32_t encSkipped = video_output_get_skipped_frames(obs_get_video());

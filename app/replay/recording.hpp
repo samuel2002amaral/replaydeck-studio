@@ -29,6 +29,8 @@ public:
 	uint64_t gapFrames() const { return gaps.load(); }
 	/* quanto está na fila esperando o disco (MB) — o disco engasgando aparece aqui */
 	size_t pendingMB() const { return wqBytes.load() >> 20; }
+	/* câmera gravada com 1 de cada N quadros: os N-1 do meio repetem o anterior (não são perda) */
+	int repeatFill = 0;
 
 	/* Lê o quadro pedido ou o quadro válido imediatamente anterior
 	 * (se a câmera perdeu aquele quadro). */
@@ -73,7 +75,10 @@ private:
 	struct Pending {
 		int64_t frameNo;
 		std::vector<uint8_t> data;
+		int64_t fillFrom = -1; /* >= 0: quadros fillFrom..frameNo-1 repetem o anterior */
 	};
+	Entry lastEntry{0, 0, 0};
+	bool haveLastEntry = false;
 	void writerLoop();
 	void writeOne(Pending &p);
 	std::thread writer;

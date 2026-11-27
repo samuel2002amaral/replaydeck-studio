@@ -72,6 +72,10 @@ struct Input {
 	/* aparência na lista (como no vMix): cor do cabeçalho e minimizada em barra */
 	QString color; /* chave de inputColors() ("" = padrão) */
 	bool collapsed = false;
+	/* no ar: overlays que somem quando esta entrada vai para o Programa (bits 0..3 = overlay 1..4)
+	 * e voltam quando ela sai (ex.: Replay e VAR escondem o placar) */
+	int hideOverlays = 0;
+	bool restoreOverlays = true;
 	/* posição da imagem principal dentro da entrada (aba Posição) e as camadas por cima (aba Camadas) */
 	ItemPos pos;
 	InputLayer layers[INPUT_LAYERS];
@@ -205,6 +209,7 @@ public:
 	void toggleOverlay(int channel, int id);
 	OverlayFx overlayFx(int channel) const { return channel >= 1 && channel <= 4 ? ovFx[channel] : OverlayFx::Cut; }
 	void setOverlayFx(int channel, OverlayFx fx);
+	void setInputHideOverlays(int id, int mask, bool restore);
 
 	/* projeto */
 	bool saveProject(const QString &path);
@@ -258,6 +263,11 @@ private:
 	unsigned ovGen[5] = {0, 0, 0, 0, 0}; /* muda a cada troca: a saída animada só limpa se nada mudou */
 	OverlayFx ovFx[5] = {OverlayFx::Cut, OverlayFx::Cut, OverlayFx::Cut, OverlayFx::Cut, OverlayFx::Cut};
 	OBSSourceAutoRelease ovTr[5]; /* transição de cada canal de overlay (Fade/Merge) */
+	/* overlays escondidos porque a entrada no ar pediu: o que estava em cada canal, para devolver */
+	int autoPgm = -1;
+	int autoSaved[5] = {0, 0, 0, 0, 0};
+	bool autoRestore[5] = {true, true, true, true, true};
+	void applyAutoHide();
 	obs_source_t *overlayTransition(int channel);
 	int durationMs = 500;
 	bool ftb = false;

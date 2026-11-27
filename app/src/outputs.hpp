@@ -35,6 +35,7 @@ struct StudioSettings {
 	QList<StreamDestination> destinations;
 	QString streamEncoder = "auto";
 	int streamBitrate = 6000;     /* horizontal */
+	int streamFpsDivisor = 1;     /* 2 = transmite a metade dos quadros (30 com o vídeo a 60): o replay segue a 60 */
 	int verticalBitrate = 6000;
 	int verticalWidth = 1080, verticalHeight = 1920;
 	bool verticalFit = false;     /* encaixar com faixas (senão recorta o centro) */
